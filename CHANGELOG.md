@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- **Cancel Server is recorded in History.** Its bespoke dialog (it needs the reason field) bypassed the shared confirm, so the one irreversible action in the app left no entry. It now logs the reason, the plan and the public IP it took with it, and the outcome.
+- **Change Plan shows a before → after table** (plan, memory, storage, monthly cost) in the confirm rather than a sentence.
+
+---
+
 ## [1.0.45] - 2026-09-03
 
 ### Added

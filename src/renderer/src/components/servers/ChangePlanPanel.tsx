@@ -26,7 +26,7 @@ export const ChangePlanPanel: React.FC<{
   client: BinaryLaneClient | null
   server: Server
   busy?: boolean
-  onApply: (payload: Record<string, unknown>, summary: string) => void
+  onApply: (payload: Record<string, unknown>, summary: string, changes: Array<{ label: string; from?: string; to?: string }>) => void
 }> = ({ client, server, busy, onApply }) => {
   const sizesQuery = useSizes(client)
   const imagesQuery = useImages(client)
@@ -266,7 +266,13 @@ export const ChangePlanPanel: React.FC<{
             selected &&
             onApply(
               { type: 'resize', size: selected.slug, options: { memory, disk } },
-              `Change plan to ${selected.slug} (${memory / 1024} GB memory, ${disk} GB storage)`
+              `Change plan to ${selected.slug} (${memory / 1024} GB memory, ${disk} GB storage)`,
+              [
+                { label: 'Plan', from: server.size_slug ?? undefined, to: selected.slug },
+                { label: 'Memory', from: `${(server.memory ?? 0) / 1024} GB`, to: `${memory / 1024} GB` },
+                { label: 'Storage', from: `${server.disk ?? 0} GB`, to: `${disk} GB` },
+                ...(typeof server.size?.price_monthly === 'number' ? [{ label: 'Monthly', from: `$${server.size.price_monthly.toFixed(2)}`, to: `$${total.toFixed(2)}` }] : [])
+              ].filter((c) => c.from !== c.to)
             )
           }
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-[#017cb6] text-white disabled:opacity-40 disabled:cursor-not-allowed"

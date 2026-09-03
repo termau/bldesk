@@ -32,7 +32,7 @@ import {
 import { useTrackedActions } from '../../context/ActionTrackerContext'
 import { useIsMutating } from '@tanstack/react-query'
 import { useConfirm, type ConfirmRequest } from '../../context/ConfirmContext'
-import { updateChange } from '../../lib/changelog'
+import { recordChange, updateChange } from '../../lib/changelog'
 
 type Server = components['schemas']['Server']
 type Disk = components['schemas']['Disk']
@@ -519,10 +519,11 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
             client={client}
             server={server}
             busy={busy}
-            onApply={(payload, summary) =>
+            onApply={(payload, summary, changes) =>
               void executeAction('Change Plan', payload, {
-                summary,
+                summary: `${summary}. The server restarts to apply it.`,
                 severity: 'destructive',
+                changes,
                 confirmLabel: 'Change plan'
               })
             }
@@ -815,11 +816,28 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
         onCancel={() => setCancelOpen(false)}
         onConfirm={async (reason) => {
           setCancelError(null)
+          // The dialog is bespoke (it needs the reason field) so it does not
+          // go through useConfirm — record the change here instead. This is
+          // the one entry History most needs: the server will not exist to
+          // ask afterwards.
+          const changeId = await recordChange({
+            label: 'Cancel server',
+            target: { kind: 'server', id: server.id, name: server.name },
+            severity: 'irreversible',
+            summary: `Reason: ${reason}`,
+            changes: [
+              { label: 'Plan', from: server.size_slug, to: undefined },
+              { label: 'Public IPv4', from: server.networks?.v4?.find((n) => n.type === 'public')?.ip_address, to: undefined }
+            ],
+            source: 'ui'
+          })
           try {
             await cancelServer.mutateAsync({ serverId: server.id, reason })
+            void updateChange(changeId, { outcome: 'completed', detail: 'BinaryLane accepted the cancellation; the server is removed within minutes.' })
             setCancelOpen(false)
             onCancelled?.()
           } catch (err: any) {
+            void updateChange(changeId, { outcome: 'failed', detail: err?.message })
             setCancelError(err?.message || 'Failed to cancel the server.')
           }
         }}
