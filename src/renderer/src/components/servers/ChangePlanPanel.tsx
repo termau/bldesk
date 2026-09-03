@@ -271,7 +271,10 @@ export const ChangePlanPanel: React.FC<{
                 { label: 'Plan', from: server.size_slug ?? undefined, to: selected.slug },
                 { label: 'Memory', from: `${(server.memory ?? 0) / 1024} GB`, to: `${memory / 1024} GB` },
                 { label: 'Storage', from: `${server.disk ?? 0} GB`, to: `${disk} GB` },
-                ...(typeof server.size?.price_monthly === 'number' ? [{ label: 'Monthly', from: `$${server.size.price_monthly.toFixed(2)}`, to: `$${total.toFixed(2)}` }] : [])
+                // Both sides ex-GST and both including the image surcharge:
+                // `size.price_monthly` alone is the bare plan price and `total`
+                // is inc-GST, so comparing those understated the current cost.
+                ...(server.size ? [{ label: 'Monthly (ex-GST)', from: `$${planMonthlyPrice(server.size, image, server.memory ?? 0, server.disk ?? 0).toFixed(2)}`, to: `$${monthly.toFixed(2)}` }] : [])
               ].filter((c) => c.from !== c.to)
             )
           }
