@@ -5,7 +5,26 @@ const api: IpcApi = {
   // Vault & Auth
   getProfiles: () => ipcRenderer.invoke('vault:getProfiles'),
   getActiveProfile: () => ipcRenderer.invoke('vault:getActiveProfile'),
+  validateBinaryLaneToken: (token) => ipcRenderer.invoke('binarylane:validateToken', token),
+  binaryLaneRequest: (profileId, request) => ipcRenderer.invoke('binarylane:request', profileId, request),
   saveProfile: (profile) => ipcRenderer.invoke('vault:saveProfile', profile),
+  updateProfileSafety: (
+    profileId,
+    accessMode,
+    protectedServerIds,
+    maintenanceServerIds,
+    protectedResources,
+    maintenanceResources
+  ) =>
+    ipcRenderer.invoke(
+      'vault:updateProfileSafety',
+      profileId,
+      accessMode,
+      protectedServerIds,
+      maintenanceServerIds,
+      protectedResources,
+      maintenanceResources
+    ),
   deleteProfile: (profileId) => ipcRenderer.invoke('vault:deleteProfile', profileId),
   setActiveProfile: (profileId) => ipcRenderer.invoke('vault:setActiveProfile', profileId),
 
@@ -50,10 +69,9 @@ const api: IpcApi = {
 
   // External Links
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
-  probeTcp: (host: string, port: number, timeoutMs?: number) =>
-    ipcRenderer.invoke('net:probeTcp', host, port, timeoutMs),
-  probePing: (host: string, timeoutMs?: number) => ipcRenderer.invoke('net:probePing', host, timeoutMs),
-  traceroute: (host: string, maxHops?: number) => ipcRenderer.invoke('net:traceroute', host, maxHops),
+  probeTcp: (target, port, timeoutMs) => ipcRenderer.invoke('net:probeTcp', target, port, timeoutMs),
+  probePing: (target, timeoutMs) => ipcRenderer.invoke('net:probePing', target, timeoutMs),
+  traceroute: (target, maxHops) => ipcRenderer.invoke('net:traceroute', target, maxHops),
   setProbeTargets: (ips: string[]) => ipcRenderer.invoke('net:setTargets', ips),
 
   // Auto-update

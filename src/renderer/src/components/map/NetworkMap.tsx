@@ -1,10 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Download, ExternalLink, Globe, Loader2, Maximize2, Minus, Plus, Search, Terminal, Waypoints, X } from 'lucide-react'
+import { Download, ExternalLink, Globe, Loader2, LockKeyhole, Maximize2, Minus, Plus, Search, ShieldAlert, Terminal, Waypoints, X } from 'lucide-react'
 import { components } from '@shared/api/schema'
 import { BinaryLaneClient } from '../../api/client'
 import { useFleetFirewalls, useLoadBalancers, useVpcMembers, useVpcs } from '../../api/queries'
+import { useProfileSafety } from '../../context/ProfileSafetyContext'
 import { auditServer, worstLevel, type AuditLevel, type FwRule } from '../../lib/firewallMatrix'
 import { launchSsh } from '../../lib/launchSsh'
+import { remoteServiceProbeForImage } from '@shared/remote-service'
 import {
   INTERNET_ID,
   exposes,
@@ -29,11 +31,11 @@ interface Props {
 /**
  * The network map (FEATURES.md #10). A schematic, not a hairball: the
  * internet on a rail at the left, load balancers in a column, servers boxed
- * by VPC inside region bands. Each server carries its own exposure port —
- * what the world can reach — coloured by the firewall audit, so the risky
- * path is visible without drawing thirty-three lines to the rail. Select a
- * node to draw its lines and read its details; export as SVG or PNG for a
- * ticket or a doc.
+ * by VPC inside region bands. Each server carries the ports its BinaryLane
+ * firewall rules admit from the world — this is policy inspection, not a live
+ * reachability measurement. The audit colours risky paths without drawing
+ * thirty-three lines to the rail. Select a node to draw its lines and read its
+ * details; export as SVG or PNG for a ticket or a doc.
  */
 
 const C = {
@@ -48,6 +50,7 @@ const C = {
 const levelColour = (level: AuditLevel | null | undefined) => (level === 'red' ? C.off : level === 'amber' ? C.amber : level === 'info' ? C.sky : C.ok)
 
 export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer }) => {
+  const { serverSafetyLevel, serverActionBlockReason } = useProfileSafety()
   const vpcsQuery = useVpcs(client)
   const lbsQuery = useLoadBalancers(client)
   const serverIds = useMemo(() => servers.map((s) => s.id), [servers])
@@ -122,6 +125,7 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
   const [hover, setHover] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [showPublic, setShowPublic] = useState(false)
+  const [safetyNotice, setSafetyNotice] = useState<{ serverId: number; text: string } | null>(null)
   const fitted = useRef(false)
 
   useEffect(() => {
@@ -207,6 +211,16 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
 
   const selectedNode = selected ? layout.nodeById.get(selected) : undefined
 
+  const launchServerSsh = async (server: MapServer) => {
+    const blockReason = serverActionBlockReason(server.id, 'remote-access')
+    if (blockReason) {
+      setSafetyNotice({ serverId: server.id, text: `Blocked locally: ${blockReason}` })
+      return
+    }
+    if (!server.publicIp) return
+    await launchSsh({ serverId: server.id, host: server.publicIp, username: 'root' })
+  }
+
   // --- Export
   const exportSvg = (): string => {
     const svg = svgRef.current
@@ -253,12 +267,25 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
   }
 
   const loading = vpcsQuery.isLoading || lbsQuery.isLoading || membersQuery.isLoading
+  const publicRemoteAdmin = servers.reduce(
+    (summary, server) => {
+      if (!rulesByServer.has(server.id)) return summary
+      const service = remoteServiceProbeForImage(server.image)
+      if (!exposes(rulesByServer.get(server.id) ?? null, service.port)) return summary
+      summary[service.kind] += 1
+      return summary
+    },
+    { ssh: 0, rdp: 0 }
+  )
   const counts = {
     servers: model.mapServers.length,
     vpcs: model.mapVpcs.length,
-    lbs: model.mapLbs.length,
-    exposedSsh: model.mapServers.filter((s) => exposes(rulesByServer.get(s.id) ?? null, 22) && rulesByServer.has(s.id)).length
+    lbs: model.mapLbs.length
   }
+  const publicRemoteAdminLabels = [
+    publicRemoteAdmin.ssh > 0 ? `SSH on ${publicRemoteAdmin.ssh} server${publicRemoteAdmin.ssh === 1 ? '' : 's'}` : null,
+    publicRemoteAdmin.rdp > 0 ? `RDP on ${publicRemoteAdmin.rdp} server${publicRemoteAdmin.rdp === 1 ? '' : 's'}` : null
+  ].filter((label): label is string => !!label)
 
   return (
     <div className="h-full flex flex-col bg-[#f8f9fa] dark:bg-[#212529] text-[#212529] dark:text-[#f8f9fa] overflow-hidden">
@@ -271,7 +298,11 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
           </h1>
           <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-0.5">
             {counts.servers} servers · {counts.vpcs} VPC{counts.vpcs === 1 ? '' : 's'} · {counts.lbs} load balancer{counts.lbs === 1 ? '' : 's'}
-            {counts.exposedSsh > 0 && <span className="text-rose-600 dark:text-rose-400"> · SSH reachable from the internet on {counts.exposedSsh}</span>}
+            {publicRemoteAdminLabels.length > 0 && (
+              <span className="text-rose-600 dark:text-rose-400">
+                {' '}· Firewall permits public {publicRemoteAdminLabels.join(' and ')}
+              </span>
+            )}
             {(loading || fleet.isLoading) && (
               <span className="inline-flex items-center gap-1 ml-2">
                 <Loader2 className="w-3 h-3 animate-spin" /> reading…
@@ -463,6 +494,9 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
                   const s = n.server!
                   const dim = (focus && !related.has(n.id)) || !matches(n)
                   const isSel = selected === n.id
+                  const safetyLevel = serverSafetyLevel(s.id)
+                  const safetyColour = safetyLevel === 'locked' ? C.off : safetyLevel === 'maintenance' ? C.amber : C.sky
+                  const safetyLabel = safetyLevel === 'locked' ? 'READ' : safetyLevel === 'maintenance' ? 'MAINT' : 'NORMAL'
                   // Grey until the rules have been read; "?" means they could not be.
                   const portColour = s.exposure === '…' || s.exposure === '?' ? '#adb5bd' : levelColour(s.exposureLevel)
                   return (
@@ -479,7 +513,16 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
                       }}
                     >
                       <rect x={n.x} y={n.y} width={n.w} height={n.h} rx={7} className="fill-white dark:fill-[#2b3035]" filter="url(#map-shadow)" />
-                      <rect x={n.x} y={n.y} width={n.w} height={n.h} rx={7} fill="none" className={isSel ? '' : 'stroke-[#ced4da] dark:stroke-[#3d4349]'} stroke={isSel ? C.gold : undefined} strokeWidth={isSel ? 2.5 : 1} />
+                      <rect
+                        x={n.x}
+                        y={n.y}
+                        width={n.w}
+                        height={n.h}
+                        rx={7}
+                        fill="none"
+                        stroke={isSel ? C.gold : safetyColour}
+                        strokeWidth={isSel ? 2.5 : safetyLevel === 'testable' ? 1 : 1.75}
+                      />
                       {/* Exposure port: what the world reaches */}
                       <g>
                         <rect x={n.x - 1} y={n.y + 8} width={5} height={n.h - 16} rx={2} fill={portColour} />
@@ -490,7 +533,10 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
                       {/* Power */}
                       <circle cx={n.x + 16} cy={n.y + 15} r={3.5} fill={s.power === 'on' ? C.ok : s.power === 'off' ? C.off : '#adb5bd'} />
                       <text x={n.x + 26} y={n.y + 19} fontSize={12} fontWeight={700} className="fill-[#212529] dark:fill-white">
-                        {s.name.length > 22 ? s.name.slice(0, 21) + '…' : s.name}
+                        {s.name.length > (safetyLevel === 'maintenance' ? 10 : 13) ? s.name.slice(0, safetyLevel === 'maintenance' ? 9 : 12) + '…' : s.name}
+                      </text>
+                      <text x={n.x + n.w - 9} y={n.y + 19} textAnchor="end" fontSize={8.2} fontWeight={800} letterSpacing={0.55} fill={safetyColour}>
+                        {safetyLabel}
                       </text>
                       <text x={n.x + n.w - 10} y={n.y + n.h - 9} textAnchor="end" fontSize={9.5} fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace" className="fill-[#6c757d] dark:fill-slate-400">
                         {s.publicIp ?? '—'}
@@ -508,6 +554,9 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
             <span className="flex items-center gap-1"><span className="inline-block w-1.5 h-3 rounded-sm" style={{ background: C.off }} /> admin port open to the world</span>
             <span className="flex items-center gap-1"><span className="inline-block w-1.5 h-3 rounded-sm" style={{ background: C.amber }} /> no rules / shadowed</span>
             <span className="flex items-center gap-1"><span className="inline-block w-5 h-0.5" style={{ background: C.brand }} /> load balancer → backend</span>
+            <span className="flex items-center gap-1 font-semibold" style={{ color: C.off }}><LockKeyhole className="w-3 h-3" /> Read-only</span>
+            <span className="flex items-center gap-1 font-semibold" style={{ color: C.amber }}><ShieldAlert className="w-3 h-3" /> Maintenance</span>
+            <span className="flex items-center gap-1 font-semibold" style={{ color: C.sky }}><ShieldAlert className="w-3 h-3" /> Normal</span>
             <span className="text-[#6c757d]">drag to pan · ⌘/Ctrl + wheel to zoom · click a node</span>
           </div>
 
@@ -535,15 +584,51 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
                 const lbs = model.mapLbs.filter((lb) => lb.serverIds.includes(s.id))
                 const vpc = model.mapVpcs.find((v) => v.id === s.vpcId)
                 const orig = servers.find((x) => x.id === s.id)
+                const safetyLevel = serverSafetyLevel(s.id)
+                const lockedServer = safetyLevel === 'locked'
+                const maintenanceServer = safetyLevel === 'maintenance'
+                const sshBlockReason = serverActionBlockReason(s.id, 'remote-access')
+                const supportsNativeSsh = orig
+                  ? remoteServiceProbeForImage(orig.image).kind === 'ssh'
+                  : false
                 return (
                   <div className="p-3 space-y-2.5">
+                    <div
+                      data-safety-level={safetyLevel}
+                      data-safety-protected-server={lockedServer ? 'true' : undefined}
+                      className={`flex items-start gap-2 rounded border px-2.5 py-2 ${
+                        lockedServer
+                          ? 'border-rose-500/40 bg-rose-500/10 text-rose-800 dark:text-rose-200'
+                          : maintenanceServer
+                            ? 'border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200'
+                            : 'border-sky-500/40 bg-sky-500/10 text-sky-800 dark:text-sky-200'
+                      }`}
+                    >
+                      {lockedServer ? <LockKeyhole className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" /> : <ShieldAlert className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />}
+                      <span>
+                        <strong>{lockedServer ? 'Read-only.' : maintenanceServer ? 'Maintenance.' : 'Normal.'}</strong>{' '}
+                        {lockedServer
+                          ? 'Read-only views and diagnostics are allowed; changes and remote access are blocked.'
+                          : maintenanceServer
+                            ? 'Operational access, firewall rules, diagnostics, power recovery, and a non-replacing temporary backup are allowed; structural changes are blocked.'
+                            : 'Ordinary BLDesk server actions are available.'}
+                      </span>
+                    </div>
+                    {safetyNotice?.serverId === s.id && (
+                      <div role="alert" className="flex items-start justify-between gap-2 rounded border border-rose-500/40 bg-rose-500/10 px-2.5 py-2 text-rose-700 dark:text-rose-300">
+                        <span>{safetyNotice.text}</span>
+                        <button onClick={() => setSafetyNotice(null)} aria-label="Dismiss safety notice" className="flex-shrink-0 opacity-70 hover:opacity-100">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
                     <Row k="Power" v={s.power === 'on' ? 'running' : s.power === 'off' ? 'off' : 'unknown'} tone={s.power === 'on' ? 'ok' : s.power === 'off' ? 'bad' : undefined} />
                     <Row k="Public IPv4" v={s.publicIp ?? '—'} mono />
                     <Row k="Private IPv4" v={s.privateIp ?? '—'} mono />
                     <Row k="VPC" v={vpc ? `${vpc.name} (${vpc.cidr})` : s.vpcId ? `#${s.vpcId}` : 'none'} />
                     <Row k="Region" v={s.region} />
                     <Row
-                      k="Reachable from internet"
+                      k="Firewall permits from internet"
                       v={s.exposure === '…' ? 'reading…' : s.exposure === '?' ? 'unknown' : s.exposure === 'all' ? 'all ports' : s.exposure === 'none' ? 'nothing' : `ports ${s.exposure}`}
                       mono
                       tone={s.exposure === '?' || s.exposure === '…' ? undefined : s.exposureLevel === 'red' ? 'bad' : s.exposureLevel === 'amber' ? 'warn' : 'ok'}
@@ -562,8 +647,13 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
                           <ExternalLink className="w-3.5 h-3.5" /> Open
                         </button>
                       )}
-                      {s.publicIp && (
-                        <button onClick={() => void launchSsh({ host: s.publicIp!, username: 'root' })} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[#ced4da] dark:border-[#373b3e] hover:bg-[#f8f9fa] dark:hover:bg-[#32383e]">
+                      {s.publicIp && supportsNativeSsh && (
+                        <button
+                          onClick={() => void launchServerSsh(s)}
+                          disabled={!!sshBlockReason}
+                          title={sshBlockReason ?? 'Open native SSH as root'}
+                          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[#ced4da] dark:border-[#373b3e] hover:bg-[#f8f9fa] dark:hover:bg-[#32383e] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
+                        >
                           <Terminal className="w-3.5 h-3.5" /> SSH
                         </button>
                       )}

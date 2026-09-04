@@ -1,17 +1,27 @@
 import createClient from 'openapi-fetch'
 import type { paths } from '@shared/api/schema'
+import { BINARYLANE_API_ORIGIN } from '@shared/binarylane-policy'
 
-// In-flight mutation tracker to prevent duplicate concurrent requests and rapid-fire spam
+// Profile identity is part of every key so accounts can never share a request.
 const inFlightMutations = new Map<string, Promise<Response>>()
 const recentMutationTimestamps = new Map<string, number>()
-const MUTATION_COOLDOWN_MS = 1500 // 1.5 second debounce for identical mutations
+const MUTATION_COOLDOWN_MS = 1500
+
+async function mutationFingerprint(profileId: string, request: CanonicalRequest): Promise<string> {
+  const material = `${profileId}\u0000${request.method}\u0000${request.path}\u0000${request.body ?? ''}`
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(material))
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
 
 async function safeNormalizeResponse(response: Response): Promise<Response> {
+  // Fetch forbids bodies on these statuses. Re-wrapping an empty 204 as a JSON
+  // error would itself throw and make a successful deletion look failed.
+  if (response.status === 204 || response.status === 205 || response.status === 304) return response
   const contentType = response.headers.get('content-type') || ''
   if (!contentType.includes('application/json')) {
     try {
       const text = await response.text()
-      let parsed: any = { message: text }
+      let parsed: any
       try {
         parsed = JSON.parse(text)
       } catch {
@@ -21,7 +31,10 @@ async function safeNormalizeResponse(response: Response): Promise<Response> {
         status: response.status,
         statusText: response.statusText,
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(response.headers.get('x-bldesk-policy')
+            ? { 'X-BLDesk-Policy': response.headers.get('x-bldesk-policy')! }
+            : {})
         }
       })
     } catch {
@@ -31,188 +44,141 @@ async function safeNormalizeResponse(response: Response): Promise<Response> {
   return response
 }
 
-/**
- * A request reduced to the parts the native bridge needs.
- *
- * openapi-fetch calls `fetch(request, requestInitExt)`: a Request object, with
- * `requestInitExt` undefined. Method, headers and body therefore live on the
- * Request, not on `init` - so reading `init?.method || 'GET'` yields GET with no
- * body for every call, mutations included.
- *
- * On desktop that was invisible: the Request is handed to window.fetch untouched
- * and carries its own method. On Android the native path rebuilds the request
- * from these values, so every mutation went out as a GET - POST
- * /v2/servers/{id}/actions became a GET of the same path, which returns the
- * action list with HTTP 200 and creates nothing. It also meant `isMutation` was
- * never true, so the duplicate-submission guard below never engaged anywhere.
- */
-interface CanonicalRequest {
-  url: string
+export interface CanonicalRequest {
+  path: string
   method: string
-  headers: Record<string, string>
   body?: string
 }
 
-async function canonicalizeRequest(
+/** Preserve method/body when openapi-fetch supplies them on a Request object. */
+export async function canonicalizeRequest(
   input: RequestInfo | URL,
   init?: RequestInit
 ): Promise<CanonicalRequest> {
   const asRequest = typeof Request !== 'undefined' && input instanceof Request ? input : null
-  const url = asRequest
+  const rawUrl = asRequest
     ? asRequest.url
     : input instanceof URL
       ? input.toString()
       : String(input)
-  // `init` wins where present, but the Request is the source of truth here.
+  const url = new URL(rawUrl, BINARYLANE_API_ORIGIN)
+  if (url.origin !== BINARYLANE_API_ORIGIN) {
+    throw new Error('BinaryLane requests must use the pinned API origin.')
+  }
+
   const method = (init?.method || asRequest?.method || 'GET').toUpperCase()
-
-  const headers: Record<string, string> = {}
-  asRequest?.headers?.forEach((v, k) => {
-    headers[k] = v
-  })
-  new Headers((init?.headers as HeadersInit) || {}).forEach((v, k) => {
-    headers[k] = v
-  })
-
   let body: string | undefined
   if (typeof init?.body === 'string') {
     body = init.body
   } else if (init?.body != null) {
     body = String(init.body)
   } else if (asRequest && method !== 'GET' && method !== 'HEAD') {
-    // Clone: the original body must stay unread for the fallback path.
     body = (await asRequest.clone().text()) || undefined
   }
 
-  return { url, method, headers, body }
+  return { path: `${url.pathname}${url.search}`, method, body }
 }
 
-async function executeFetch(
-  req: CanonicalRequest,
-  input: RequestInfo | URL,
-  init: RequestInit | undefined,
-  token?: string
-): Promise<Response> {
-  const cap = typeof window !== 'undefined' ? (window as any).Capacitor : undefined
-  if (cap?.isNativePlatform?.() && cap?.Plugins?.CapacitorHttp) {
-    try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        ...req.headers
-      }
-      if (token && !headers.Authorization && !headers.authorization) {
-        headers.Authorization = `Bearer ${token}`
-      }
-
-      let parsedData: any = undefined
-      if (req.body !== undefined) {
-        try {
-          parsedData = JSON.parse(req.body)
-        } catch {
-          parsedData = req.body
-        }
-      }
-
-      const res = await cap.Plugins.CapacitorHttp.request({
-        url: req.url,
-        method: req.method,
-        headers,
-        data: parsedData
-      })
-
-      const responseBody = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
-      return new Response(responseBody, {
-        status: res.status,
-        statusText: res.status === 200 ? 'OK' : '',
-        headers: new Headers(res.headers as Record<string, string>)
-      })
-    } catch (err) {
-      console.warn('[NativeFetch] CapacitorHttp fallback triggered:', err)
-    }
+async function executeBridgeFetch(profileId: string, request: CanonicalRequest): Promise<Response> {
+  if (!window.bldeskApi?.binaryLaneRequest) {
+    return new Response(JSON.stringify({ message: 'The protected BinaryLane request bridge is unavailable.' }), {
+      status: 503,
+      statusText: 'Service Unavailable',
+      headers: { 'Content-Type': 'application/json', 'X-BLDesk-Policy': 'bridge-unavailable' }
+    })
   }
 
-  // Desktop / web: hand the original arguments through untouched, so the Request
-  // keeps its own method and body.
-  return window.fetch(input, init)
+  const result = await window.bldeskApi.binaryLaneRequest(profileId, request)
+  const body = result.status === 204 || result.status === 205 || result.status === 304 ? null : result.body
+  return new Response(body, {
+    status: result.status,
+    statusText: result.statusText,
+    headers: result.headers
+  })
 }
 
-export function createBinaryLaneClient(token: string) {
-  const cleanToken = token?.trim() || ''
+async function normalizeAndDispatch(profileId: string, request: CanonicalRequest): Promise<Response> {
+  const response = await safeNormalizeResponse(await executeBridgeFetch(profileId, request))
+  const locallyBlocked = response.headers.has('x-bldesk-policy')
+  if (locallyBlocked) {
+    let message = 'Blocked locally by this profile’s safety policy.'
+    try {
+      const parsed = await response.clone().json() as { message?: unknown }
+      if (typeof parsed.message === 'string' && parsed.message.trim()) message = parsed.message.trim()
+    } catch {
+      // The privileged bridge normally returns JSON; keep the generic local
+      // wording if a platform adapter cannot preserve it.
+    }
+    window.dispatchEvent(new CustomEvent('bldesk:safety_error', {
+      detail: { message, policy: response.headers.get('x-bldesk-policy') || undefined }
+    }))
+  } else if (response.status === 401 || response.status === 403) {
+    window.dispatchEvent(new CustomEvent('bldesk:auth_error', { detail: { status: response.status } }))
+  }
+  return response
+}
+
+export function createBinaryLaneClient(profileId: string) {
+  const cleanProfileId = profileId?.trim() || ''
 
   const customFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    if (!cleanToken) {
-      // Return 401 early if token is empty instead of making an unauthenticated network request
-      return new Response(JSON.stringify({ message: 'No API token configured.' }), {
+    if (!cleanProfileId) {
+      return new Response(JSON.stringify({ message: 'No account profile is active.' }), {
         status: 401,
         statusText: 'Unauthorized',
         headers: { 'Content-Type': 'application/json' }
       })
     }
 
-    const req = await canonicalizeRequest(input, init)
-    const { url, method } = req
-    const isMutation = method === 'POST' || method === 'PUT' || method === 'DELETE' || method === 'PATCH'
+    let request: CanonicalRequest
+    try {
+      request = await canonicalizeRequest(input, init)
+    } catch (error) {
+      return new Response(JSON.stringify({ message: error instanceof Error ? error.message : 'Invalid API request.' }), {
+        status: 400,
+        statusText: 'Bad Request',
+        headers: { 'Content-Type': 'application/json', 'X-BLDesk-Policy': 'invalid-request' }
+      })
+    }
 
-    // Spam & Concurrency Protection for Mutations (Create/Update/Delete/Actions)
+    const isMutation = ['POST', 'PUT', 'DELETE', 'PATCH'].includes(request.method)
     if (isMutation) {
-      const mutationKey = `${method}:${url}:${req.body ?? ''}`
+      const mutationKey = await mutationFingerprint(cleanProfileId, request)
       const now = Date.now()
+      for (const [key, timestamp] of recentMutationTimestamps) {
+        if (now - timestamp >= MUTATION_COOLDOWN_MS) recentMutationTimestamps.delete(key)
+      }
       const lastSent = recentMutationTimestamps.get(mutationKey) || 0
 
-      // If exact same mutation was triggered within the cooldown window, suppress duplicate
       if (now - lastSent < MUTATION_COOLDOWN_MS) {
-        console.warn(`[AntiSpam] Blocked duplicate mutation within cooldown: ${method} ${url}`)
         throw new Error('Action was already submitted. Please wait a moment before trying again.')
       }
-
-      // If exact same mutation is actively in-flight, return the existing pending promise
-      if (inFlightMutations.has(mutationKey)) {
-        console.warn(`[AntiSpam] Reusing in-flight request for: ${method} ${url}`)
-        return inFlightMutations.get(mutationKey)!
-      }
+      const existing = inFlightMutations.get(mutationKey)
+      if (existing) return (await existing).clone()
 
       recentMutationTimestamps.set(mutationKey, now)
-
       const executionPromise = (async () => {
         try {
-          const rawResponse = await executeFetch(req, input, init, cleanToken)
-          const response = await safeNormalizeResponse(rawResponse)
-
-          if (response.status === 401 || response.status === 403) {
-            window.dispatchEvent(new CustomEvent('bldesk:auth_error', { detail: { status: response.status } }))
-          }
-
-          return response
+          return await normalizeAndDispatch(cleanProfileId, request)
         } finally {
           inFlightMutations.delete(mutationKey)
         }
       })()
-
       inFlightMutations.set(mutationKey, executionPromise)
       return executionPromise
     }
 
-    // Standard GET / read query path
-    const rawResponse = await executeFetch(req, input, init, cleanToken)
-    const response = await safeNormalizeResponse(rawResponse)
-    if (response.status === 401 || response.status === 403) {
-      window.dispatchEvent(new CustomEvent('bldesk:auth_error', { detail: { status: response.status } }))
-    }
-    return response
+    return normalizeAndDispatch(cleanProfileId, request)
   }
 
-  const client = createClient<paths>({
-    baseUrl: 'https://api.binarylane.com.au',
+  return createClient<paths>({
+    baseUrl: BINARYLANE_API_ORIGIN,
     headers: {
-      Authorization: `Bearer ${cleanToken}`,
       'Content-Type': 'application/json',
       Accept: 'application/json'
     },
     fetch: customFetch
   })
-
-  return client
 }
 
 export type BinaryLaneClient = ReturnType<typeof createBinaryLaneClient>

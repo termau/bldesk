@@ -1,8 +1,14 @@
 import { app, BrowserWindow, Menu, MenuItemConstructorOptions, Notification, Tray, clipboard, nativeImage, NativeImage } from 'electron'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
-import { NotificationKind, SystemNotificationOptions, TrayFleetSummary, TraySettings } from '../shared/ipc-types'
-import { launchNativeTerminal } from './terminal'
+import type { AccountProfile, NotificationKind, SystemNotificationOptions, TrayFleetSummary, TraySettings } from '../shared/ipc-types'
+import { launchAuthorizedTerminal } from './remoteAccess'
+import { VaultManager } from './safeStorage'
+import {
+  getServerSafetyLevel,
+  isGuardedServerSafetyConfigured,
+  isRemoteAccessAllowed
+} from '../shared/binarylane-policy'
 import { DeepLinkManager } from './deeplink'
 import { formatDeepLink } from '../shared/deeplink'
 import { UpdaterManager } from './updater'
@@ -180,6 +186,18 @@ export class TrayManager {
     if (!this.tray) return
     const s = this.summary
 
+    // Native tray UI cannot trust the renderer's fleet summary to describe
+    // authorization. Read the privileged vault policy directly and fail
+    // closed if it is unavailable. launchAuthorizedTerminal performs the
+    // same checks again at click time to close stale-menu/profile races.
+    let activeProfile: AccountProfile | null = null
+    let safetyPolicyReadable = true
+    try {
+      activeProfile = VaultManager.getActiveProfile()
+    } catch {
+      safetyPolicyReadable = false
+    }
+
     // Tooltip: the counts at a glance.
     const parts: string[] = []
     if (s) {
@@ -244,35 +262,54 @@ export class TrayManager {
       })
       template.push({
         label: 'Servers',
-        submenu: sorted.map<MenuItemConstructorOptions>((srv) => ({
-          label: `${srv.status === 'active' ? '●' : srv.status === 'off' ? '○' : '◌'} ${srv.name}`,
-          sublabel: srv.ip,
-          submenu: [
-            {
-              label: 'Open in BLDesk',
-              click: () => {
-                this.showWindow()
-                DeepLinkManager.dispatch(formatDeepLink({ kind: 'server', serverId: srv.id }))
-              }
-            },
-            {
-              label: srv.ip ? `Copy IP  ${srv.ip}` : 'Copy IP',
-              enabled: !!srv.ip,
-              click: () => clipboard.writeText(srv.ip!)
-            },
-            {
-              label: 'SSH as root',
-              enabled: !!srv.ip && srv.status === 'active',
-              click: () => {
-                void launchNativeTerminal({ host: srv.ip!, username: 'root' }).then((r) => {
-                  if (!r.success) {
-                    this.notify({ title: `Couldn't SSH to ${srv.name}`, body: r.error || 'Unknown error' })
-                  }
-                })
-              }
-            }
-          ]
-        }))
+        submenu: sorted.map<MenuItemConstructorOptions>((srv) => {
+          const statusMarker = srv.status === 'active' ? '●' : srv.status === 'off' ? '○' : '◌'
+          const safetyLevel = activeProfile ? getServerSafetyLevel(activeProfile, srv.id) : null
+          const remoteAccessAllowed = activeProfile ? isRemoteAccessAllowed(activeProfile, srv.id) : false
+          const sshItem: MenuItemConstructorOptions = srv.remoteService === 'rdp'
+            ? { label: 'RDP 3389 — no launcher', enabled: false }
+            : !safetyPolicyReadable
+              ? { label: 'SSH unavailable — safety policy locked', enabled: false }
+              : !activeProfile
+                ? { label: 'SSH unavailable — no active profile', enabled: false }
+                : activeProfile.accessMode === 'observe'
+                  ? { label: 'SSH unavailable — observe-only', enabled: false }
+                  : activeProfile.accessMode === 'guarded' && !isGuardedServerSafetyConfigured(activeProfile)
+                    ? { label: 'SSH unavailable — finish guarded setup', enabled: false }
+                    : safetyLevel === 'locked'
+                      ? { label: 'Remote access blocked — Read-only', enabled: false }
+                      : {
+                          label: 'SSH as root',
+                          enabled: remoteAccessAllowed && !!srv.ip && srv.status === 'active',
+                          click: () => {
+                            void launchAuthorizedTerminal({ serverId: srv.id, host: srv.ip!, username: 'root' }).then((r) => {
+                              if (!r.success) {
+                                this.notify({ title: `Couldn't SSH to ${srv.name}`, body: r.error || 'Unknown error' })
+                              }
+                            })
+                          }
+                        }
+
+          return {
+            label: `${safetyLevel === 'locked' ? '🔒 ' : safetyLevel === 'maintenance' ? '🛠 ' : ''}${statusMarker} ${srv.name}`,
+            sublabel: srv.ip,
+            submenu: [
+              {
+                label: 'Open in BLDesk',
+                click: () => {
+                  this.showWindow()
+                  DeepLinkManager.dispatch(formatDeepLink({ kind: 'server', serverId: srv.id }))
+                }
+              },
+              {
+                label: srv.ip ? `Copy IP  ${srv.ip}` : 'Copy IP',
+                enabled: !!srv.ip,
+                click: () => clipboard.writeText(srv.ip!)
+              },
+              sshItem
+            ]
+          }
+        })
       })
     }
 
@@ -316,9 +353,10 @@ export class TrayManager {
     )
     template.push({ label: 'Settings', submenu: settingsItems })
 
+    const updaterSupported = UpdaterManager.getState().supported
     template.push({
-      label: 'Check for updates',
-      enabled: app.isPackaged,
+      label: updaterSupported ? 'Check for updates' : 'Updates unavailable for this build',
+      enabled: updaterSupported,
       click: () => void UpdaterManager.check()
     })
 

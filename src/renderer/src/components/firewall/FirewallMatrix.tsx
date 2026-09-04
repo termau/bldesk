@@ -5,6 +5,7 @@ import { BinaryLaneClient } from '../../api/client'
 import { useFleetFirewalls, describeApiError } from '../../api/queries'
 import { useConfirm } from '../../context/ConfirmContext'
 import { useTrackedActions } from '../../context/ActionTrackerContext'
+import { useProfileSafety } from '../../context/ProfileSafetyContext'
 import { recordChange, updateChange } from '../../lib/changelog'
 import { diffLines, describeFirewallRule, type DiffLine } from '../../lib/diff'
 import { primaryIpv4 } from '../../lib/deeplinks'
@@ -20,6 +21,8 @@ interface Props {
   profileId?: string
   /** Jump to the single-server view for this server. */
   onSelectServer: (serverId: number) => void
+  /** Blocks remote rule writes while leaving the audit and local groups usable. */
+  mutationBlockReason?: string | null
 }
 
 const LEVEL_CLASS = {
@@ -34,9 +37,16 @@ const LEVEL_CLASS = {
  * SSH open to the world" without reading 33 rule lists. "Copy ruleset" writes
  * one server's list to many, each behind its own diff and each logged.
  */
-export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, onSelectServer }) => {
+export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, onSelectServer, mutationBlockReason = null }) => {
   const confirmAction = useConfirm()
   const { track } = useTrackedActions()
+  const { serverActionBlockReason } = useProfileSafety()
+  const mutationBlockReasonRef = useRef<string | null>(mutationBlockReason)
+  mutationBlockReasonRef.current = mutationBlockReason
+  const serverActionBlockReasonRef = useRef(serverActionBlockReason)
+  serverActionBlockReasonRef.current = serverActionBlockReason
+  const firewallBlockReason = (serverId: number): string | null =>
+    mutationBlockReasonRef.current ?? serverActionBlockReasonRef.current(serverId, 'firewall')
 
   // --- Groups
   const [groups, setGroups] = useState<ServerGroup[]>(() => loadGroups(profileId))
@@ -96,18 +106,20 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
   }, [scoped, audits, onlyFlagged])
 
   const summary = useMemo(() => {
-    let red = 0
     let noRules = 0
     let unreadable = 0
     let ssh = 0
+    let rdp = 0
+    let otherAdmin = 0
     for (const s of scoped) {
       const f = audits.get(s.id) ?? []
-      if (f.some((x) => x.level === 'red')) red++
       if (f.some((x) => x.code === 'no-rules')) noRules++
       if (f.some((x) => x.code === 'unreadable')) unreadable++
       if (f.some((x) => x.code === 'ssh-world')) ssh++
+      if (f.some((x) => x.code === 'rdp-world')) rdp++
+      if (f.some((x) => x.code === 'admin-world')) otherAdmin++
     }
-    return { red, noRules, unreadable, ssh }
+    return { noRules, unreadable, ssh, rdp, otherAdmin }
   }, [scoped, audits])
 
   // --- Copy ruleset
@@ -128,9 +140,19 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
     })
 
   const handleCopy = async () => {
+    if (mutationBlockReasonRef.current) {
+      setCopyError(mutationBlockReasonRef.current)
+      return
+    }
     if (!client || sourceId == null || !sourceRules || targetIds.size === 0) return
     const source = servers.find((s) => s.id === sourceId)
-    const targets = scoped.filter((s) => targetIds.has(s.id) && s.id !== sourceId)
+    const requestedTargets = scoped.filter((s) => targetIds.has(s.id) && s.id !== sourceId)
+    const blockedTargets = requestedTargets.filter((server) => !!firewallBlockReason(server.id))
+    if (blockedTargets.length > 0) {
+      setCopyError(`Review the destination list: ${blockedTargets.map((server) => server.name).join(', ')} cannot receive firewall changes under the current safety policy.`)
+      return
+    }
+    const targets = requestedTargets
     const after = sourceRules.map(describeFirewallRule)
 
     // One combined preview: a heading line per target, then that target's diff.
@@ -157,12 +179,21 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
       log: false
     })
     if (!c.ok) return
+    if (mutationBlockReasonRef.current) {
+      setCopyError(mutationBlockReasonRef.current)
+      return
+    }
 
     setCopying(true)
     setCopyError(null)
     const failures: string[] = []
     for (const t of targets) {
       if (unchanged.includes(t)) continue
+      const beforeRecordReason = firewallBlockReason(t.id)
+      if (beforeRecordReason) {
+        failures.push(`Stopped locally before writing ${t.name}: ${beforeRecordReason}`)
+        break
+      }
       const changeId = await recordChange({
         label: 'Copy firewall rules',
         target: { kind: 'server', id: t.id, name: t.name },
@@ -171,6 +202,15 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
         diff: perTarget.get(t.id),
         source: 'ui'
       })
+      const beforeRequestReason = firewallBlockReason(t.id)
+      if (beforeRequestReason) {
+        void updateChange(changeId, {
+          outcome: 'failed',
+          detail: `Blocked locally before the request was sent: ${beforeRequestReason}`
+        })
+        failures.push(`Stopped locally before writing ${t.name}: ${beforeRequestReason}`)
+        break
+      }
       try {
         const { data, error } = await client.POST('/v2/servers/{server_id}/actions', {
           params: { path: { server_id: t.id } },
@@ -272,7 +312,8 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
               setCopyOpen((v) => !v)
               setCopyError(null)
             }}
-            disabled={scoped.length < 2}
+            disabled={scoped.length < 2 || !scoped.some((server) => !firewallBlockReason(server.id))}
+            title={scoped.some((server) => !firewallBlockReason(server.id)) ? 'Copy one server’s rules to others' : 'No writable destination server is available'}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white dark:bg-[#2b3035] hover:bg-[#f1f1f1] dark:hover:bg-[#343a40] border border-[#ced4da] dark:border-[#373b3e] rounded shadow-sm disabled:opacity-40"
           >
             <Copy className="w-3.5 h-3.5" /> Copy ruleset…
@@ -332,8 +373,15 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
             <ShieldAlert className="w-3.5 h-3.5" /> SSH open to the world on {summary.ssh}
           </span>
         )}
-        {summary.red - summary.ssh > 0 && (
-          <span className={`px-2.5 py-1 rounded border ${LEVEL_CLASS.red}`}>{summary.red - summary.ssh} more with admin ports open</span>
+        {summary.rdp > 0 && (
+          <span className={`px-2.5 py-1 rounded border ${LEVEL_CLASS.red} flex items-center gap-1`}>
+            <ShieldAlert className="w-3.5 h-3.5" /> RDP open to the world on {summary.rdp}
+          </span>
+        )}
+        {summary.otherAdmin > 0 && (
+          <span className={`px-2.5 py-1 rounded border ${LEVEL_CLASS.red}`}>
+            Other admin ports open to the world on {summary.otherAdmin}
+          </span>
         )}
         {summary.noRules > 0 && (
           <span className={`px-2.5 py-1 rounded border ${LEVEL_CLASS.amber} flex items-center gap-1`}>
@@ -368,33 +416,41 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
               ))}
             </select>
             <span className="text-[#6c757d]">to:</span>
-            <button onClick={() => setTargetIds(new Set(scoped.filter((s) => s.id !== sourceId).map((s) => s.id)))} className="underline text-[#017cb6]">
+            <button onClick={() => setTargetIds(new Set(scoped.filter((s) => s.id !== sourceId && !firewallBlockReason(s.id)).map((s) => s.id)))} className="underline text-[#017cb6] disabled:opacity-40">
               everyone {activeGroup ? `in @${activeGroup.name}` : ''}
             </button>
-            <button onClick={() => setTargetIds(new Set())} className="underline text-[#6c757d]">
+            <button onClick={() => setTargetIds(new Set())} className="underline text-[#6c757d] disabled:opacity-40">
               none
             </button>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {scoped
               .filter((s) => s.id !== sourceId)
-              .map((s) => (
-                <label
-                  key={s.id}
-                  className={`flex items-center gap-1.5 px-2 py-1 rounded border cursor-pointer ${
-                    targetIds.has(s.id) ? 'border-[#017cb6] bg-[#017cb6]/10' : 'border-[#ced4da] dark:border-[#373b3e]'
-                  }`}
-                >
-                  <input type="checkbox" checked={targetIds.has(s.id)} onChange={() => toggleTarget(s.id)} />
-                  <span className="font-mono">{s.name}</span>
-                </label>
-              ))}
+              .map((s) => {
+                const reason = firewallBlockReason(s.id)
+                return (
+                  <label
+                    key={s.id}
+                    title={reason ?? undefined}
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded border ${
+                      reason ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'
+                    } ${
+                      targetIds.has(s.id) ? 'border-[#017cb6] bg-[#017cb6]/10' : 'border-[#ced4da] dark:border-[#373b3e]'
+                    }`}
+                  >
+                    <input type="checkbox" checked={targetIds.has(s.id)} disabled={!!reason} onChange={() => toggleTarget(s.id)} />
+                    <span className="font-mono">{s.name}</span>
+                    {reason && <span className="text-[10px]">Read-only</span>}
+                  </label>
+                )
+              })}
           </div>
           {copyError && <pre className="text-rose-600 dark:text-rose-400 whitespace-pre-wrap">{copyError}</pre>}
           <div className="flex items-center gap-2">
             <button
               onClick={() => void handleCopy()}
-              disabled={copying || sourceId == null || !sourceRules || targetIds.size === 0}
+              disabled={copying || sourceId == null || !sourceRules || ![...targetIds].some((id) => !firewallBlockReason(id))}
+              title="Review and copy rules"
               className="px-3 py-1.5 rounded bg-[#017cb6] hover:bg-[#016594] text-white font-semibold disabled:opacity-40 flex items-center gap-1.5"
             >
               {copying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />}

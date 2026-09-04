@@ -17,6 +17,7 @@ import {
   ChevronLeft,
   X, UserCircle, LayoutTemplate} from 'lucide-react'
 import { DarkModeToggle } from './DarkModeToggle'
+import { useProfileSafety } from '../../context/ProfileSafetyContext'
 import logoFull from '../../assets/logo-binarylane.png'
 import iconLogo from '../../assets/icon-logo-binarylane.png'
 
@@ -72,7 +73,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isMobileDrawerOpen = false,
   onCloseMobileDrawer
 }) => {
+  const { accessMode, serverSafetyLevel } = useProfileSafety()
   const hasSubNav = Boolean(selectedServer && activeTab === 'servers')
+  const selectedSafetyLevel = selectedServer ? serverSafetyLevel(selectedServer.id) : null
 
   const menuItems: { id: ActiveTab; label: string; icon: React.FC<{ className?: string }>; badge?: number | string }[] = [
     { id: 'servers', label: 'Servers', icon: Server, badge: serverCount > 0 ? serverCount : undefined },
@@ -88,7 +91,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'billing', label: 'Billing & Invoices', icon: Receipt },
     { id: 'account', label: 'Account Details', icon: UserCircle },
     { id: 'history', label: 'History', icon: History },
-    { id: 'terminal', label: 'Embedded Shell', icon: Terminal }
+    {
+      id: 'terminal',
+      label: 'Embedded Shell',
+      icon: Terminal,
+      badge: accessMode === 'full' ? undefined : 'LEGACY ONLY'
+    }
   ]
 
   const serverSubNavItems: { id: ServerSubTab; label: string }[] = [
@@ -238,6 +246,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <div className="font-bold text-sm truncate text-[#212529] dark:text-white" title={selectedServer.name}>
                   {selectedServer.name}
                 </div>
+                {selectedSafetyLevel && (
+                  <span
+                    data-safety-level={selectedSafetyLevel}
+                    className={`mt-1 inline-flex rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                      selectedSafetyLevel === 'locked'
+                        ? 'border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+                        : selectedSafetyLevel === 'maintenance'
+                          ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                          : 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300'
+                    }`}
+                  >
+                    {selectedSafetyLevel === 'locked' ? 'Read' : selectedSafetyLevel === 'maintenance' ? 'Maint' : 'Normal'}
+                  </span>
+                )}
               </div>
 
               {/* SubNav Items */}
@@ -298,6 +320,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <span>Back to Server Fleet</span>
                   </button>
                   <div className="font-bold text-sm text-white truncate mt-1">{selectedServer?.name}</div>
+                  {selectedSafetyLevel && (
+                    <span
+                      data-safety-level={selectedSafetyLevel}
+                      className={`mt-1 inline-flex rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                        selectedSafetyLevel === 'locked'
+                          ? 'border-rose-400/50 bg-rose-500/15 text-rose-200'
+                          : selectedSafetyLevel === 'maintenance'
+                            ? 'border-amber-400/50 bg-amber-500/15 text-amber-200'
+                            : 'border-sky-400/50 bg-sky-500/15 text-sky-200'
+                      }`}
+                    >
+                      {selectedSafetyLevel === 'locked' ? 'Read' : selectedSafetyLevel === 'maintenance' ? 'Maint' : 'Normal'}
+                    </span>
+                  )}
                 </div>
               )}
 

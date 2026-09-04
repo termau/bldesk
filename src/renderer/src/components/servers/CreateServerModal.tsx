@@ -15,6 +15,7 @@ import {
   useAddSshKeyMutation
 } from '../../api/queries'
 import { logoForDistribution } from '../../lib/distroHelper'
+import { useProfileSafety } from '../../context/ProfileSafetyContext'
 import { listServerTemplates, imageSupportsUserData, TEMPLATES_EVENT, TEMPLATE_KIND, type ServerTemplate, type CreateServerPrefill } from '../../lib/serverTemplates'
 import {
   planMonthlyPrice,
@@ -68,6 +69,9 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
   const vpcsQuery = useVpcs(client)
   const createServer = useCreateServerMutation(client)
   const addSshKey = useAddSshKeyMutation(client)
+  const { resourceActionBlockReason } = useProfileSafety()
+  const resourceActionBlockReasonRef = useRef(resourceActionBlockReason)
+  resourceActionBlockReasonRef.current = resourceActionBlockReason
 
   const sizes = (sizesQuery.data || []) as SizeLike[]
   const regions = (regionsQuery.data || []) as any[]
@@ -304,6 +308,10 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
     const blocked = planUnavailableReason(selectedSize, region, image)
     if (blocked) return setErrorMsg(blocked.message)
     if (!agreed) return setErrorMsg('You need to accept the Terms of Service and refund policy.')
+    const initialVpcBlockReason = vpcId === undefined
+      ? null
+      : resourceActionBlockReasonRef.current('vpc', vpcId, 'maintenance')
+    if (initialVpcBlockReason) return setErrorMsg(`Blocked locally: ${initialVpcBlockReason}`)
 
     // The simple view collapses the three retention dropdowns into one choice.
     const daily = showAll ? dailyBackups : simpleBackups === 'none' ? 0 : 2
@@ -324,6 +332,16 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
       source: 'ui'
     })
     try {
+      const currentVpcBlockReason = vpcId === undefined
+        ? null
+        : resourceActionBlockReasonRef.current('vpc', vpcId, 'maintenance')
+      if (currentVpcBlockReason) {
+        void updateChange(changeId, {
+          outcome: 'failed',
+          detail: `Blocked locally before the request was sent: ${currentVpcBlockReason}`
+        })
+        return setErrorMsg(`Blocked locally: ${currentVpcBlockReason}`)
+      }
       const created = await createServer.mutateAsync({
         name: hostname.trim(),
         region,
@@ -562,11 +580,20 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                       <Tile selected={vpcId === undefined} onClick={() => setVpcId(undefined)}>
                         Public
                       </Tile>
-                      {vpcs.map((v: any) => (
-                        <Tile key={v.id} selected={vpcId === v.id} onClick={() => setVpcId(v.id)}>
-                          {v.name}
-                        </Tile>
-                      ))}
+                      {vpcs.map((v: any) => {
+                        const vpcBlockReason = resourceActionBlockReason('vpc', v.id, 'maintenance')
+                        return (
+                          <Tile
+                            key={v.id}
+                            selected={vpcId === v.id}
+                            disabled={!!vpcBlockReason}
+                            title={vpcBlockReason ?? `Create in ${v.name}`}
+                            onClick={() => setVpcId(v.id)}
+                          >
+                            {v.name}
+                          </Tile>
+                        )
+                      })}
                     </TileRow>
                   </Field>
 
@@ -786,13 +813,15 @@ const TileRow: React.FC<{ children: React.ReactNode; className?: string; cols?: 
 const Tile: React.FC<{
   selected: boolean
   disabled?: boolean
+  title?: string
   onClick: () => void
   className?: string
   children: React.ReactNode
-}> = ({ selected, disabled, onClick, className = '', children }) => (
+}> = ({ selected, disabled, title, onClick, className = '', children }) => (
   <button
     type="button"
     disabled={disabled}
+    title={title}
     onClick={onClick}
     className={`flex items-center justify-center gap-2 px-2.5 py-2 text-xs sm:px-4 sm:py-2.5 sm:text-sm font-medium rounded border transition ${
       selected

@@ -20,6 +20,7 @@ import { ActionInteractionPrompt } from './components/actions/ActionInteractionP
 import { ActionToasts } from './components/actions/ActionToasts'
 import { ActionTrackerProvider } from './context/ActionTrackerContext'
 import { ConfirmProvider } from './context/ConfirmContext'
+import { ProfileSafetyProvider, type SafetySettingsTarget } from './context/ProfileSafetyContext'
 import { HistoryView } from './components/history/HistoryView'
 import { NetworkMap } from './components/map/NetworkMap'
 import { TemplatesView } from './components/templates/TemplatesView'
@@ -35,6 +36,7 @@ import { AccountProfile } from '@shared/ipc-types'
 import { ThemeProvider } from './context/ThemeContext'
 import { useDeepLinkRouter } from './lib/deeplinks'
 import { AlertCircle, KeyRound, X, Server, Loader2 } from 'lucide-react'
+import { decideServerOperationAccess } from '@shared/binarylane-policy'
 
 // Strict QueryClient settings: Never retry failed mutations (create/update/delete/actions) to prevent spamming!
 const queryClient = new QueryClient({
@@ -100,13 +102,19 @@ function MainDashboard() {
   const [selectedServer, setSelectedServer] = useState<any | null>(null)
   const [activeServerSubTab, setActiveServerSubTab] = useState<ServerSubTab>('overview')
   const [isAuthOpen, setIsAuthOpen] = useState(false)
+  const [safetySettingsTarget, setSafetySettingsTarget] = useState<SafetySettingsTarget | null>(null)
   const [isPaletteOpen, setIsPaletteOpen] = useState(false)
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false)
-  const [profiles, setProfiles] = useState<Omit<AccountProfile, 'token'>[]>([])
+  const [profiles, setProfiles] = useState<AccountProfile[]>([])
   const [activeProfile, setActiveProfile] = useState<AccountProfile | null>(null)
   const [terminalHost, setTerminalHost] = useState<string | undefined>(undefined)
   const [authErrorBanner, setAuthErrorBanner] = useState<string | null>(null)
+  const [safetyErrorBanner, setSafetyErrorBanner] = useState<string | null>(null)
   const [isInitializing, setIsInitializing] = useState(true)
+  const openSafetySettings = React.useCallback((target?: SafetySettingsTarget) => {
+    setSafetySettingsTarget(target ?? null)
+    setIsAuthOpen(true)
+  }, [])
   // Linux draws nothing around a frameless window — no border, no shadow — so
   // the app looked like a flat rectangle. A one-pixel inset border stands in
   // for the window manager's, and drops away when maximised. macOS and Windows
@@ -136,6 +144,11 @@ function MainDashboard() {
     try {
       const pList = await window.bldeskApi.getProfiles()
       const active = await window.bldeskApi.getActiveProfile()
+      if (activeProfile?.id && active?.id !== activeProfile.id) {
+        await queryClient.cancelQueries()
+        queryClient.clear()
+        setSelectedServer(null)
+      }
       setProfiles(pList)
       setActiveProfile(active)
 
@@ -156,8 +169,20 @@ function MainDashboard() {
     const handleAuthError = () => {
       setAuthErrorBanner('API token authorization failed. Please verify or update your token in settings.')
     }
+    const handleSafetyError = (event: Event) => {
+      const message = (event as CustomEvent<{ message?: unknown }>).detail?.message
+      setSafetyErrorBanner(
+        typeof message === 'string' && message.trim()
+          ? message.trim()
+          : 'Blocked locally by this profile’s safety policy.'
+      )
+    }
     window.addEventListener('bldesk:auth_error', handleAuthError)
-    return () => window.removeEventListener('bldesk:auth_error', handleAuthError)
+    window.addEventListener('bldesk:safety_error', handleSafetyError)
+    return () => {
+      window.removeEventListener('bldesk:auth_error', handleAuthError)
+      window.removeEventListener('bldesk:safety_error', handleSafetyError)
+    }
   }, [])
 
   // The change log stamps entries with the active account.
@@ -170,15 +195,23 @@ function MainDashboard() {
   // theirs and couldn't be dismissed by switching away.
   useEffect(() => {
     setAuthErrorBanner(null)
+    setSafetyErrorBanner(null)
   }, [activeProfile?.id])
 
-  // Create API Client with Active Profile Token
+  // The privileged bridge resolves the profile token; it never enters renderer state.
   const client = React.useMemo(() => {
-    return activeProfile?.token ? createBinaryLaneClient(activeProfile.token) : null
-  }, [activeProfile?.token])
+    return activeProfile?.id ? createBinaryLaneClient(activeProfile.id) : null
+  }, [activeProfile?.id])
 
   // Queries with local cache rehydration
-  const { data: apiServers = [], isLoading: isLoadingServers, isFetchedAfterMount } = useServers(client, activeProfile?.id)
+  const {
+    data: apiServers = [],
+    isLoading: isLoadingServers,
+    isError: hasServerLoadError,
+    isFetching: isFetchingServers,
+    isFetchedAfterMount,
+    refetch: refetchServers
+  } = useServers(client, activeProfile?.id)
 
   // The API's `status` does not track power (vps/vps #161). Every view below
   // gets servers whose `status` reflects the inferred power state instead, with
@@ -193,9 +226,13 @@ function MainDashboard() {
    * limit in main covers the rest. Kept in step with the server list.
    */
   React.useEffect(() => {
-    const ips = apiServers.flatMap((s) => (s.networks?.v4 ?? []).map((n) => n.ip_address).filter(Boolean))
+    const ips = apiServers.flatMap((s) =>
+      decideServerOperationAccess(activeProfile, s.id, 'diagnostic').allowed
+        ? (s.networks?.v4 ?? []).map((n) => n.ip_address).filter(Boolean)
+        : []
+    )
     void window.bldeskApi?.setProbeTargets?.(ips as string[])
-  }, [apiServers])
+  }, [activeProfile, apiServers])
 
   // `selectedServer` is the object clicked in the list — a snapshot. The
   // details header reads status from it, so without this a server shut down
@@ -208,6 +245,9 @@ function MainDashboard() {
   const handleSwitchProfile = async (profileId: string) => {
     if (!window.bldeskApi) return
     setAuthErrorBanner(null)
+    await queryClient.cancelQueries()
+    queryClient.clear()
+    setSelectedServer(null)
     await window.bldeskApi.setActiveProfile(profileId)
     await refreshProfiles()
     queryClient.invalidateQueries()
@@ -238,7 +278,8 @@ function MainDashboard() {
     onSwitchProfile: handleSwitchProfile,
     onSelectServer: handleSelectServer,
     onSelectServerSubTab: setActiveServerSubTab,
-    onSelectTab: setActiveTab
+    onSelectTab: setActiveTab,
+    onSafetyBlocked: setSafetyErrorBanner
   })
 
   if (isInitializing) {
@@ -264,6 +305,7 @@ function MainDashboard() {
 
   return (
     <ConfirmProvider>
+    <ProfileSafetyProvider profile={activeProfile} onOpenSafetySettings={openSafetySettings}>
     <ActionTrackerProvider client={client} confirmPowerState={confirmPowerState}>
       <FleetWatch servers={servers} isFetchedAfterMount={isFetchedAfterMount} client={client} activeProfile={activeProfile} />
       <div
@@ -303,6 +345,47 @@ function MainDashboard() {
           </div>
         )}
 
+        {safetyErrorBanner && (
+          <div role="alert" className="bg-rose-700 text-white px-4 py-2 text-xs font-medium flex items-center justify-between gap-3 shadow-md z-30 animate-in slide-in-from-top duration-150">
+            <div className="flex min-w-0 items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>{safetyErrorBanner}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setSafetyErrorBanner(null)}
+              className="flex-shrink-0 rounded p-0.5 hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-white/70"
+              aria-label="Dismiss local safety message"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {activeProfile && (
+          <div className={`${activeProfile.accessMode === 'full' ? 'bg-red-700' : 'bg-emerald-700'} text-white px-4 py-2 text-xs font-medium shadow-md z-20 flex items-center justify-between gap-3`}>
+            <span>
+              {activeProfile.accessMode === 'full'
+                ? 'Full access is active: BinaryLane changes and remote access are available. Open the credential vault to switch to Observe or configure per-entity protection.'
+                : activeProfile.accessMode === 'observe'
+                  ? 'Observe-only safety is active: views and diagnostics remain available; BinaryLane changes and remote access are blocked.'
+                  : (activeProfile.protectedServerIds.length || 0) + (activeProfile.maintenanceServerIds ?? []).length +
+                      (activeProfile.protectedResources ?? []).length + (activeProfile.maintenanceResources ?? []).length === 0
+                    ? 'Protected mode setup is incomplete: views and diagnostics remain available; changes and remote access are blocked until at least one entity is Read-only or Maintenance.'
+                    : `Protected mode is active: ${activeProfile.protectedServerIds.length || 0} Read-only and ${(activeProfile.maintenanceServerIds ?? []).length} Maintenance server(s); ${(activeProfile.protectedResources ?? []).length} Read-only and ${(activeProfile.maintenanceResources ?? []).length} Maintenance resource(s). Unlisted entities are Normal.`}
+            </span>
+            {activeProfile.accessMode === 'guarded' && (
+              <button
+                type="button"
+                onClick={() => setIsAuthOpen(true)}
+                className="flex-shrink-0 rounded border border-white/50 bg-white/10 px-2.5 py-1 text-[11px] font-semibold hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/70"
+              >
+                Review safety
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Main Workspace Layout */}
         <div className="flex-1 flex overflow-hidden relative">
           {/* Navigation Sidebar (Global + SubNav + Mobile Drawer) */}
@@ -326,6 +409,7 @@ function MainDashboard() {
                   server={liveSelectedServer}
                   servers={servers}
                   client={client}
+                  profileId={activeProfile?.id}
                   activeSubTab={activeServerSubTab}
                   onSelectSubTab={setActiveServerSubTab}
                   onBack={() => setSelectedServer(null)}
@@ -336,6 +420,9 @@ function MainDashboard() {
                 <ServerList
                   servers={servers}
                   isLoading={isLoadingServers && servers.length === 0}
+                  hasLoadError={hasServerLoadError}
+                  isRetrying={hasServerLoadError && isFetchingServers}
+                  onRetry={() => void refetchServers()}
                   client={client}
                   onSelectServer={handleSelectServer}
                   onOpenTerminal={handleOpenTerminalForIp}
@@ -382,7 +469,7 @@ function MainDashboard() {
             )}
 
             {activeTab === 'backups' && (
-              <BackupManager client={client} servers={servers} />
+              <BackupManager key={`account-backups-${activeProfile?.id ?? 'none'}`} client={client} servers={servers} />
             )}
 
             {activeTab === 'keys' && (
@@ -445,9 +532,14 @@ function MainDashboard() {
         {/* Encrypted Vault Modal */}
         <AuthModal
           isOpen={isAuthOpen}
-          onClose={() => setIsAuthOpen(false)}
+          onClose={() => {
+            setIsAuthOpen(false)
+            setSafetySettingsTarget(null)
+          }}
           profiles={profiles}
           activeProfile={activeProfile}
+          servers={servers.map((server) => ({ id: Number(server.id), name: String(server.name || server.id) }))}
+          safetyTarget={safetySettingsTarget}
           onProfileAddedOrUpdated={refreshProfiles}
         />
 
@@ -478,6 +570,7 @@ function MainDashboard() {
         <ActionToasts />
       </div>
     </ActionTrackerProvider>
+    </ProfileSafetyProvider>
     </ConfirmProvider>
   )
 }

@@ -1,6 +1,6 @@
 import { app, BrowserWindow } from 'electron'
-import { resolve } from 'path'
 import { DEEP_LINK_SCHEME, findDeepLinkInArgv, isDeepLinkUrl } from '../shared/deeplink'
+import { IS_PRODUCTION_BUILD } from './developmentUserData'
 
 /**
  * OS-level registration and delivery of bldesk:// links.
@@ -26,13 +26,11 @@ export class DeepLinkManager {
     this.getWindow = opts.getWindow
     this.ensureWindow = opts.ensureWindow
 
-    // Register as handler. In dev, Electron itself is the executable, so the
-    // OS needs to be told to pass our script path as the first argument.
-    if (process.defaultApp && process.argv.length >= 2) {
-      app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME, process.execPath, [resolve(process.argv[1])])
-    } else {
-      app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME)
-    }
+    // Only the baked production flavor may claim or consume bldesk:// links.
+    // A packaged local build is still a local build and must have no protocol
+    // relationship with an installed Stable/Beta application.
+    if (!IS_PRODUCTION_BUILD || !app.isPackaged) return
+    app.setAsDefaultProtocolClient(DEEP_LINK_SCHEME)
 
     app.on('open-url', (event, url) => {
       event.preventDefault()
@@ -46,6 +44,7 @@ export class DeepLinkManager {
 
   /** Wire into the existing `second-instance` handler (Windows / Linux, app already running). */
   static handleSecondInstance(argv: readonly string[]): void {
+    if (!IS_PRODUCTION_BUILD || !app.isPackaged) return
     const url = findDeepLinkInArgv(argv)
     if (url) this.dispatch(url)
   }

@@ -41,8 +41,7 @@ const MUTATION_EXCEPTIONS = {
   'lib/powerState.ts': 'is_running diagnostic — changes nothing',
   'lib/deeplinks.ts': 'console URL fetch and SSH launch — read-only',
   'components/auth/AuthModal.tsx': 'GET /v2/account token validation only',
-  'components/servers/CreateServerModal.tsx': 'create form records via recordChange; no confirm by design (the form is the review)',
-  'components/actions/ActionInteractionPrompt.tsx': 'answers a BinaryLane question about an action already confirmed'
+  'components/servers/CreateServerModal.tsx': 'create form records via recordChange; no confirm by design (the form is the review)'
 }
 
 const SHARED_DIALOG = 'context/ConfirmContext.tsx'

@@ -14,26 +14,32 @@
 const { chmodSync, existsSync, renameSync, writeFileSync } = require('fs')
 const { join } = require('path')
 
-const LAUNCHER = `#!/bin/bash
+function launcherScript(executableName) {
+  return `#!/bin/bash
 # BLDesk launcher — see scripts/after-pack.cjs for why this exists.
 HERE="$(dirname "$(readlink -f "$0")")"
 if [ -n "$APPIMAGE" ] && [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null)" = "1" ]; then
   # AppImage on a kernel that denies user namespaces to unconfined binaries:
   # Chromium's setuid fallback can't live in a FUSE mount, so run unsandboxed.
-  exec "$HERE/bldesk.bin" --no-sandbox "$@"
+  exec "$HERE/${executableName}.bin" --no-sandbox "$@"
 fi
-exec "$HERE/bldesk.bin" "$@"
+exec "$HERE/${executableName}.bin" "$@"
 `
+}
 
 exports.default = async function afterPack(context) {
   if (context.electronPlatformName !== 'linux') return
   const dir = context.appOutDir
-  const real = join(dir, 'bldesk')
-  const bin = join(dir, 'bldesk.bin')
+  const executableName = context.packager.executableName
+  if (!executableName || !/^[a-z0-9._-]+$/i.test(executableName)) {
+    throw new Error('afterPack: missing or invalid Linux executable name')
+  }
+  const real = join(dir, executableName)
+  const bin = join(dir, `${executableName}.bin`)
   if (existsSync(bin)) return // already wrapped (second target on the same output)
   if (!existsSync(real)) throw new Error(`afterPack: expected ${real} to exist`)
   renameSync(real, bin)
-  writeFileSync(real, LAUNCHER, { mode: 0o755 })
+  writeFileSync(real, launcherScript(executableName), { mode: 0o755 })
   chmodSync(real, 0o755)
-  console.log('  • wrapped bldesk → launcher + bldesk.bin (conditional --no-sandbox for AppImage on restricted kernels)')
+  console.log(`  • wrapped ${executableName} → launcher + ${executableName}.bin (conditional --no-sandbox for AppImage on restricted kernels)`)
 }

@@ -1,24 +1,29 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AlertTriangle, HelpCircle, Loader2, Server as ServerIcon } from 'lucide-react'
 import { components } from '@shared/api/schema'
 import {
-  ActionAwaitingInteraction,
+  REVIEWED_SERVER_ACTION_TYPES,
+  type ProfileAccessMode,
+  type ServerOperationClass,
+  type ServerSafetyLevel
+} from '@shared/binarylane-policy'
+import {
+  type ActionAwaitingInteraction,
   useActionProceedMutation,
   useActionsAwaitingInteraction
 } from '../../api/queries'
-import { BinaryLaneClient } from '../../api/client'
+import { type BinaryLaneClient } from '../../api/client'
+import { useConfirm, type ConfirmRequest } from '../../context/ConfirmContext'
+import { useProfileSafety } from '../../context/ProfileSafetyContext'
+import { updateChange } from '../../lib/changelog'
+import { Modal } from '../ui/Modal'
 
 type UserInteractionType = components['schemas']['UserInteractionType']
 type ServerResponse = components['schemas']['Server']
 
 interface InteractionCopy {
   heading: string
-  /**
-   * What happened, in the operator's terms. Takes the action because the same
-   * interaction can be raised by more than one request: a stalled clean
-   * shutdown is equally reachable from Shutdown, Reboot or Power Cycle, and
-   * "would not shut down" reads wrong under a title that says "Reboot".
-   */
+  /** What happened, in the operator's terms. */
   explanation: (action: ActionAwaitingInteraction) => string
   /** The exact question being asked, phrased as the API documents it. */
   question: string
@@ -35,15 +40,9 @@ function operationPhrase(action: ActionAwaitingInteraction): string {
 }
 
 /**
- * Plain-language copy for each interaction type.
- *
- * The wording of `question` deliberately tracks what the OpenAPI enum documents
- * `proceed: true` to mean, and nothing further. The spec says only "see the
- * documentation for each type of interaction for the effect of providing 'true'
- * or 'false'", and that per-interaction documentation is not in the spec — so
- * this UI states what agreeing does and does not claim what BinaryLane does on
- * a decline. Better a slightly bare button than a confident wrong promise about
- * someone's server.
+ * The wording tracks what the OpenAPI interaction names actually establish.
+ * In particular, declining is not described as cancelling the parent action,
+ * so BLDesk must not make that promise.
  */
 const INTERACTION_COPY: Record<UserInteractionType, InteractionCopy> = {
   'continue-after-ping-failure': {
@@ -66,6 +65,134 @@ const INTERACTION_COPY: Record<UserInteractionType, InteractionCopy> = {
   }
 }
 
+const REVIEWED_ACTION_TYPES = new Set<string>(REVIEWED_SERVER_ACTION_TYPES)
+
+interface InteractionSafety {
+  accessMode: ProfileAccessMode
+  serverSafetyLevel: (serverId: unknown) => ServerSafetyLevel
+  serverActionBlockReason: (serverId: unknown, operation?: ServerOperationClass) => string | null
+}
+
+function serverIdForAction(action: ActionAwaitingInteraction): number | null {
+  return Number.isSafeInteger(action.resource_id) && Number(action.resource_id) > 0
+    ? Number(action.resource_id)
+    : null
+}
+
+function operationForAction(action: ActionAwaitingInteraction): ServerOperationClass {
+  if (action.type === 'reboot') return 'reboot'
+  if (action.type === 'power_cycle') return 'power-cycle'
+  return 'mutation'
+}
+
+/**
+ * Match the privileged broker's action-context checks before offering either
+ * answer. The broker resolves the action again under the active credential;
+ * this renderer check makes the disabled state clear and immediate.
+ */
+function interactionAnswerBlockReason(
+  action: ActionAwaitingInteraction,
+  safety: InteractionSafety,
+  clientAvailable: boolean
+): string | null {
+  if (!clientAvailable) return 'The protected BinaryLane connection is unavailable.'
+  if (action.status !== 'in-progress') {
+    return 'This action is not currently waiting in a state that can be answered.'
+  }
+  if (action.resource_type !== 'server') {
+    return 'BLDesk cannot verify this question against a specific server.'
+  }
+
+  const serverId = serverIdForAction(action)
+  if (serverId === null) return 'The server identity for this question cannot be verified safely.'
+
+  const interactionType = action.user_interaction_required.interaction_type
+  if (!Object.prototype.hasOwnProperty.call(INTERACTION_COPY, interactionType)) {
+    return 'This BinaryLane question type has not been reviewed for an in-app response.'
+  }
+
+  const policyReason = safety.serverActionBlockReason(serverId, operationForAction(action))
+  if (policyReason) return policyReason
+
+  if (safety.accessMode !== 'guarded') return null
+
+  const level = safety.serverSafetyLevel(serverId)
+  if (level === 'maintenance') {
+    const isStalledRestart =
+      interactionType === 'allow-unclean-power-off' &&
+      (action.type === 'reboot' || action.type === 'power_cycle')
+    return isStalledRestart
+      ? null
+      : 'Maintenance can answer only the unclean-power-off question raised by a reboot or power cycle.'
+  }
+
+  if (level === 'testable' && !REVIEWED_ACTION_TYPES.has(action.type)) {
+    return 'This server action is not in BLDesk’s reviewed action inventory.'
+  }
+
+  return null
+}
+
+function sameQuestion(left: ActionAwaitingInteraction, right: ActionAwaitingInteraction): boolean {
+  return left.id === right.id &&
+    left.status === right.status &&
+    left.resource_type === right.resource_type &&
+    left.resource_id === right.resource_id &&
+    left.type === right.type &&
+    left.user_interaction_required.interaction_type === right.user_interaction_required.interaction_type
+}
+
+function confirmationForAnswer(
+  action: ActionAwaitingInteraction,
+  serverName: string,
+  proceed: boolean
+): ConfirmRequest {
+  const serverId = serverIdForAction(action)
+  const interactionType = action.user_interaction_required.interaction_type
+  const target = { kind: 'server' as const, id: serverId ?? undefined, name: serverName }
+
+  if (interactionType === 'allow-unclean-power-off') {
+    return proceed
+      ? {
+          title: 'Permit unclean power off',
+          target,
+          summary: `Tell BinaryLane it may force the server off so ${operationPhrase(action)} can continue.`,
+          severity: 'destructive',
+          confirmLabel: 'Force power off',
+          notes: [
+            'This is equivalent to pulling the power plug. Unwritten data can be lost and the filesystem may need repair.'
+          ],
+          changes: [{ label: 'Response', from: 'Waiting for an answer', to: 'Permit unclean power off' }]
+        }
+      : {
+          title: 'Decline unclean power off',
+          target,
+          summary: 'Tell BinaryLane not to force the server off. BLDesk does not assume this cancels the original action.',
+          severity: 'normal',
+          confirmLabel: 'Send “Do not force”',
+          changes: [{ label: 'Response', from: 'Waiting for an answer', to: 'Do not permit unclean power off' }]
+        }
+  }
+
+  return proceed
+    ? {
+        title: 'Accept server creation result',
+        target,
+        summary: 'Tell BinaryLane to assume the server was created successfully despite the failed ping.',
+        severity: 'normal',
+        confirmLabel: 'Assume it succeeded',
+        changes: [{ label: 'Response', from: 'Waiting for an answer', to: 'Assume creation succeeded' }]
+      }
+    : {
+        title: 'Decline server creation result',
+        target,
+        summary: 'Tell BinaryLane not to assume the server was created successfully after the failed ping.',
+        severity: 'normal',
+        confirmLabel: 'Send “Do not assume”',
+        changes: [{ label: 'Response', from: 'Waiting for an answer', to: 'Do not assume creation succeeded' }]
+      }
+}
+
 interface ActionInteractionPromptProps {
   client: BinaryLaneClient | null
   profileId?: string
@@ -75,22 +202,31 @@ interface ActionInteractionPromptProps {
 export function ActionInteractionPrompt({ client, profileId, servers = [] }: ActionInteractionPromptProps) {
   const { data: waiting = [] } = useActionsAwaitingInteraction(client, profileId)
   const proceedMutation = useActionProceedMutation(client)
-  /**
-   * Scoped to the action it came from: a failed answer must not leave its error
-   * sitting under the next action's question once the poll moves on.
-   */
+  const confirmAction = useConfirm()
+  const { accessMode, serverSafetyLevel, serverActionBlockReason } = useProfileSafety()
+  /** A failed answer must not leave its error under the next action's question. */
   const [error, setError] = useState<{ actionId: number; message: string } | null>(null)
-  /**
-   * Actions not to show right now — either just answered (hidden until the poll
-   * catches up, so the modal cannot flash back) or deferred by the user.
-   */
+  /** Answered or locally deferred actions, hidden until the poll catches up. */
   const [suppressed, setSuppressed] = useState<number[]>([])
+  const [handlingAnswer, setHandlingAnswer] = useState(false)
 
   /**
-   * Forget suppressions once BinaryLane stops reporting the action as waiting.
-   * Keeps the list from growing for the life of the session, and means a fresh
-   * question raised later on the same action is not silently swallowed.
+   * A confirmation can stay open across a query refresh or profile switch.
+   * Keep the facts used by the last-moment check current without restarting the
+   * user's pending promise.
    */
+  const latest = useRef({
+    waiting,
+    clientAvailable: !!client,
+    safety: { accessMode, serverSafetyLevel, serverActionBlockReason }
+  })
+  latest.current = {
+    waiting,
+    clientAvailable: !!client,
+    safety: { accessMode, serverSafetyLevel, serverActionBlockReason }
+  }
+
+  /** Forget suppressions after BinaryLane stops reporting the action as waiting. */
   useEffect(() => {
     setSuppressed((prev) => {
       const next = prev.filter((id) => waiting.some((action) => action.id === id))
@@ -105,105 +241,84 @@ export function ActionInteractionPrompt({ client, profileId, servers = [] }: Act
 
   const copy = INTERACTION_COPY[current.user_interaction_required.interaction_type]
   const isDanger = copy?.tone === 'danger'
+  const server = current.resource_type === 'server'
+    ? servers.find((item) => item.id === current.resource_id)
+    : undefined
+  const serverName = server?.name ||
+    (serverIdForAction(current) !== null ? `Server #${current.resource_id}` : 'Unknown server')
+  const safety = { accessMode, serverSafetyLevel, serverActionBlockReason }
+  const blockReason = interactionAnswerBlockReason(current, safety, !!client)
 
-  const server =
-    current.resource_type === 'server'
-      ? servers.find((s) => s.id === current.resource_id)
-      : undefined
+  const suppressCurrent = () => {
+    setSuppressed((prev) => prev.includes(current.id) ? prev : [...prev, current.id])
+  }
 
   const answer = async (proceed: boolean) => {
     setError(null)
+    const initialBlock = interactionAnswerBlockReason(current, safety, !!client)
+    if (initialBlock) {
+      setError({ actionId: current.id, message: initialBlock })
+      return
+    }
+
+    setHandlingAnswer(true)
+    let changeId: string | undefined
     try {
-      await proceedMutation.mutateAsync({ actionId: current.id, proceed })
-      setSuppressed((prev) => [...prev, current.id])
+      const confirmed = await confirmAction(confirmationForAnswer(current, serverName, proceed))
+      if (!confirmed.ok) return
+      changeId = confirmed.changeId
+
+      // Recheck the exact action, question, resource and current safety policy
+      // immediately before the mutation. The privileged broker checks again.
+      const fresh = latest.current.waiting.find((action) => action.id === current.id)
+      if (!fresh || !sameQuestion(current, fresh)) {
+        const message = 'This BinaryLane question changed or is no longer waiting. Refresh it before answering.'
+        await updateChange(changeId, { outcome: 'failed', detail: message })
+        setError({ actionId: current.id, message })
+        return
+      }
+      const freshBlock = interactionAnswerBlockReason(
+        fresh,
+        latest.current.safety,
+        latest.current.clientAvailable
+      )
+      if (freshBlock) {
+        await updateChange(changeId, { outcome: 'failed', detail: freshBlock })
+        setError({ actionId: current.id, message: freshBlock })
+        return
+      }
+
+      await proceedMutation.mutateAsync({ actionId: fresh.id, proceed })
+      await updateChange(changeId, {
+        outcome: 'completed',
+        detail: 'BinaryLane accepted this response. The original action may still be running.'
+      })
+      setSuppressed((prev) => prev.includes(current.id) ? prev : [...prev, current.id])
     } catch (err) {
-      setError({ actionId: current.id, message: err instanceof Error ? err.message : String(err) })
+      const message = err instanceof Error ? err.message : String(err)
+      await updateChange(changeId, { outcome: 'failed', detail: message })
+      setError({ actionId: current.id, message })
+    } finally {
+      setHandlingAnswer(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center overlay-safe bg-black/60 backdrop-blur-sm animate-in fade-in duration-100">
-      <div className="w-full max-w-lg bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg shadow-2xl overflow-hidden flex flex-col text-xs">
-        {/* Header */}
-        <div
-          className={`flex items-center gap-2 px-5 py-4 border-b ${
-            isDanger
-              ? 'bg-red-500/10 border-red-500/40'
-              : 'bg-[#f1f1f1] dark:bg-[#262a2e] border-[#ced4da] dark:border-[#373b3e]'
-          }`}
-        >
-          {isDanger ? (
-            <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
-          ) : (
-            <HelpCircle className="w-4 h-4 text-[#017cb6] flex-shrink-0" />
-          )}
-          <h3 className="font-bold text-sm text-[#212529] dark:text-white">
-            {copy?.heading || 'BinaryLane needs an answer to continue'}
-          </h3>
-        </div>
-
-        <div className="p-5 space-y-4">
-          {/* Which machine this is about */}
-          <div className="flex items-center gap-2 text-[#495057] dark:text-[#ced4da]">
-            <ServerIcon className="w-3.5 h-3.5 text-[#6c757d] flex-shrink-0" />
-            <span className="font-semibold">
-              {server?.name || (current.resource_id ? `Resource #${current.resource_id}` : 'Your account')}
-            </span>
-            <span className="text-[#6c757d]">
-              · {current.title} · action #{current.id}
-            </span>
-          </div>
-
-          {/* BinaryLane's own description of this specific action */}
-          {current.reason && (
-            <div className="bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded p-3 text-[#212529] dark:text-white">
-              {current.reason}
-            </div>
-          )}
-
-          <p className="text-[#495057] dark:text-[#ced4da] leading-relaxed">
-            {copy
-              ? copy.explanation(current)
-              : 'This action is paused until you answer. BLDesk does not recognise this interaction type, so please check the BinaryLane control panel before answering.'}
-          </p>
-
-          <p className="font-semibold text-[#212529] dark:text-white">
-            {copy?.question || 'Proceed with this action?'}
-          </p>
-
-          {/* Deliberately not the app's usual #6c757d small-print grey: that is
-              2.8:1 on this panel, and the fact that nothing moves until someone
-              answers is the whole reason the modal is interrupting anyone. */}
-          <p className="text-[11px] text-[#495057] dark:text-[#adb5bd]">
-            This action stays paused until it is answered — it will not continue on its own.
-          </p>
-
-          {outstanding.length > 1 && (
-            <p className="text-[11px] text-[#495057] dark:text-[#adb5bd]">
-              {outstanding.length - 1} other action{outstanding.length > 2 ? 's are' : ' is'} also waiting.
-            </p>
-          )}
-
-          {error?.actionId === current.id && (
-            <div className="bg-red-500/10 border border-red-500/40 text-red-500 rounded p-2.5 flex items-start gap-2">
-              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
-              <span>{error.message}</span>
-            </div>
-          )}
-        </div>
-
-        {/* Both answers are submissions, so neither is a safe close — there is
-            deliberately no close button and no backdrop click-to-dismiss. The
-            watch is account-wide, though, so an action left paused in an earlier
-            session shows up here on launch; without a way to defer, the app
-            would be unusable until someone made a data-loss decision about a
-            server they may not have been thinking about. "Decide later" answers
-            nothing and lasts only for this session. */}
-        <div className="flex items-center gap-2 px-5 py-4 border-t border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#262a2e]">
+    <Modal
+      title={copy?.heading || 'BinaryLane needs an answer to continue'}
+      icon={isDanger ? AlertTriangle : HelpCircle}
+      headTone={isDanger ? 'text-red-500' : 'text-[#017cb6]'}
+      onClose={suppressCurrent}
+      busy={handlingAnswer || proceedMutation.isPending}
+      size="md"
+      z={60}
+      labelledBy="action-interaction-title"
+      footer={
+        <div className="flex items-center gap-2 px-5 py-4 bg-[#f8f9fa] dark:bg-[#262a2e]">
           <button
             type="button"
-            disabled={proceedMutation.isPending}
-            onClick={() => setSuppressed((prev) => [...prev, current.id])}
+            disabled={handlingAnswer || proceedMutation.isPending}
+            onClick={suppressCurrent}
             className="px-2 py-1.5 text-xs text-[#495057] dark:text-[#adb5bd] hover:text-[#212529] dark:hover:text-white underline underline-offset-2 disabled:opacity-50 transition"
           >
             Decide later
@@ -211,7 +326,8 @@ export function ActionInteractionPrompt({ client, profileId, servers = [] }: Act
           <div className="flex-1" />
           <button
             type="button"
-            disabled={proceedMutation.isPending}
+            disabled={!!blockReason || handlingAnswer || proceedMutation.isPending}
+            aria-describedby={blockReason ? 'action-interaction-safety-block' : undefined}
             onClick={() => answer(false)}
             className="px-3 py-1.5 text-xs font-medium rounded border border-[#ced4da] dark:border-[#373b3e] text-[#495057] dark:text-[#ced4da] hover:bg-[#e9ecef] dark:hover:bg-[#343a40] disabled:opacity-50 transition"
           >
@@ -219,17 +335,74 @@ export function ActionInteractionPrompt({ client, profileId, servers = [] }: Act
           </button>
           <button
             type="button"
-            disabled={proceedMutation.isPending}
+            disabled={!!blockReason || handlingAnswer || proceedMutation.isPending}
+            aria-describedby={blockReason ? 'action-interaction-safety-block' : undefined}
             onClick={() => answer(true)}
             className={`px-4 py-1.5 text-xs font-medium rounded text-white shadow-sm flex items-center gap-1.5 disabled:opacity-50 transition ${
               isDanger ? 'bg-red-600 hover:bg-red-700' : 'bg-[#017cb6] hover:bg-[#016594]'
             }`}
           >
-            {proceedMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            {(handlingAnswer || proceedMutation.isPending) && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
             <span>{copy?.confirmLabel || 'Yes, continue'}</span>
           </button>
         </div>
+      }
+    >
+      <div className="p-5 space-y-4 text-xs">
+        <div className="flex items-center gap-2 text-[#495057] dark:text-[#ced4da]">
+          <ServerIcon className="w-3.5 h-3.5 text-[#6c757d] flex-shrink-0" />
+          <span className="font-semibold">{serverName}</span>
+          <span className="text-[#6c757d]">
+            · {current.title || current.type} · action #{current.id}
+          </span>
+        </div>
+
+        {current.reason && (
+          <div className="bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded p-3 text-[#212529] dark:text-white">
+            {current.reason}
+          </div>
+        )}
+
+        <p className="text-[#495057] dark:text-[#ced4da] leading-relaxed">
+          {copy
+            ? copy.explanation(current)
+            : 'This action is paused until you answer. BLDesk does not recognise this interaction type, so please check the BinaryLane control panel before answering.'}
+        </p>
+
+        <p className="font-semibold text-[#212529] dark:text-white">
+          {copy?.question || 'Proceed with this action?'}
+        </p>
+
+        <p className="text-[11px] text-[#495057] dark:text-[#adb5bd]">
+          This action stays paused until it is answered — it will not continue on its own. Closing this prompt chooses “Decide later” and sends nothing.
+        </p>
+
+        {outstanding.length > 1 && (
+          <p className="text-[11px] text-[#495057] dark:text-[#adb5bd]">
+            {outstanding.length - 1} other action{outstanding.length > 2 ? 's are' : ' is'} also waiting.
+          </p>
+        )}
+
+        {blockReason && (
+          <div
+            id="action-interaction-safety-block"
+            className="bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-300 rounded p-2.5 flex items-start gap-2"
+          >
+            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+            <span>
+              <span className="font-semibold">Response blocked by local safety.</span> {blockReason}{' '}
+              The BinaryLane action remains paused.
+            </span>
+          </div>
+        )}
+
+        {error?.actionId === current.id && (
+          <div className="bg-red-500/10 border border-red-500/40 text-red-500 rounded p-2.5 flex items-start gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+            <span>{error.message}</span>
+          </div>
+        )}
       </div>
-    </div>
+    </Modal>
   )
 }

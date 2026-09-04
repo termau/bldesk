@@ -19,11 +19,13 @@ import {
 import { BinaryLaneClient } from '../../api/client'
 import { useFirewallRules, useUpdateFirewallRulesMutation } from '../../api/queries'
 import { useConfirm } from '../../context/ConfirmContext'
-import { recordChange, updateChange, type ChangeTarget } from '../../lib/changelog'
+import { updateChange, type ChangeTarget } from '../../lib/changelog'
 import { diffLines, describeFirewallRule } from '../../lib/diff'
 import { useTrackedActions } from '../../context/ActionTrackerContext'
+import { useProfileSafety } from '../../context/ProfileSafetyContext'
 import { describeApiError } from '../../api/queries'
 import { FirewallMatrix } from './FirewallMatrix'
+import { SafetyPolicyBadge } from '../ui/SafetyPolicyBadge'
 
 interface FirewallManagerProps {
   client: BinaryLaneClient | null
@@ -36,9 +38,17 @@ interface FirewallManagerProps {
    * [] — which emptied every view for the whole poll interval.
    */
   servers: any[]
+  /** Disable BinaryLane rule writes while preserving inspection and export. */
+  mutationBlockReason?: string | null
 }
 
-export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initialServerId, profileId, servers }) => {
+export const FirewallManager: React.FC<FirewallManagerProps> = ({
+  client,
+  initialServerId,
+  profileId,
+  servers,
+  mutationBlockReason: suppliedMutationBlockReason = null
+}) => {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [view, setView] = useState<'server' | 'matrix'>('server')
 
@@ -48,6 +58,13 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
 
   const activeServerId = selectedServerId || (servers.length > 0 ? servers[0].id : null)
   const activeServer = servers.find((s) => s.id === activeServerId)
+  const { serverActionBlockReason } = useProfileSafety()
+  const hasFirewallCloneTarget = servers.some(
+    (server) => server.id !== activeServerId && !serverActionBlockReason(server.id, 'firewall')
+  )
+  const mutationBlockReason = suppliedMutationBlockReason ?? (
+    activeServerId ? serverActionBlockReason(activeServerId, 'firewall') : 'Select a server first.'
+  )
 
   const firewallQuery = useFirewallRules(client, activeServerId)
   const updateFirewall = useUpdateFirewallRulesMutation(client, activeServerId)
@@ -77,6 +94,35 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
   // Handle Preset Selection
   const confirmAction = useConfirm()
   const { track } = useTrackedActions()
+  const mutationBlockReasonRef = useRef<string | null>(mutationBlockReason)
+  mutationBlockReasonRef.current = mutationBlockReason
+  const serverActionBlockReasonRef = useRef(serverActionBlockReason)
+  serverActionBlockReasonRef.current = serverActionBlockReason
+  const mutationControlsDisabled = updateFirewall.isPending || !!mutationBlockReason
+  const ensureMutationAllowed = (changeId?: string): boolean => {
+    const reason = mutationBlockReasonRef.current
+    if (!reason) return true
+    if (changeId) {
+      void updateChange(changeId, {
+        outcome: 'failed',
+        detail: `Blocked locally before the request was sent: ${reason}`
+      })
+    }
+    setErrorMsg(reason)
+    return false
+  }
+  const ensureFirewallTargetAllowed = (serverId: number, changeId?: string): boolean => {
+    const reason = serverActionBlockReasonRef.current(serverId, 'firewall')
+    if (!reason) return true
+    if (changeId) {
+      void updateChange(changeId, {
+        outcome: 'failed',
+        detail: `Blocked locally before the request was sent: ${reason}`
+      })
+    }
+    setErrorMsg(reason)
+    return false
+  }
   const fwTarget = (): ChangeTarget => ({ kind: 'server', id: activeServerId ?? undefined, name: activeServer?.name || String(activeServerId) })
   /** Run a rule-list write, hand the action to the tracker, and keep the change log honest. */
   const finishFirewall = async (changeId: string | undefined, write: Promise<any>) => {
@@ -136,6 +182,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
     e.preventDefault()
     setErrorMsg(null)
 
+    if (!ensureMutationAllowed()) return
     if (!activeServerId) return
 
     const newRule: any = {
@@ -145,6 +192,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean),
+      destination_addresses: ['0.0.0.0/0'],
       description: ruleDescription.trim() || undefined
     }
 
@@ -188,6 +236,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
       diff: diffLines(currentRules.map(describeFirewallRule), updatedList.map(describeFirewallRule))
     })
     if (!c.ok) return
+    if (!ensureMutationAllowed(c.changeId)) return
 
     try {
       await finishFirewall(c.changeId, updateFirewall.mutateAsync(updatedList))
@@ -204,6 +253,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
 
   // Handle Move Up/Down (Re-ordering)
   const handleMoveRule = async (index: number, direction: 'up' | 'down') => {
+    if (!ensureMutationAllowed()) return
     if (!activeServerId) return
     const newIndex = direction === 'up' ? index - 1 : index + 1
     if (newIndex < 0 || newIndex >= currentRules.length) return
@@ -212,23 +262,25 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
     const [moved] = reordered.splice(index, 1)
     reordered.splice(newIndex, 0, moved)
 
-    // Reordering changes which rule wins; worth a log line but not a dialog.
-    const changeId = await recordChange({
-      label: 'Reorder firewall rules',
+    const c = await confirmAction({
+      title: 'Reorder firewall rules',
       target: fwTarget(),
-      severity: 'normal',
+      summary: `Moves rule #${index + 1} ${direction}. Rule order changes which matching rule wins.`,
       diff: diffLines(currentRules.map(describeFirewallRule), reordered.map(describeFirewallRule)),
-      source: 'ui'
+      confirmLabel: 'Reorder rules'
     })
+    if (!c.ok) return
+    if (!ensureMutationAllowed(c.changeId)) return
     try {
-      await finishFirewall(changeId, updateFirewall.mutateAsync(reordered))
+      await finishFirewall(c.changeId, updateFirewall.mutateAsync(reordered))
     } catch (err: any) {
-      alert(`Reorder failed: ${err.message}`)
+      setErrorMsg(`Reorder failed: ${err.message}`)
     }
   }
 
   // Handle Delete
   const handleDeleteRule = async (index: number) => {
+    if (!ensureMutationAllowed()) return
     if (!activeServerId) return
     const rule = currentRules[index]
     const filtered = currentRules.filter((_, i) => i !== index)
@@ -241,6 +293,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
       confirmLabel: 'Delete rule'
     })
     if (!c.ok) return
+    if (!ensureMutationAllowed(c.changeId)) return
 
     try {
       await finishFirewall(c.changeId, updateFirewall.mutateAsync(filtered))
@@ -249,12 +302,13 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
         body: `Rule #${index + 1} removed.`
       })
     } catch (err: any) {
-      alert(`Failed to delete rule: ${err.message}`)
+      setErrorMsg(`Failed to delete rule: ${err.message}`)
     }
   }
 
   // Handle Disable / Flush Firewall
   const handleFlushFirewall = async () => {
+    if (!ensureMutationAllowed()) return
     if (!activeServerId) return
     const c = await confirmAction({
       title: 'Disable firewall',
@@ -266,6 +320,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
       confirmLabel: 'Disable firewall'
     })
     if (!c.ok) return
+    if (!ensureMutationAllowed(c.changeId)) return
 
     try {
       await finishFirewall(c.changeId, updateFirewall.mutateAsync([]))
@@ -274,7 +329,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
         body: `Flushed all firewall rules on #${activeServerId}.`
       })
     } catch (err: any) {
-      alert(`Flush failed: ${err.message}`)
+      setErrorMsg(`Flush failed: ${err.message}`)
     }
   }
 
@@ -294,6 +349,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
   const handleImportSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setImportError(null)
+    if (!ensureMutationAllowed()) return
 
     try {
       const parsed = JSON.parse(importJsonText)
@@ -310,6 +366,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
         confirmLabel: 'Import'
       })
       if (!c.ok) return
+      if (!ensureMutationAllowed(c.changeId)) return
       await finishFirewall(c.changeId, updateFirewall.mutateAsync(parsed))
       setIsImportOpen(false)
       setImportJsonText('')
@@ -337,6 +394,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
   const handleCloneSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!client || !targetServerId) return
+    if (!ensureFirewallTargetAllowed(targetServerId)) return
 
     const targetName = servers.find((s) => s.id === targetServerId)?.name || String(targetServerId)
     // Read the target's current list first so the diff is a true before → after.
@@ -356,6 +414,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
       confirmLabel: 'Clone rules'
     })
     if (!c.ok) return
+    if (!ensureFirewallTargetAllowed(targetServerId, c.changeId)) return
 
     setIsCloning(true)
     try {
@@ -375,7 +434,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
       setIsCloneOpen(false)
     } catch (err: any) {
       void updateChange(c.changeId, { outcome: 'failed', detail: err.message })
-      alert(`Clone failed: ${err.message}`)
+      setErrorMsg(`Clone failed: ${err.message}`)
     } finally {
       setIsCloning(false)
     }
@@ -383,12 +442,32 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
 
   return (
     <div className="h-full flex flex-col p-6 space-y-6 overflow-y-auto bg-[#f8f9fa] dark:bg-[#212529] text-[#212529] dark:text-[#f8f9fa]">
+      {mutationBlockReason && (
+        <div
+          role="status"
+          data-safety-mutation-controls="blocked"
+          className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs rounded flex items-start gap-2"
+        >
+          <Shield className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span><strong>Read-only firewall view.</strong> {mutationBlockReason} Inspection, server/matrix navigation, refresh, and JSON export remain available.</span>
+        </div>
+      )}
+      {errorMsg && (
+        <div role="alert" className="p-2.5 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded flex items-center justify-between gap-2 text-xs">
+          <span className="flex items-center gap-2"><AlertCircle className="w-4 h-4 flex-shrink-0" />{errorMsg}</span>
+          <button type="button" onClick={() => setErrorMsg(null)} className="hover:underline flex-shrink-0">Dismiss</button>
+        </div>
+      )}
       {/* Header & Target Server Selector */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-[#212529] dark:text-white flex items-center gap-2.5">
             <Shield className="w-5 h-5 text-[#017cb6]" />
             <span>Cloud Network Firewall</span>
+            <SafetyPolicyBadge
+              scope="server"
+              serverId={view === 'server' ? activeServerId : undefined}
+            />
           </h1>
           <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-0.5">
             Hardware edge packet filtering evaluated before traffic reaches your VM.
@@ -431,9 +510,9 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
 
           <button
             onClick={() => setIsCloneOpen(true)}
-            disabled={!activeServerId || currentRules.length === 0}
+            disabled={!activeServerId || currentRules.length === 0 || !hasFirewallCloneTarget}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#212529] dark:text-slate-200 bg-white dark:bg-[#2b3035] hover:bg-[#f1f1f1] dark:hover:bg-[#343a40] border border-[#ced4da] dark:border-[#373b3e] rounded transition shadow-sm disabled:opacity-40"
-            title="Clone rules to another server"
+            title={hasFirewallCloneTarget ? 'Clone rules to another server' : 'No writable destination server is available'}
           >
             <Share2 className="w-3.5 h-3.5" />
             <span>Clone</span>
@@ -441,8 +520,9 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
 
           <button
             onClick={() => setIsImportOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#212529] dark:text-slate-200 bg-white dark:bg-[#2b3035] hover:bg-[#f1f1f1] dark:hover:bg-[#343a40] border border-[#ced4da] dark:border-[#373b3e] rounded transition shadow-sm"
-            title="Import rules from JSON"
+            disabled={!!mutationBlockReason}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#212529] dark:text-slate-200 bg-white dark:bg-[#2b3035] hover:bg-[#f1f1f1] dark:hover:bg-[#343a40] border border-[#ced4da] dark:border-[#373b3e] rounded transition shadow-sm disabled:opacity-40"
+            title={mutationBlockReason ?? 'Import rules from JSON'}
           >
             <Upload className="w-3.5 h-3.5" />
             <span>Import</span>
@@ -460,7 +540,9 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
 
           <button
             onClick={() => setIsAdding((prev) => !prev)}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm"
+            disabled={!!mutationBlockReason && !isAdding}
+            title={isAdding ? 'Close rule form' : mutationBlockReason ?? 'Add firewall rule'}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm disabled:opacity-40"
           >
             <Plus className="w-4 h-4" />
             <span>{isAdding ? 'Close Form' : 'Add Rule'}</span>
@@ -500,40 +582,41 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
               <button
                 type="button"
                 onClick={() => applyPreset('ssh')}
-                className="px-2 py-0.5 text-[10px] font-medium bg-[#f1f1f1] dark:bg-[#343a40] text-[#212529] dark:text-slate-200 rounded hover:bg-[#e9ecef]"
+                disabled={!!mutationBlockReason}
+                title={mutationBlockReason ?? 'SSH preset'}
+                className="px-2 py-0.5 text-[10px] font-medium bg-[#f1f1f1] dark:bg-[#343a40] text-[#212529] dark:text-slate-200 rounded hover:bg-[#e9ecef] disabled:opacity-40"
               >
                 SSH (22)
               </button>
               <button
                 type="button"
                 onClick={() => applyPreset('http_https')}
-                className="px-2 py-0.5 text-[10px] font-medium bg-[#f1f1f1] dark:bg-[#343a40] text-[#212529] dark:text-slate-200 rounded hover:bg-[#e9ecef]"
+                disabled={!!mutationBlockReason}
+                title={mutationBlockReason ?? 'HTTP/HTTPS preset'}
+                className="px-2 py-0.5 text-[10px] font-medium bg-[#f1f1f1] dark:bg-[#343a40] text-[#212529] dark:text-slate-200 rounded hover:bg-[#e9ecef] disabled:opacity-40"
               >
                 HTTP/HTTPS
               </button>
               <button
                 type="button"
                 onClick={() => applyPreset('wireguard')}
-                className="px-2 py-0.5 text-[10px] font-medium bg-[#f1f1f1] dark:bg-[#343a40] text-[#212529] dark:text-slate-200 rounded hover:bg-[#e9ecef]"
+                disabled={!!mutationBlockReason}
+                title={mutationBlockReason ?? 'WireGuard preset'}
+                className="px-2 py-0.5 text-[10px] font-medium bg-[#f1f1f1] dark:bg-[#343a40] text-[#212529] dark:text-slate-200 rounded hover:bg-[#e9ecef] disabled:opacity-40"
               >
                 WireGuard
               </button>
               <button
                 type="button"
                 onClick={() => applyPreset('drop_all')}
-                className="px-2 py-0.5 text-[10px] font-medium bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 rounded hover:bg-rose-100"
+                disabled={!!mutationBlockReason}
+                title={mutationBlockReason ?? 'Drop-all preset'}
+                className="px-2 py-0.5 text-[10px] font-medium bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 rounded hover:bg-rose-100 disabled:opacity-40"
               >
                 Drop All
               </button>
             </div>
           </div>
-
-          {errorMsg && (
-            <div className="p-2.5 bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
 
           <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
             <div>
@@ -541,6 +624,8 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
               <select
                 value={ruleAction}
                 onChange={(e) => setRuleAction(e.target.value as any)}
+                disabled={!!mutationBlockReason}
+                title={mutationBlockReason ?? undefined}
                 className="w-full px-2.5 py-1.5 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded text-[#212529] dark:text-white font-medium focus:outline-none focus:border-[#017cb6]"
               >
                 <option value="accept">ACCEPT</option>
@@ -553,6 +638,8 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
               <select
                 value={ruleProtocol}
                 onChange={(e) => setRuleProtocol(e.target.value as any)}
+                disabled={!!mutationBlockReason}
+                title={mutationBlockReason ?? undefined}
                 className="w-full px-2.5 py-1.5 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded text-[#212529] dark:text-white uppercase font-mono focus:outline-none focus:border-[#017cb6]"
               >
                 <option value="tcp">TCP</option>
@@ -566,7 +653,8 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
               <label className="text-[11px] text-[#495057] dark:text-[#ced4da] block mb-1">Port(s)</label>
               <input
                 type="text"
-                disabled={ruleProtocol === 'icmp' || ruleProtocol === 'all'}
+                disabled={!!mutationBlockReason || ruleProtocol === 'icmp' || ruleProtocol === 'all'}
+                title={mutationBlockReason ?? undefined}
                 placeholder="22 or 80, 443"
                 value={rulePorts}
                 onChange={(e) => setRulePorts(e.target.value)}
@@ -581,6 +669,8 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
                 placeholder="0.0.0.0/0"
                 value={ruleSource}
                 onChange={(e) => setRuleSource(e.target.value)}
+                disabled={!!mutationBlockReason}
+                title={mutationBlockReason ?? undefined}
                 className="w-full px-2.5 py-1.5 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded text-[#212529] dark:text-white font-mono focus:outline-none focus:border-[#017cb6]"
               />
             </div>
@@ -592,6 +682,8 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
                 placeholder="Description"
                 value={ruleDescription}
                 onChange={(e) => setRuleDescription(e.target.value)}
+                disabled={!!mutationBlockReason}
+                title={mutationBlockReason ?? undefined}
                 className="w-full px-2.5 py-1.5 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded text-[#212529] dark:text-white focus:outline-none focus:border-[#017cb6]"
               />
             </div>
@@ -607,7 +699,8 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
             </button>
             <button
               type="submit"
-              disabled={updateFirewall.isPending}
+              disabled={mutationControlsDisabled}
+              title={mutationBlockReason ?? 'Save firewall rule'}
               className="px-4 py-1.5 bg-[#017cb6] hover:bg-[#016594] text-white text-xs font-medium rounded transition flex items-center gap-1.5 shadow-sm"
             >
               {updateFirewall.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
@@ -635,7 +728,8 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
           {currentRules.length > 0 && (
             <button
               onClick={handleFlushFirewall}
-              disabled={updateFirewall.isPending}
+              disabled={mutationControlsDisabled}
+              title={mutationBlockReason ?? 'Disable firewall'}
               className="flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition border border-rose-300 dark:border-rose-800"
             >
               <Unlock className="w-3.5 h-3.5" />
@@ -660,7 +754,9 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
             </p>
             <button
               onClick={() => setIsAdding(true)}
-              className="mt-2 px-3 py-1.5 bg-[#017cb6] hover:bg-[#016594] text-white rounded text-xs font-medium"
+              disabled={!!mutationBlockReason}
+              title={mutationBlockReason ?? 'Add first filter rule'}
+              className="mt-2 px-3 py-1.5 bg-[#017cb6] hover:bg-[#016594] text-white rounded text-xs font-medium disabled:opacity-40"
             >
               Add First Filter Rule
             </button>
@@ -688,17 +784,17 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
                       <div className="flex flex-col">
                         <button
                           onClick={() => handleMoveRule(idx, 'up')}
-                          disabled={idx === 0}
+                          disabled={mutationControlsDisabled || idx === 0}
                           className="text-[#6c757d] hover:text-[#017cb6] disabled:opacity-20 transition"
-                          title="Move Rule Up"
+                          title={mutationBlockReason ?? 'Move Rule Up'}
                         >
                           <ChevronUp className="w-3 h-3" />
                         </button>
                         <button
                           onClick={() => handleMoveRule(idx, 'down')}
-                          disabled={idx === currentRules.length - 1}
+                          disabled={mutationControlsDisabled || idx === currentRules.length - 1}
                           className="text-[#6c757d] hover:text-[#017cb6] disabled:opacity-20 transition"
-                          title="Move Rule Down"
+                          title={mutationBlockReason ?? 'Move Rule Down'}
                         >
                           <ChevronDown className="w-3 h-3" />
                         </button>
@@ -742,8 +838,9 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
                   {/* Actions */}
                   <button
                     onClick={() => handleDeleteRule(idx)}
-                    className="p-1.5 text-[#6c757d] hover:text-rose-500 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                    title="Delete Rule"
+                    disabled={mutationControlsDisabled}
+                    className="p-1.5 text-[#6c757d] hover:text-rose-500 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition disabled:opacity-40"
+                    title={mutationBlockReason ?? 'Delete Rule'}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -781,12 +878,15 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
                   accept=".json"
                   ref={fileInputRef}
                   onChange={handleFileUpload}
+                  disabled={!!mutationBlockReason}
                   className="hidden"
                 />
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-full py-2 px-3 border border-dashed border-[#ced4da] dark:border-[#373b3e] hover:border-[#017cb6] bg-[#f8f9fa] dark:bg-[#212529] rounded text-xs text-[#6c757d] dark:text-slate-300 transition flex items-center justify-center gap-2"
+                  disabled={!!mutationBlockReason}
+                  title={mutationBlockReason ?? 'Choose JSON file'}
+                  className="w-full py-2 px-3 border border-dashed border-[#ced4da] dark:border-[#373b3e] hover:border-[#017cb6] bg-[#f8f9fa] dark:bg-[#212529] rounded text-xs text-[#6c757d] dark:text-slate-300 transition flex items-center justify-center gap-2 disabled:opacity-40"
                 >
                   <Upload className="w-3.5 h-3.5" />
                   <span>Choose JSON File...</span>
@@ -803,6 +903,8 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
                   placeholder={`[\n  {\n    "action": "accept",\n    "protocol": "tcp",\n    "destination_ports": ["22", "80", "443"],\n    "source_addresses": ["0.0.0.0/0"],\n    "description": "Production Web & SSH"\n  }\n]`}
                   value={importJsonText}
                   onChange={(e) => setImportJsonText(e.target.value)}
+                  disabled={!!mutationBlockReason}
+                  title={mutationBlockReason ?? undefined}
                   className="w-full p-3 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded text-[#212529] dark:text-white font-mono text-[11px] focus:outline-none focus:border-[#017cb6]"
                 />
               </div>
@@ -824,7 +926,8 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
                 </button>
                 <button
                   type="submit"
-                  disabled={updateFirewall.isPending}
+                  disabled={mutationControlsDisabled}
+                  title={mutationBlockReason ?? 'Apply imported rules'}
                   className="px-4 py-1.5 bg-[#017cb6] hover:bg-[#016594] text-white text-xs font-medium rounded transition flex items-center gap-1.5 shadow-sm"
                 >
                   {updateFirewall.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
@@ -870,11 +973,14 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
                   <option value="">Select a server...</option>
                   {servers
                     .filter((s) => s.id !== activeServerId)
-                    .map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name} (#{s.id})
-                      </option>
-                    ))}
+                    .map((s) => {
+                      const reason = serverActionBlockReason(s.id, 'firewall')
+                      return (
+                        <option key={s.id} value={s.id} disabled={!!reason}>
+                          {s.name} (#{s.id}){reason ? ' — Read-only' : ''}
+                        </option>
+                      )
+                    })}
                 </select>
               </div>
 
@@ -888,7 +994,8 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
                 </button>
                 <button
                   type="submit"
-                  disabled={isCloning || !targetServerId}
+                  disabled={isCloning || !targetServerId || !!(targetServerId && serverActionBlockReason(targetServerId, 'firewall'))}
+                  title={targetServerId ? serverActionBlockReason(targetServerId, 'firewall') ?? 'Apply cloned rules' : 'Select a destination server'}
                   className="px-4 py-1.5 bg-[#017cb6] hover:bg-[#016594] text-white font-medium rounded transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
                 >
                   {isCloning && <Loader2 className="w-3.5 h-3.5 animate-spin" />}

@@ -25,7 +25,9 @@ import {
   useVpcs
 } from '../../api/queries'
 import { useConfirm } from '../../context/ConfirmContext'
+import { useProfileSafety } from '../../context/ProfileSafetyContext'
 import { updateChange } from '../../lib/changelog'
+import { SafetyPolicyBadge } from '../ui/SafetyPolicyBadge'
 
 type Server = components['schemas']['Server']
 type Network = components['schemas']['Network']
@@ -33,6 +35,8 @@ type Network = components['schemas']['Network']
 interface ServerNetworkProps {
   client: BinaryLaneClient | null
   server: Server
+  /** Keep reads and copy controls usable while disabling BinaryLane writes. */
+  mutationBlockReason?: string | null
 }
 
 // ---------------------------------------------------------------------------
@@ -67,9 +71,10 @@ const Row: React.FC<{ label: string; children: React.ReactNode; hint?: string }>
   </div>
 )
 
-const Switch: React.FC<{ checked: boolean; disabled?: boolean; onChange: (next: boolean) => void; label: string }> = ({
+const Switch: React.FC<{ checked: boolean; disabled?: boolean; disabledReason?: string | null; onChange: (next: boolean) => void; label: string }> = ({
   checked,
   disabled,
+  disabledReason,
   onChange,
   label
 }) => (
@@ -79,6 +84,7 @@ const Switch: React.FC<{ checked: boolean; disabled?: boolean; onChange: (next: 
     aria-checked={checked}
     aria-label={label}
     disabled={disabled}
+    title={disabledReason ?? undefined}
     onClick={() => onChange(!checked)}
     className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition disabled:opacity-50 disabled:cursor-not-allowed ${
       checked ? 'bg-[#017cb6]' : 'bg-[#ced4da] dark:bg-[#495057]'
@@ -125,10 +131,11 @@ const InlineEdit: React.FC<{
   value: string
   placeholder: string
   disabled?: boolean
+  disabledReason?: string | null
   mono?: boolean
   onSave: (next: string) => void
   onClear?: () => void
-}> = ({ value, placeholder, disabled, mono = true, onSave, onClear }) => {
+}> = ({ value, placeholder, disabled, disabledReason, mono = true, onSave, onClear }) => {
   const [editing, setEditing] = useState(false)
   // Seeded when the editor opens, never resynced while open: the server query polls every
   // 10s and must not clobber what the user is typing.
@@ -147,7 +154,7 @@ const InlineEdit: React.FC<{
           }}
           disabled={disabled}
           className="text-[#6c757d] hover:text-[#017cb6] disabled:opacity-50"
-          title="Edit"
+          title={disabledReason ?? 'Edit'}
           aria-label={`Edit ${placeholder}`}
         >
           <Pencil className="w-3.5 h-3.5" />
@@ -157,7 +164,7 @@ const InlineEdit: React.FC<{
             onClick={onClear}
             disabled={disabled}
             className="text-[#6c757d] hover:text-rose-500 disabled:opacity-50"
-            title="Clear"
+            title={disabledReason ?? 'Clear'}
             aria-label={`Clear ${placeholder}`}
           >
             <Trash2 className="w-3.5 h-3.5" />
@@ -210,12 +217,13 @@ const InlineEdit: React.FC<{
 // Main component
 // ---------------------------------------------------------------------------
 
-export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: initialServer }) => {
+export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: initialServer, mutationBlockReason = null }) => {
   // The `server` prop is a snapshot from the list; poll the real thing so edits show up.
   const serverQuery = useServer(client, initialServer.id)
   const server: Server = serverQuery.data || initialServer
   const vpcsQuery = useVpcs(client)
   const action = useNetworkActionMutation(client, server.id)
+  const { resourceActionBlockReason, resourceSafetyLevel } = useProfileSafety()
 
   const [copied, setCopied] = useState<string | null>(null)
   const [pending, setPending] = useState<string | null>(null)
@@ -250,6 +258,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
   // tab switch is still running when the tab remounts, and must still block new submissions.
   const mutatingElsewhere = useIsMutating({ mutationKey: networkActionMutationKey(server.id) })
   const busy = action.isPending || mutatingElsewhere > 0
+  const mutationControlsDisabled = busy || !!mutationBlockReason
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text)
@@ -261,12 +270,78 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
   // same tick (or a click during the confirm dialog of another) could otherwise both submit.
   const confirmAction = useConfirm()
   const inFlight = useRef(false)
+  const mutationBlockReasonRef = useRef<string | null>(mutationBlockReason)
+  mutationBlockReasonRef.current = mutationBlockReason
+  const resourceActionBlockReasonRef = useRef(resourceActionBlockReason)
+  resourceActionBlockReasonRef.current = resourceActionBlockReason
+  const currentVpcIdRef = useRef<number | null>(server.vpc_id ?? null)
+  currentVpcIdRef.current = server.vpc_id ?? null
+
+  const vpcMembershipBlockReason = (
+    targetVpcId: number | null,
+    currentVpcId = server.vpc_id ?? null,
+    getResourceReason = resourceActionBlockReason,
+    serverReason = mutationBlockReason
+  ): string | null => {
+    if (targetVpcId !== null) {
+      const targetReason = getResourceReason('vpc', targetVpcId, 'maintenance')
+      if (targetReason) return targetReason
+    }
+    if (serverReason) return serverReason
+    return currentVpcId !== null && currentVpcId !== targetVpcId
+      ? getResourceReason('vpc', currentVpcId, 'maintenance')
+      : null
+  }
+
+  const currentVpcAddressBlockReason = (
+    currentVpcId = server.vpc_id ?? null,
+    getResourceReason = resourceActionBlockReason,
+    serverReason = mutationBlockReason
+  ): string | null => {
+    if (serverReason) return serverReason
+    return currentVpcId !== null
+      ? getResourceReason('vpc', currentVpcId, 'maintenance')
+      : 'The server is no longer attached to a VPC.'
+  }
+
+  const selectedTargetVpc = vpcChoice
+    ? vpcs.find((vpc) => String(vpc.id) === vpcChoice)
+    : undefined
+  const unresolvedTargetVpc = vpcChoice !== '' && !selectedTargetVpc
+  const selectedMoveBlockReason = unresolvedTargetVpc
+    ? 'The selected VPC is no longer available. Choose a current destination.'
+    : vpcMembershipBlockReason(selectedTargetVpc?.id ?? null)
+  const currentVpcMutationBlockReason = server.vpc_id
+    ? currentVpcAddressBlockReason()
+    : null
+  const currentVpcAddressBlockReasonNow = (): string | null => currentVpcAddressBlockReason(
+    currentVpcIdRef.current,
+    resourceActionBlockReasonRef.current,
+    mutationBlockReasonRef.current
+  )
+  const vpcMembershipBlockReasonNow = (targetVpcId: number | null): string | null => vpcMembershipBlockReason(
+    targetVpcId,
+    currentVpcIdRef.current,
+    resourceActionBlockReasonRef.current,
+    mutationBlockReasonRef.current
+  )
 
   /**
    * Confirm, run, poll, and report — every mutation on this tab goes through here.
    * Resolves true only when BinaryLane reported the action completed.
    */
-  const run = async (label: string, payload: NetworkActionPayload, confirmText: string): Promise<boolean> => {
+  const run = async (
+    label: string,
+    payload: NetworkActionPayload,
+    confirmText: string,
+    extraBlockReason?: () => string | null
+  ): Promise<boolean> => {
+    const blockReason = (): string | null => extraBlockReason?.() ?? mutationBlockReasonRef.current
+    const initialBlockReason = blockReason()
+    if (initialBlockReason) {
+      setError(initialBlockReason)
+      return false
+    }
     if (inFlight.current || busy) return false
     inFlight.current = true
     try {
@@ -277,6 +352,15 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
         severity: 'normal'
       })
       if (!c.ok) return false
+      const latestBlockReason = blockReason()
+      if (latestBlockReason) {
+        void updateChange(c.changeId, {
+          outcome: 'failed',
+          detail: `Blocked locally before the request was sent: ${latestBlockReason}`
+        })
+        setError(latestBlockReason)
+        return false
+      }
       setError(null)
       setNotice(null)
       setPending(label)
@@ -327,12 +411,14 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
               <InlineEdit
                 value=""
                 placeholder="new private IPv4"
-                disabled={busy}
+                disabled={busy || !!currentVpcMutationBlockReason}
+                disabledReason={currentVpcMutationBlockReason}
                 onSave={(next) =>
                   run(
                     `Change VPC IPv4 ${n.ip_address} → ${next}`,
                     { type: 'change_vpc_ipv4', current_ipv4_address: n.ip_address, new_ipv4_address: next },
-                    `Change this server's private VPC address from ${n.ip_address} to ${next}? Existing connections on the old address will drop.`
+                    `Change this server's private VPC address from ${n.ip_address} to ${next}? Existing connections on the old address will drop.`,
+                    currentVpcAddressBlockReasonNow
                   )
                 }
               />
@@ -345,7 +431,8 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
             <InlineEdit
               value={n.reverse_name || ''}
               placeholder="no reverse DNS"
-              disabled={busy}
+              disabled={mutationControlsDisabled}
+              disabledReason={mutationBlockReason}
               onSave={(next) =>
                 run(
                   `Set reverse DNS for ${n.ip_address}`,
@@ -375,6 +462,16 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
   return (
     <div className="space-y-6">
       {/* Status strips */}
+      {mutationBlockReason && (
+        <div
+          role="status"
+          data-safety-mutation-controls="blocked"
+          className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs rounded flex items-start gap-2"
+        >
+          <Shield className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span><strong>Read-only network view.</strong> {mutationBlockReason} Addresses, status, and copy controls remain available.</span>
+        </div>
+      )}
       {pending && (
         <div
           role="status"
@@ -513,7 +610,8 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
             <span className="text-[#6c757d] dark:text-slate-400">{ipv6Enabled ? 'Enabled' : 'Disabled'}</span>
             <Switch
               checked={ipv6Enabled}
-              disabled={busy}
+              disabled={mutationControlsDisabled}
+              disabledReason={mutationBlockReason}
               label="Toggle IPv6"
               onChange={(next) =>
                 run(
@@ -539,7 +637,8 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
                   <div key={ns} className="flex items-center gap-2">
                     <span className="font-mono">{ns}</span>
                     <button
-                      disabled={busy}
+                      disabled={mutationControlsDisabled}
+                      title={mutationBlockReason ?? 'Remove'}
                       onClick={() =>
                         run(
                           `Remove reverse nameserver ${ns}`,
@@ -548,7 +647,6 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
                         )
                       }
                       className="text-[#6c757d] hover:text-rose-500 disabled:opacity-50"
-                      title="Remove"
                       aria-label={`Remove reverse nameserver ${ns}`}
                     >
                       <Trash2 className="w-3.5 h-3.5" />
@@ -575,14 +673,15 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
                     value={newNameserver}
                     onChange={(e) => setNewNameserver(e.target.value)}
                     placeholder="ns1.example.com"
-                    disabled={busy}
+                    disabled={mutationControlsDisabled}
+                    title={mutationBlockReason ?? undefined}
                     className={`${inputClass} w-48`}
                   />
                   <button
                     type="submit"
-                    disabled={busy || !newNameserver.trim()}
+                    disabled={mutationControlsDisabled || !newNameserver.trim()}
                     className={subtleBtn}
-                    title="Add nameserver"
+                    title={mutationBlockReason ?? 'Add nameserver'}
                     aria-label="Add reverse nameserver"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -604,7 +703,8 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
             <span className="text-[#6c757d] dark:text-slate-400">{networks?.port_blocking ? 'Enabled' : 'Disabled'}</span>
             <Switch
               checked={!!networks?.port_blocking}
-              disabled={busy}
+              disabled={mutationControlsDisabled}
+              disabledReason={mutationBlockReason}
               label="Toggle default port blocking"
               onChange={(next) =>
                 run(
@@ -637,8 +737,16 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
         title="Virtual Private Cloud"
         icon={<Cable className="w-4 h-4" />}
         action={
-          currentVpc ? (
-            <Badge tone="private">VPC #{currentVpc.id}</Badge>
+          server.vpc_id ? (
+            <span className="flex items-center gap-1.5">
+              <Badge tone="private">VPC #{server.vpc_id}</Badge>
+              <SafetyPolicyBadge
+                scope="resource"
+                resourceKind="vpc"
+                resourceId={server.vpc_id}
+                resourceLabel={currentVpc?.name || `VPC #${server.vpc_id}`}
+              />
+            </span>
           ) : (
             <Badge tone="muted">Public network</Badge>
           )
@@ -658,7 +766,8 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
           <Row label="Move server" hint="Moves the private interface to another VPC, or back to the public network. Brief connectivity loss.">
             <select
               value={vpcChoice}
-              disabled={busy || vpcsQuery.isLoading}
+              disabled={mutationControlsDisabled || vpcsQuery.isLoading}
+              title={mutationBlockReason ?? undefined}
               onChange={(e) => {
                 setVpcChoice(e.target.value)
                 setVpcChoiceDirty(e.target.value !== (server.vpc_id ? String(server.vpc_id) : ''))
@@ -668,20 +777,35 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
             >
               <option value="">Public network (no VPC)</option>
               {vpcs.map((v) => (
-                <option key={v.id} value={String(v.id)}>
+                <option
+                  key={v.id}
+                  value={String(v.id)}
+                  disabled={!!resourceActionBlockReason('vpc', v.id, 'maintenance')}
+                >
                   {v.name} — {v.ip_range}
+                  {resourceSafetyLevel('vpc', v.id) === 'locked'
+                    ? ' — Read-only'
+                    : resourceSafetyLevel('vpc', v.id) === 'maintenance'
+                      ? ' — Maintenance'
+                      : ''}
                 </option>
               ))}
             </select>
             <button
-              disabled={busy || vpcChoice === (server.vpc_id ? String(server.vpc_id) : '')}
+              disabled={busy || !!selectedMoveBlockReason || vpcChoice === (server.vpc_id ? String(server.vpc_id) : '')}
+              title={selectedMoveBlockReason ?? 'Move server'}
               onClick={() => {
                 const target = vpcChoice ? vpcs.find((v) => String(v.id) === vpcChoice) : undefined
+                if (vpcChoice && !target) {
+                  setError('The selected VPC is no longer available. Choose a current destination.')
+                  return
+                }
                 const dest = target ? `VPC "${target.name}" (${target.ip_range})` : 'the public network'
                 run(
                   `Move to ${target ? target.name : 'public network'}`,
                   { type: 'change_network', vpc_id: target ? target.id : null },
-                  `Move ${server.name} to ${dest}? Its private IP will change and existing private connections will drop.`
+                  `Move ${server.name} to ${dest}? Its private IP will change and existing private connections will drop.`,
+                  () => vpcMembershipBlockReasonNow(target?.id ?? null)
                 ).then((ok) => {
                   if (ok) setVpcChoiceDirty(false)
                 })
@@ -704,7 +828,8 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
               </span>
               <Switch
                 checked={!!networks?.separate_private_network_interface}
-                disabled={busy}
+                disabled={mutationControlsDisabled}
+                disabledReason={mutationBlockReason}
                 label="Toggle separate private network interface"
                 onChange={(next) =>
                   run(

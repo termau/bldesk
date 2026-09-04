@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import { components } from '@shared/api/schema'
 import { TrayFleetSummary } from '@shared/ipc-types'
+import { remoteServiceProbeForImage } from '@shared/remote-service'
 import { primaryIpv4 } from './deeplinks'
 
 type ServerResponse = components['schemas']['Server']
@@ -94,7 +95,13 @@ export function useFleetWatch(input: FleetWatchInput): void {
       awaitingAnswer: awaitingAnswerIds.length,
       failedInvoices,
       availableCredit,
-      servers: servers.map((s) => ({ id: s.id, name: s.name, status: s.status, ip: primaryIpv4(s) }))
+      servers: servers.map((s) => ({
+        id: s.id,
+        name: s.name,
+        status: s.status,
+        ip: primaryIpv4(s),
+        remoteService: remoteServiceProbeForImage(s.image).kind
+      }))
     }
     const key = JSON.stringify(summary)
     if (key === lastPushed.current) return

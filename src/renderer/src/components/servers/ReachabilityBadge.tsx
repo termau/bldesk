@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { Activity, AlertTriangle, HelpCircle, Loader2, RotateCw, Route } from 'lucide-react'
 import type { TcpProbeResult, TracerouteHop } from '@shared/ipc-types'
 import type { BinaryLaneClient } from '../../api/client'
@@ -15,13 +15,13 @@ import { explainUnreachablePort, describeRule, type FirewallVerdict } from '../.
  * about the server.
  *
  * Split into a chip and a notice on purpose. The chip is one line and leads the
- * action cluster it qualifies - "Launch SSH" is only worth clicking if 22 answers
- * from here - while the explanation can run to three lines and would squeeze
- * those buttons if it shared their row.
+ * action cluster it qualifies: SSH is checked on 22 and Windows RDP on 3389.
+ * The explanation can run to three lines and would squeeze those buttons if it
+ * shared their row.
  *
  * The three probe outcomes are kept distinct because they have different fixes:
  *   connected -> latency
- *   refused   -> something answered; the host is up, sshd is not
+ *   refused   -> something answered; the host is up, the remote service is not
  *   timeout   -> silently dropped, which is what a firewall does
  *
  * Electron only. The Android build has no raw sockets and no child_process, so
@@ -35,6 +35,7 @@ export interface Reachability {
   /** Increments per completed probe; keys the one-shot blink. */
   seq: number
   port: number
+  serviceLabel: string
   probe: () => Promise<void>
   verdict: FirewallVerdict
   hops: TracerouteHop[] | null
@@ -47,7 +48,9 @@ export function useReachability(
   ip: string | undefined,
   port: number,
   client?: BinaryLaneClient | null,
-  serverId?: number
+  serverId?: number,
+  profileId?: string,
+  serviceLabel = 'TCP'
 ): Reachability {
   const api = typeof window !== 'undefined' ? window.bldeskApi : undefined
   const supported = typeof api?.probeTcp === 'function'
@@ -59,6 +62,8 @@ export function useReachability(
   const [seq, setSeq] = useState(0)
   const [hops, setHops] = useState<TracerouteHop[] | null>(null)
   const [tracing, setTracing] = useState(false)
+  const probeGeneration = useRef(0)
+  const traceGeneration = useRef(0)
 
   /*
    * The previous result stays on screen while re-probing. Clearing it swapped
@@ -66,21 +71,33 @@ export function useReachability(
    * shifted the row width for the duration of the probe.
    */
   const probe = useCallback(async () => {
-    if (!supported || !ip) return
+    if (!supported || !ip || !profileId || !Number.isSafeInteger(serverId) || Number(serverId) <= 0) return
+    const generation = ++probeGeneration.current
     setBusy(true)
     try {
-      const next = (await api!.probeTcp!(ip, port, 4000)) ?? null
+      const next = (await api!.probeTcp!({ profileId, serverId: Number(serverId), host: ip }, port, 4000)) ?? null
+      if (generation !== probeGeneration.current) return
       setResult(next)
       setSeq((n) => n + 1)
+    } catch {
+      if (generation !== probeGeneration.current) return
+      setResult({ ok: false, error: 'other', detail: 'Local reachability check failed.' })
+      setSeq((n) => n + 1)
     } finally {
-      setBusy(false)
+      if (generation === probeGeneration.current) setBusy(false)
     }
-  }, [api, ip, port, supported])
+  }, [api, ip, port, profileId, serverId, supported])
 
   useEffect(() => {
     setResult(null)
     setHops(null)
+    setBusy(false)
+    setTracing(false)
     void probe()
+    return () => {
+      probeGeneration.current += 1
+      traceGeneration.current += 1
+    }
   }, [probe])
 
   const timedOut = !!result && !result.ok && result.error === 'timeout'
@@ -90,18 +107,22 @@ export function useReachability(
   const verdict = explainUnreachablePort(timedOut ? rulesQuery.data : undefined, port)
 
   const runTrace = useCallback(async () => {
-    if (!supported || !ip) return
+    if (!supported || !ip || !profileId || !Number.isSafeInteger(serverId) || Number(serverId) <= 0) return
+    const generation = ++traceGeneration.current
     setTracing(true)
     try {
-      setHops((await api!.traceroute!(ip, 12)) ?? [])
+      const next = (await api!.traceroute!({ profileId, serverId: Number(serverId), host: ip }, 12)) ?? []
+      if (generation === traceGeneration.current) setHops(next)
+    } catch {
+      if (generation === traceGeneration.current) setHops([])
     } finally {
-      setTracing(false)
+      if (generation === traceGeneration.current) setTracing(false)
     }
-  }, [api, ip, supported])
+  }, [api, ip, profileId, serverId, supported])
 
   const clearHops = useCallback(() => setHops(null), [])
 
-  return { supported, result, busy, seq, port, probe, verdict, hops, tracing, runTrace, clearHops }
+  return { supported, result, busy, seq, port, serviceLabel, probe, verdict, hops, tracing, runTrace, clearHops }
 }
 
 const pill = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium'
@@ -151,7 +172,7 @@ export const ReachabilityChip: React.FC<{
   onOpenFirewall?: () => void
 }> = ({ r, ip, onOpenFirewall }) => {
   if (!r.supported || !ip) return null
-  const { result, busy, port } = r
+  const { result, busy, port, serviceLabel } = r
   const explanation = explainTimeout(r)
 
   const failed = !!result && !result.ok
@@ -160,15 +181,18 @@ export const ReachabilityChip: React.FC<{
     <span className="inline-flex items-center gap-2">
       {/* No result yet: the only time the pill is a placeholder. */}
       {!result && busy && (
-        <span className={`${pill} bg-[#e9ecef] dark:bg-[#343a40] text-[#6c757d] dark:text-slate-400`}>
+        <span
+          title={`Testing a TCP connection from this computer to ${serviceLabel} port ${port}; no login session is opened.`}
+          className={`${pill} bg-[#e9ecef] dark:bg-[#343a40] text-[#6c757d] dark:text-slate-400`}
+        >
           <Loader2 className="w-3 h-3 shrink-0 animate-spin" />
-          Checking {port}…
+          Checking {serviceLabel} {port}…
         </span>
       )}
 
       {result?.ok && (
         <span
-          title={`TCP connect to port ${port} from this machine`}
+          title={`TCP connection from this computer to ${serviceLabel} port ${port}; no login session was opened.`}
           className={`${pill} bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300`}
         >
           {busy ? (
@@ -176,13 +200,14 @@ export const ReachabilityChip: React.FC<{
           ) : (
             <Activity className="w-3 h-3 shrink-0" />
           )}
-          {result.latencyMs?.toFixed(0)} ms from here
+          {serviceLabel} {port} · {result.latencyMs?.toFixed(0)} ms from here
           <ReloadButton r={r} busy={busy} />
         </span>
       )}
 
       {failed && (
         <span
+          title={`TCP connection from this computer to ${serviceLabel} port ${port}; no login session is opened.`}
           className={`${pill} ${
             result!.error === 'refused'
               ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
@@ -195,10 +220,10 @@ export const ReachabilityChip: React.FC<{
             <AlertTriangle className="w-3 h-3 shrink-0" />
           )}
           {result!.error === 'refused'
-            ? `Port ${port} refused`
+            ? `${serviceLabel} ${port} refused`
             : result!.error === 'invalid-target'
               ? 'Not probeable'
-              : `Port ${port} unreachable`}
+              : `${serviceLabel} ${port} unreachable`}
 
           {/*
             * The "?" sits inside the bubble it explains, and blinks once when a

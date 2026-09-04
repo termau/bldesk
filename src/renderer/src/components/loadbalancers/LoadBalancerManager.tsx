@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import {
   Layers,
   Plus,
@@ -25,7 +25,9 @@ import {
   useDeleteLoadBalancerMutation
 } from '../../api/queries'
 import { useConfirm } from '../../context/ConfirmContext'
+import { useProfileSafety } from '../../context/ProfileSafetyContext'
 import { recordChange, updateChange } from '../../lib/changelog'
+import { SafetyPolicyBadge } from '../ui/SafetyPolicyBadge'
 
 type ServerResponse = components['schemas']['Server']
 
@@ -50,11 +52,62 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
   const [entryProtocol, setEntryProtocol] = useState<'http' | 'https'>('http')
   const [selectedServerIds, setSelectedServerIds] = useState<number[]>([])
   const [createError, setCreateError] = useState<string | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   // Add Server to Pool Modal State
   const [attachModalLb, setAttachModalLb] = useState<any | null>(null)
   const [selectedServerToAttach, setSelectedServerToAttach] = useState<number | null>(null)
   const [actionServerId, setActionServerId] = useState<number | null>(null)
+
+  const {
+    collectionMutationBlockReason,
+    resourceActionBlockReason,
+    serverActionBlockReason,
+    openSafetySettings
+  } = useProfileSafety()
+  const collectionMutationBlockReasonRef = useRef(collectionMutationBlockReason)
+  const resourceActionBlockReasonRef = useRef(resourceActionBlockReason)
+  const serverActionBlockReasonRef = useRef(serverActionBlockReason)
+  collectionMutationBlockReasonRef.current = collectionMutationBlockReason
+  resourceActionBlockReasonRef.current = resourceActionBlockReason
+  serverActionBlockReasonRef.current = serverActionBlockReason
+  const collectionBlockReason = collectionMutationBlockReason()
+
+  const recordBlocked = (reason: string, changeId?: string): void => {
+    setActionError(`Blocked locally: ${reason}`)
+    if (changeId) {
+      void updateChange(changeId, {
+        outcome: 'failed',
+        detail: `Blocked locally before the request was sent: ${reason}`
+      })
+    }
+  }
+
+  const createBlockReason = (
+    getCollectionReason = collectionMutationBlockReason,
+    getServerReason = serverActionBlockReason
+  ): string | null => {
+    const collectionReason = getCollectionReason()
+    if (collectionReason) return collectionReason
+    for (const serverId of selectedServerIds) {
+      const serverReason = getServerReason(serverId, 'mutation')
+      if (serverReason) return serverReason
+    }
+    return null
+  }
+
+  const membershipBlockReason = (
+    loadBalancerId: unknown,
+    serverId: unknown,
+    getResourceReason = resourceActionBlockReason,
+    getServerReason = serverActionBlockReason
+  ): string | null => getResourceReason('load-balancer', loadBalancerId, 'maintenance')
+    ?? getServerReason(serverId, 'mutation')
+
+  const selectedCreateBlockReason = createBlockReason()
+  const selectedAttachBlockReason = attachModalLb && selectedServerToAttach
+    ? membershipBlockReason(attachModalLb.id, selectedServerToAttach)
+    : null
 
   const lbsQuery = useLoadBalancers(client)
   const regionsQuery = useRegions(client)
@@ -83,6 +136,15 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
     e.preventDefault()
     setCreateError(null)
 
+    const initialBlockReason = createBlockReason(
+      collectionMutationBlockReasonRef.current,
+      serverActionBlockReasonRef.current
+    )
+    if (initialBlockReason) {
+      setCreateError(`Blocked locally: ${initialBlockReason}`)
+      return
+    }
+
     if (!lbName.trim()) {
       setCreateError('Please enter a valid hostname / name for the load balancer.')
       return
@@ -99,6 +161,15 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
       ],
       source: 'ui'
     })
+    const currentBlockReason = createBlockReason(
+      collectionMutationBlockReasonRef.current,
+      serverActionBlockReasonRef.current
+    )
+    if (currentBlockReason) {
+      recordBlocked(currentBlockReason, changeId)
+      setCreateError(`Blocked locally: ${currentBlockReason}`)
+      return
+    }
     try {
       await createLbMutation.mutateAsync({
         name: lbName.trim(),
@@ -129,6 +200,16 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
   const handleAttachServer = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!attachModalLb || !selectedServerToAttach) return
+    const initialBlockReason = membershipBlockReason(
+      attachModalLb.id,
+      selectedServerToAttach,
+      resourceActionBlockReasonRef.current,
+      serverActionBlockReasonRef.current
+    )
+    if (initialBlockReason) {
+      recordBlocked(initialBlockReason)
+      return
+    }
 
     const sName = servers.find((s) => s.id === selectedServerToAttach)?.name || String(selectedServerToAttach)
     const changeId = await recordChange({
@@ -138,6 +219,16 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
       changes: [{ label: 'Backend', to: sName }],
       source: 'ui'
     })
+    const currentBlockReason = membershipBlockReason(
+      attachModalLb.id,
+      selectedServerToAttach,
+      resourceActionBlockReasonRef.current,
+      serverActionBlockReasonRef.current
+    )
+    if (currentBlockReason) {
+      recordBlocked(currentBlockReason, changeId)
+      return
+    }
     try {
       await addServerMutation.mutateAsync({
         loadBalancerId: attachModalLb.id,
@@ -154,12 +245,22 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
       setSelectedServerToAttach(null)
     } catch (err: any) {
       void updateChange(changeId, { outcome: 'failed', detail: err.message })
-      alert(`Failed to add server: ${err.message}`)
+      setActionError(`Failed to add load balancer target: ${err.message || 'Unknown error'}`)
     }
   }
 
   const confirmAction = useConfirm()
   const handleRemoveServer = async (lbId: number, lbName: string, serverId: number, serverName: string) => {
+    const initialBlockReason = membershipBlockReason(
+      lbId,
+      serverId,
+      resourceActionBlockReasonRef.current,
+      serverActionBlockReasonRef.current
+    )
+    if (initialBlockReason) {
+      recordBlocked(initialBlockReason)
+      return
+    }
     const c = await confirmAction({
       title: 'Remove from load balancer',
       target: { kind: 'loadbalancer', id: lbId, name: lbName },
@@ -169,6 +270,16 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
       confirmLabel: 'Remove'
     })
     if (!c.ok) return
+    const currentBlockReason = membershipBlockReason(
+      lbId,
+      serverId,
+      resourceActionBlockReasonRef.current,
+      serverActionBlockReasonRef.current
+    )
+    if (currentBlockReason) {
+      recordBlocked(currentBlockReason, c.changeId)
+      return
+    }
 
     setActionServerId(serverId)
     try {
@@ -184,13 +295,18 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
       })
     } catch (err: any) {
       void updateChange(c.changeId, { outcome: 'failed', detail: err.message })
-      alert(`Failed to remove server: ${err.message}`)
+      setActionError(`Failed to remove load balancer target: ${err.message || 'Unknown error'}`)
     } finally {
       setActionServerId(null)
     }
   }
 
   const handleDeleteLb = async (lbId: number, name: string) => {
+    const initialBlockReason = resourceActionBlockReasonRef.current('load-balancer', lbId, 'destructive')
+    if (initialBlockReason) {
+      recordBlocked(initialBlockReason)
+      return
+    }
     const c = await confirmAction({
       title: 'Delete load balancer',
       target: { kind: 'loadbalancer', id: lbId, name },
@@ -199,6 +315,11 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
       confirmLabel: 'Delete load balancer'
     })
     if (!c.ok) return
+    const currentBlockReason = resourceActionBlockReasonRef.current('load-balancer', lbId, 'destructive')
+    if (currentBlockReason) {
+      recordBlocked(currentBlockReason, c.changeId)
+      return
+    }
 
     try {
       await deleteLbMutation.mutateAsync(lbId)
@@ -209,7 +330,7 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
       })
     } catch (err: any) {
       void updateChange(c.changeId, { outcome: 'failed', detail: err.message })
-      alert(`Delete failed: ${err.message}`)
+      setActionError(`Failed to delete load balancer: ${err.message || 'Unknown error'}`)
     }
   }
 
@@ -228,13 +349,36 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
         </div>
 
         <button
-          onClick={() => setIsCreating(true)}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm"
+          onClick={() => {
+            if (collectionBlockReason) {
+              recordBlocked(collectionBlockReason)
+              return
+            }
+            setIsCreating(true)
+          }}
+          disabled={!!collectionBlockReason}
+          title={collectionBlockReason ?? 'Deploy load balancer (starts Normal)'}
+          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
         >
           <Plus className="w-4 h-4" />
           <span>Deploy Load Balancer</span>
         </button>
       </div>
+
+      {actionError && (
+        <div role="alert" className="flex items-start gap-2.5 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="flex-1">{actionError}</span>
+          {actionError.startsWith('Blocked locally:') && (
+            <button type="button" onClick={() => openSafetySettings()} className="shrink-0 font-semibold underline underline-offset-2">
+              Review safety
+            </button>
+          )}
+          <button type="button" onClick={() => setActionError(null)} aria-label="Dismiss message" className="shrink-0 opacity-70 hover:opacity-100">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Loading State */}
       {lbsQuery.isLoading && (
@@ -252,9 +396,17 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
           <p className="text-xs text-[#6c757d] dark:text-slate-400 max-w-sm mt-1 mb-4">
             Create high-availability reverse proxy endpoints to distribute load and perform health monitoring across multiple servers.
           </p>
-          <button
-            onClick={() => setIsCreating(true)}
-            className="px-4 py-2 bg-[#017cb6] hover:bg-[#016594] text-white text-xs font-medium rounded transition shadow-sm"
+            <button
+              onClick={() => {
+                if (collectionBlockReason) {
+                  recordBlocked(collectionBlockReason)
+                  return
+                }
+                setIsCreating(true)
+              }}
+              disabled={!!collectionBlockReason}
+              title={collectionBlockReason ?? 'Deploy load balancer (starts Normal)'}
+            className="px-4 py-2 bg-[#017cb6] hover:bg-[#016594] text-white text-xs font-medium rounded transition shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
           >
             Deploy Load Balancer
           </button>
@@ -266,8 +418,12 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
         {loadBalancers.map((lb) => {
           const lbServerIds = lb.server_ids || []
           const memberServers = servers.filter((s) => lbServerIds.includes(s.id))
-          const attachableServers = servers.filter((s) => !lbServerIds.includes(s.id))
+          const attachableServers = servers.filter(
+            (s) => !lbServerIds.includes(s.id) && !serverActionBlockReason(s.id, 'mutation')
+          )
           const isActive = lb.status === 'active'
+          const maintenanceBlockReason = resourceActionBlockReason('load-balancer', lb.id, 'maintenance')
+          const deleteBlockReason = resourceActionBlockReason('load-balancer', lb.id, 'destructive')
 
           return (
             <div
@@ -283,6 +439,12 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-bold text-sm text-[#212529] dark:text-white font-mono">{lb.name}</h3>
+                      <SafetyPolicyBadge
+                        scope="resource"
+                        resourceKind="load-balancer"
+                        resourceId={lb.id}
+                        resourceLabel={lb.name}
+                      />
                       <span
                         className={`px-2 py-0.5 text-[10px] font-semibold rounded-full ${
                           isActive
@@ -319,8 +481,9 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
 
                   <button
                     onClick={() => handleDeleteLb(lb.id, lb.name)}
-                    className="p-1.5 text-[#6c757d] hover:text-rose-500 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                    title="Delete Load Balancer"
+                    disabled={!!deleteBlockReason}
+                    className="p-1.5 text-[#6c757d] hover:text-rose-500 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition disabled:cursor-not-allowed disabled:opacity-40"
+                    title={deleteBlockReason ?? 'Delete Load Balancer'}
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -364,7 +527,9 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
                           setSelectedServerToAttach(attachableServers[0].id)
                         }
                       }}
-                      className="text-xs text-[#017cb6] hover:underline font-medium flex items-center gap-1"
+                      disabled={!!maintenanceBlockReason || attachableServers.length === 0}
+                      title={maintenanceBlockReason ?? (attachableServers.length === 0 ? 'No Normal server is available to add.' : 'Add load balancer target')}
+                      className="text-xs text-[#017cb6] hover:underline font-medium flex items-center gap-1 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       <UserPlus className="w-3 h-3" />
                       <span>Add Target</span>
@@ -380,6 +545,7 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
                       {memberServers.map((s) => {
                         const sIp = s.networks?.v4?.find((n: any) => n.type === 'public')?.ip_address || s.networks?.v4?.[0]?.ip_address
                         const isRemoving = actionServerId === s.id
+                        const removeBlockReason = membershipBlockReason(lb.id, s.id)
 
                         return (
                           <div
@@ -397,9 +563,9 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
 
                             <button
                               onClick={() => handleRemoveServer(lb.id, lb.name, s.id, s.name)}
-                              disabled={isRemoving}
-                              className="text-[#6c757d] hover:text-rose-500 p-1 rounded"
-                              title="Remove from pool"
+                              disabled={isRemoving || !!removeBlockReason}
+                              className="text-[#6c757d] hover:text-rose-500 p-1 rounded disabled:cursor-not-allowed disabled:opacity-40"
+                              title={removeBlockReason ?? 'Remove from pool'}
                             >
                               {isRemoving ? <Loader2 className="w-3 h-3 animate-spin text-[#017cb6]" /> : <Unlink className="w-3 h-3" />}
                             </button>
@@ -487,21 +653,26 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
                   Select Initial Pool Servers
                 </label>
                 <div className="max-h-36 overflow-y-auto space-y-1.5 p-2 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded">
-                  {servers.map((s) => (
-                    <label
-                      key={s.id}
-                      className="flex items-center gap-2 cursor-pointer text-xs p-1 hover:bg-[#e9ecef] dark:hover:bg-[#343a40] rounded"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={selectedServerIds.includes(s.id)}
-                        onChange={() => handleToggleCreateServer(s.id)}
-                        className="rounded border-[#ced4da] text-[#017cb6] focus:ring-0"
-                      />
-                      <span className="font-medium text-[#212529] dark:text-white">{s.name}</span>
-                      <span className="text-[10px] text-[#6c757d] font-mono">#{s.id}</span>
-                    </label>
-                  ))}
+                  {servers.map((s) => {
+                    const serverBlockReason = serverActionBlockReason(s.id, 'mutation')
+                    return (
+                      <label
+                        key={s.id}
+                        title={serverBlockReason ?? 'Include this server as an initial backend'}
+                        className="flex items-center gap-2 cursor-pointer text-xs p-1 hover:bg-[#e9ecef] dark:hover:bg-[#343a40] rounded has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-45"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedServerIds.includes(s.id)}
+                          onChange={() => handleToggleCreateServer(s.id)}
+                          disabled={!!serverBlockReason}
+                          className="rounded border-[#ced4da] text-[#017cb6] focus:ring-0"
+                        />
+                        <span className="font-medium text-[#212529] dark:text-white">{s.name}</span>
+                        <span className="text-[10px] text-[#6c757d] font-mono">#{s.id}</span>
+                      </label>
+                    )
+                  })}
                 </div>
               </div>
 
@@ -515,8 +686,9 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={createLbMutation.isPending}
-                  className="px-4 py-1.5 bg-[#017cb6] hover:bg-[#016594] text-white font-medium rounded transition flex items-center gap-1.5 shadow-sm"
+                  disabled={createLbMutation.isPending || !!selectedCreateBlockReason}
+                  title={selectedCreateBlockReason ?? 'Provision load balancer (starts Normal)'}
+                  className="px-4 py-1.5 bg-[#017cb6] hover:bg-[#016594] text-white font-medium rounded transition flex items-center gap-1.5 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {createLbMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>Provision Load Balancer</span>
@@ -549,7 +721,7 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
                   className="w-full bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] text-xs text-[#212529] dark:text-white px-3 py-2 rounded focus:outline-none focus:border-[#017cb6]"
                 >
                   {servers
-                    .filter((s) => !(attachModalLb.server_ids || []).includes(s.id))
+                    .filter((s) => !(attachModalLb.server_ids || []).includes(s.id) && !serverActionBlockReason(s.id, 'mutation'))
                     .map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name} (#{s.id})
@@ -568,7 +740,8 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={addServerMutation.isPending || !selectedServerToAttach}
+                  disabled={addServerMutation.isPending || !selectedServerToAttach || !!selectedAttachBlockReason}
+                  title={selectedAttachBlockReason ?? 'Add load balancer target'}
                   className="px-4 py-1.5 bg-[#017cb6] hover:bg-[#016594] text-white font-medium rounded transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
                 >
                   {addServerMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}

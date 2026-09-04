@@ -3,6 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws://localhost:* ws://127.0.0.1:* https://api.github.com; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
     <title>BLDesk - BinaryLane Desktop</title>
   </head>
   <body class="bg-[#212529] text-[#f8f9fa] antialiased select-none overflow-hidden h-screen w-screen m-0 p-0">

@@ -84,6 +84,27 @@ export function portsInclude(ports: string[] | null | undefined, port: number): 
   return false
 }
 
+export type WorldTcpPortDecision = 'accept' | 'drop' | 'unknown'
+
+/**
+ * Evaluate public TCP reachability with BinaryLane's actual rule semantics:
+ * rules are ordered, the first universal rule that covers the port wins, and
+ * traffic is accepted when no rule matches (there is no implicit deny).
+ *
+ * Source-scoped rules are deliberately skipped. They can allow or deny their
+ * named callers, but cannot establish what the whole internet can reach.
+ */
+export function worldTcpPortDecision(rules: FwRule[] | null, port: number): WorldTcpPortDecision {
+  if (rules === null) return 'unknown'
+  for (const rule of rules) {
+    const protocol = (rule.protocol || 'all').toLowerCase()
+    if (!['tcp', 'all'].includes(protocol)) continue
+    if (!isWorld(rule.source_addresses) || !portsInclude(rule.destination_ports, port)) continue
+    return (rule.action || '').toLowerCase() === 'drop' ? 'drop' : 'accept'
+  }
+  return 'accept'
+}
+
 export function buildMatrix(rulesByServer: Map<number, FwRule[] | null>): Matrix {
   const counts = new Map<string, { count: number; descriptions: Map<string, number> }>()
   const cells = new Map<number, Map<string, CellState>>()
@@ -125,7 +146,7 @@ export function buildMatrix(rulesByServer: Map<number, FwRule[] | null>): Matrix
 // Audit
 // ---------------------------------------------------------------------------
 
-export type AuditCode = 'no-rules' | 'unreadable' | 'ssh-world' | 'admin-world' | 'db-world' | 'shadowed' | 'unknown-address'
+export type AuditCode = 'no-rules' | 'unreadable' | 'ssh-world' | 'rdp-world' | 'admin-world' | 'db-world' | 'shadowed' | 'unknown-address'
 export type AuditLevel = 'red' | 'amber' | 'info'
 
 export interface AuditFlag {
@@ -173,16 +194,14 @@ export function auditServer(rules: FwRule[] | null, accountAddresses: Set<string
     return [{ code: 'no-rules', level: 'amber', text: 'No firewall rules — everything inbound is allowed' }]
   }
 
-  const worldAccepts = rules.filter((r) => (r.action || '').toLowerCase() !== 'drop' && isWorld(r.source_addresses))
-  const tcpish = (r: FwRule) => ['tcp', 'all'].includes((r.protocol || 'all').toLowerCase())
-
   for (const [port, name] of ADMIN_PORTS) {
-    if (worldAccepts.some((r) => tcpish(r) && portsInclude(r.destination_ports, port))) {
-      flags.push({ code: port === 22 ? 'ssh-world' : 'admin-world', level: 'red', text: `${name} (${port}) open to the world` })
+    if (worldTcpPortDecision(rules, port) === 'accept') {
+      const code: AuditCode = port === 22 ? 'ssh-world' : port === 3389 ? 'rdp-world' : 'admin-world'
+      flags.push({ code, level: 'red', text: `${name} (${port}) open to the world` })
     }
   }
   for (const [port, name] of DB_PORTS) {
-    if (worldAccepts.some((r) => tcpish(r) && portsInclude(r.destination_ports, port))) {
+    if (worldTcpPortDecision(rules, port) === 'accept') {
       flags.push({ code: 'db-world', level: 'amber', text: `${name} (${port}) open to the world` })
     }
   }

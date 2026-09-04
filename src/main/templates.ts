@@ -56,6 +56,10 @@ function syncDirectory(path: string): void {
 }
 
 export class TemplateStore {
+  static slugForDocument(input: string): string {
+    return validateDocument(input).slug
+  }
+
   static list(): string[] {
     let names: string[]
     try {

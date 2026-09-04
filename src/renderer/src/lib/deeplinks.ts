@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { components } from '@shared/api/schema'
+import { decideServerOperationAccess } from '@shared/binarylane-policy'
 import { AccountProfile } from '@shared/ipc-types'
 import { DeepLink, formatDeepLink, parseDeepLink } from '@shared/deeplink'
+import { remoteServiceProbeForImage } from '@shared/remote-service'
 import { BinaryLaneClient } from '../api/client'
 import { ActiveTab, ServerSubTab } from '../components/layout/Sidebar'
 import { launchSsh } from './launchSsh'
@@ -26,6 +28,27 @@ export function primaryIpv4(server: ServerResponse): string | undefined {
   return server.networks?.v4?.find((v) => v.type === 'public')?.ip_address || server.networks?.v4?.[0]?.ip_address
 }
 
+function remoteAccessBlockReason(profile: AccountProfile | null, serverId: number): string | null {
+  if (!profile) return 'No active account profile is available.'
+  const decision = decideServerOperationAccess(profile, serverId, 'remote-access')
+  switch (decision.reason) {
+    case undefined:
+      return null
+    case 'observe-only':
+      return 'Observe-only safety allows views and diagnostics, but blocks server changes and remote access.'
+    case 'guarded-not-configured':
+      return 'Protected mode requires at least one Read-only or Maintenance server.'
+    case 'protected-server':
+      return 'Read-only under this profile’s local safety policy.'
+    case 'maintenance-restricted':
+      return 'This structural action is outside the Maintenance tier.'
+    case 'invalid-server':
+      return 'The server identity cannot be verified safely.'
+    case 'invalid-operation':
+      return 'Remote access has not been classified for safe live-account use.'
+  }
+}
+
 interface RouterDeps {
   profiles: Omit<AccountProfile, 'token'>[]
   activeProfile: AccountProfile | null
@@ -36,6 +59,7 @@ interface RouterDeps {
   onSelectServer: (server: ServerResponse) => void
   onSelectServerSubTab: (tab: ServerSubTab) => void
   onSelectTab: (tab: ActiveTab) => void
+  onSafetyBlocked: (message: string) => void
 }
 
 /**
@@ -60,7 +84,7 @@ export function useDeepLinkRouter(deps: RouterDeps): void {
       if (!url) return
       const link = parseDeepLink(url)
       if (!link) {
-        console.warn('[DeepLink] Ignoring unrecognised link:', url)
+        depsRef.current.onSafetyBlocked('BLDesk could not recognise that deep link.')
         return
       }
       setPending(link)
@@ -90,7 +114,11 @@ export function useDeepLinkRouter(deps: RouterDeps): void {
         void d.onSwitchProfile(target.id)
         return
       }
-      if (!target) console.warn(`[DeepLink] No profile matches account "${link.account}"; using the active one`)
+      if (!target) {
+        d.onSafetyBlocked('The requested account profile was not found; the deep link was not opened.')
+        setPending(null)
+        return
+      }
       setPending(stripped)
       return
     }
@@ -120,8 +148,17 @@ export function useDeepLinkRouter(deps: RouterDeps): void {
           server = (data?.server as ServerResponse | undefined) ?? null
         }
         if (!server) {
-          alert(`Server #${link.serverId} was not found on ${d.activeProfile?.name ?? 'this account'}.`)
+          d.onSafetyBlocked(`Server #${link.serverId} was not found in the active account.`)
           return
+        }
+
+        const opensRemoteAccess = link.kind === 'ssh' || link.kind === 'console'
+        if (opensRemoteAccess) {
+          const blockReason = remoteAccessBlockReason(depsRef.current.activeProfile, server.id)
+          if (blockReason) {
+            d.onSafetyBlocked(`Blocked locally: ${server.name} — ${blockReason}`)
+            return
+          }
         }
 
         switch (link.kind) {
@@ -134,12 +171,18 @@ export function useDeepLinkRouter(deps: RouterDeps): void {
           case 'ssh': {
             const ip = primaryIpv4(server)
             d.onSelectServer(server)
+            d.onSelectServerSubTab('remote-access')
             d.onSelectTab('servers')
-            if (!ip) {
-              alert(`${server.name} has no IPv4 address to SSH to.`)
+            const remoteService = remoteServiceProbeForImage(server.image)
+            if (remoteService.kind === 'rdp') {
+              d.onSafetyBlocked(`${server.name} uses RDP on TCP 3389; BLDesk does not launch RDP yet.`)
               break
             }
-            await launchSsh({ host: ip, username: 'root' })
+            if (!ip) {
+              d.onSafetyBlocked(`${server.name} has no IPv4 address to SSH to.`)
+              break
+            }
+            await launchSsh({ serverId: server.id, host: ip, username: 'root' })
             break
           }
 
@@ -147,27 +190,17 @@ export function useDeepLinkRouter(deps: RouterDeps): void {
             d.onSelectServer(server)
             d.onSelectServerSubTab('remote-access')
             d.onSelectTab('servers')
-            const { data } = await d.client!.GET('/v2/servers/{server_id}/console', {
-              params: { path: { server_id: server.id } }
-            })
-            const url = data?.console?.browser || data?.console?.iframe
-            if (!url) {
-              alert(`Couldn't get a rescue console URL for ${server.name}.`)
-              break
-            }
-            await window.bldeskApi?.openRescueConsole?.({
+            if (!window.bldeskApi?.openRescueConsole) throw new Error('Rescue-console access is unavailable in this build.')
+            const result = await window.bldeskApi.openRescueConsole({
               serverId: server.id,
-              serverName: server.name,
-              url,
-              width: data?.console?.width || 1024,
-              height: data?.console?.height || 768
+              serverName: server.name
             })
+            if (!result.success) throw new Error(result.error || 'Rescue-console access was refused.')
             break
           }
         }
       } catch (err: any) {
-        console.error('[DeepLink] Failed to route link:', err)
-        alert(`Couldn't open link: ${err?.message || err}`)
+        d.onSafetyBlocked(`Could not open the deep link: ${err?.message || err}`)
       } finally {
         busyRef.current = false
         setPending(null)

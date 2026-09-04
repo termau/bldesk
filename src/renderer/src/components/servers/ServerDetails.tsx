@@ -14,7 +14,9 @@ import {
   Copy,
   Check,
   Globe,
-  Loader2
+  Loader2,
+  ShieldAlert,
+  ShieldCheck
 } from 'lucide-react'
 import { components } from '@shared/api/schema'
 import { BinaryLaneClient } from '../../api/client'
@@ -26,7 +28,6 @@ import { ServerSettings } from './ServerSettings'
 import { ServerUsage } from './ServerUsage'
 import {
   useServerMetrics,
-  useServerConsole,
   useServerUserData,
   useVpcs,
   useServerActionMutation,
@@ -35,6 +36,7 @@ import {
 } from '../../api/queries'
 import { useTrackedActions } from '../../context/ActionTrackerContext'
 import { logoForDistribution } from '../../lib/distroHelper'
+import { remoteServiceProbeForImage } from '@shared/remote-service'
 import { VpcBadge } from '../vpcs/VpcBadge'
 import { describeStatus } from '../../lib/serverStatus'
 import { useReachability, ReachabilityChip } from './ReachabilityBadge'
@@ -48,12 +50,14 @@ import { updateChange } from '../../lib/changelog'
 import { powerActionSummary } from '../../lib/actionLabels'
 import { imageSupportsUserData, templateFromServer, type ServerTemplate } from '../../lib/serverTemplates'
 import { describeApiError } from '../../api/queries'
+import { useProfileSafety } from '../../context/ProfileSafetyContext'
 
 type ServerResponse = components['schemas']['Server']
 
 interface ServerDetailsProps {
   server: ServerResponse
   client: BinaryLaneClient | null
+  profileId?: string
   activeSubTab?: ServerSubTab
   /** Change sub-tab from inside the view, e.g. "check firewall rules". */
   onSelectSubTab?: (tab: ServerSubTab) => void
@@ -84,11 +88,13 @@ const DiagnosticButton: React.FC<{
   busyLabel: string
   active: boolean
   disabled: boolean
+  title?: string
   onClick: () => void
-}> = ({ label, busyLabel, active, disabled, onClick }) => (
+}> = ({ label, busyLabel, active, disabled, title, onClick }) => (
   <button
     onClick={onClick}
     disabled={disabled}
+    title={title}
     aria-busy={active}
     className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] hover:border-[#017cb6] text-xs font-medium rounded transition disabled:opacity-50"
   >
@@ -96,6 +102,43 @@ const DiagnosticButton: React.FC<{
     {active ? busyLabel : label}
   </button>
 )
+
+/**
+ * Keep server data visible while making mutation-heavy child panels genuinely
+ * read-only. The main-process broker remains the authority; this boundary is a
+ * visible, keyboard-safe first line of defence for the renderer.
+ */
+const SafetyBoundary: React.FC<{ reason: string | null; children: React.ReactNode }> = ({ reason, children }) => {
+  if (!reason) return <>{children}</>
+
+  const stopBlockedInteraction = (event: React.SyntheticEvent) => {
+    event.preventDefault()
+    event.stopPropagation()
+  }
+
+  return (
+    <div
+      data-safety-action-boundary="blocked"
+      title={reason}
+      aria-disabled="true"
+      onClickCapture={stopBlockedInteraction}
+      onSubmitCapture={stopBlockedInteraction}
+      onChangeCapture={stopBlockedInteraction}
+      className="space-y-3 [&_button]:pointer-events-none [&_input]:pointer-events-none [&_select]:pointer-events-none [&_textarea]:pointer-events-none"
+    >
+      <div className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+        <div>
+          <div className="font-semibold">Changes unavailable</div>
+          <div>{reason} Read-only details remain visible.</div>
+        </div>
+      </div>
+      <fieldset disabled title={reason} aria-disabled="true" className="m-0 min-w-0 border-0 p-0">
+        {children}
+      </fieldset>
+    </div>
+  )
+}
 
 /** Render a millisecond uptime as "12 days, 4 hours". */
 function formatUptime(ms: number): string {
@@ -135,6 +178,7 @@ function describeDiagnostic(
 export const ServerDetails: React.FC<ServerDetailsProps> = ({
   server,
   client,
+  profileId,
   activeSubTab = 'overview',
   onSelectSubTab,
   onBack,
@@ -150,6 +194,29 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
   const [linkCopied, setLinkCopied] = useState(false)
   const [capturing, setCapturing] = useState(false)
   const [captureError, setCaptureError] = useState<string | null>(null)
+  const [isOpeningConsole, setIsOpeningConsole] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const { serverSafetyLevel, serverActionBlockReason } = useProfileSafety()
+  const safetyLevel = serverSafetyLevel(server.id)
+  const lockedServer = safetyLevel === 'locked'
+  const maintenanceServer = safetyLevel === 'maintenance'
+  const remoteBlockReason = serverActionBlockReason(server.id, 'remote-access')
+  const rebootBlockReason = serverActionBlockReason(server.id, 'reboot')
+  const powerCycleBlockReason = serverActionBlockReason(server.id, 'power-cycle')
+  const diagnosticBlockReason = serverActionBlockReason(server.id, 'diagnostic')
+  const firewallBlockReason = serverActionBlockReason(server.id, 'firewall')
+  const mutationBlockReason = serverActionBlockReason(server.id, 'mutation')
+  const firewallServers = React.useMemo(() => {
+    const candidates = allServers ?? [server]
+    const allowed = candidates.filter((candidate) => !serverActionBlockReason(candidate.id, 'firewall'))
+    return allowed.length > 0 ? allowed : [server]
+  }, [allServers, server, serverActionBlockReason])
+  const actionableServers = React.useMemo(() => {
+    if (mutationBlockReason) return [server]
+    const candidates = allServers ?? [server]
+    const allowed = candidates.filter((candidate) => !serverActionBlockReason(candidate.id, 'mutation'))
+    return allowed.length > 0 ? allowed : [server]
+  }, [mutationBlockReason, allServers, server, serverActionBlockReason])
 
   const captureTemplate = async () => {
     if (!client || !onSaveAsTemplate) return
@@ -174,6 +241,11 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
   }
 
   useEffect(() => {
+    if (remoteBlockReason) {
+      setLocalKeys([])
+      setSelectedKeyPath('')
+      return
+    }
     if (window.bldeskApi?.getLocalSshKeys) {
       window.bldeskApi
         .getLocalSshKeys()
@@ -186,12 +258,11 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
             }
           }
         })
-        .catch(console.error)
+        .catch(() => setLocalKeys([]))
     }
-  }, [])
+  }, [remoteBlockReason])
 
   const metricsQuery = useServerMetrics(client, server.id)
-  const consoleQuery = useServerConsole(client, server.id)
   const userDataQuery = useServerUserData(client, server.id)
   const vpcsForCapture = useVpcs(client).data ?? []
   const serverAction = useServerActionMutation(client)
@@ -199,17 +270,43 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
   const cancelServer = useCancelServerMutation(client)
   const { track } = useTrackedActions()
 
-  const primaryV4 =
-    server.networks?.v4?.find((v) => v.type === 'public')?.ip_address ||
-    server.networks?.v4?.[0]?.ip_address ||
-    '127.0.0.1'
+  const publicV4 = server.networks?.v4?.find((v) => v.type === 'public')?.ip_address
+  // A private/VPC address can still be useful for local checks and SSH when
+  // this computer can route to it. Keep it separate so no private address is
+  // ever presented as the server's public IPv4.
+  const connectionV4 = publicV4 || server.networks?.v4?.[0]?.ip_address
 
   const primaryV6 = server.networks?.v6?.[0]?.ip_address
   const isRunning = server.status === 'active'
   const state = describeStatus(server.status)
-  const reach = useReachability(primaryV4, 22, client, server.id)
+  const remoteServiceProbe = remoteServiceProbeForImage(server.image)
+  const reach = useReachability(
+    diagnosticBlockReason ? undefined : connectionV4,
+    remoteServiceProbe.port,
+    client,
+    server.id,
+    profileId,
+    remoteServiceProbe.label
+  )
   const distroIcon = logoForDistribution(server.image?.distribution)
   const ramGB = (server.memory / 1024).toFixed(0)
+
+  const handleLaunchSsh = () => {
+    const blockReason = serverActionBlockReason(server.id, 'remote-access')
+    if (blockReason || !connectionV4) return
+    launchSsh({
+      serverId: server.id,
+      host: connectionV4,
+      username: 'root',
+      privateKeyPath: selectedKeyPath || undefined
+    })
+  }
+
+  const handleCopySshCommand = () => {
+    const blockReason = serverActionBlockReason(server.id, 'remote-access')
+    if (blockReason || !connectionV4) return
+    handleCopy(`ssh root@${connectionV4}`)
+  }
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text)
@@ -229,6 +326,15 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
     customPayload: any = {},
     confirm: Partial<Pick<ConfirmRequest, 'summary' | 'changes' | 'notes' | 'severity' | 'typeToConfirm'>> = {}
   ) => {
+    const operation = isDiagnostic(actionType)
+      ? 'diagnostic'
+      : actionType === 'reboot'
+        ? 'reboot'
+        : actionType === 'power_cycle'
+          ? 'power-cycle'
+          : 'mutation'
+    const blockReason = serverActionBlockReason(server.id, operation)
+    if (blockReason) return
     // Diagnostics change nothing; asking "are you sure?" before a ping is noise.
     let changeId: string | undefined
     if (!isDiagnostic(actionType)) {
@@ -243,6 +349,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
       changeId = c.changeId
     }
     setActionInProgress(actionType)
+    setActionError(null)
     try {
       // Diagnostics are awaited, because their answer only exists once the
       // action completes. Everything else is handed to the tracker, so the
@@ -258,11 +365,18 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
         serverId: server.id,
         actionPayload: { type: actionType, ...customPayload }
       })
+      if (!res) {
+        void updateChange(changeId, {
+          outcome: 'failed',
+          detail: 'BinaryLane returned no action record, so BLDesk cannot track whether the request ran.'
+        })
+        return
+      }
       window.bldeskApi?.sendNotification?.({
         title: `Server Action: ${describeActionType(actionType)}`,
         body: `Action initiated successfully.`
       })
-      if (res) track(res, describeActionType(actionType), server.name, changeId)
+      track(res, describeActionType(actionType), server.name, changeId)
     } catch (err: any) {
       void updateChange(changeId, { outcome: 'failed', detail: err?.message })
       if (isDiagnostic(actionType)) {
@@ -271,7 +385,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
           ok: false
         })
       } else {
-        alert(`Action failed: ${err.message || 'Unknown error'}`)
+        setActionError(`Action failed: ${err.message || 'Unknown error'}`)
       }
     } finally {
       setActionInProgress(null)
@@ -285,6 +399,8 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
    * either way, because once the server is gone there is nothing left to ask.
    */
   const handleCancelServer = async (): Promise<void> => {
+    const blockReason = serverActionBlockReason(server.id, 'mutation')
+    if (blockReason) return
     const monthly = server.size?.price_monthly
     const c = await confirmAction({
       title: 'Cancel server',
@@ -327,20 +443,27 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
       onBack()
     } catch (err: any) {
       void updateChange(c.changeId, { outcome: 'failed', detail: err?.message })
-      alert(`Failed to cancel the server: ${err?.message || 'unknown error'}`)
+      setActionError(`Failed to cancel the server: ${err?.message || 'unknown error'}`)
     }
   }
 
-  const handleLaunchRescueConsole = () => {
-    if (!consoleQuery.data) return
-    const url = consoleQuery.data.browser || consoleQuery.data.iframe
-    window.bldeskApi?.openRescueConsole?.({
-      serverId: server.id,
-      serverName: server.name,
-      url,
-      width: consoleQuery.data.width || 1024,
-      height: consoleQuery.data.height || 768
-    })
+  const handleLaunchRescueConsole = async () => {
+    const blockReason = serverActionBlockReason(server.id, 'remote-access')
+    if (blockReason) return
+    if (isOpeningConsole) return
+    setIsOpeningConsole(true)
+    try {
+      if (!window.bldeskApi?.openRescueConsole) throw new Error('Rescue-console access is unavailable in this build.')
+      const result = await window.bldeskApi.openRescueConsole({
+        serverId: server.id,
+        serverName: server.name
+      })
+      if (!result.success) throw new Error(result.error || 'Rescue-console access was refused.')
+    } catch (error: any) {
+      setActionError(`Could not open the rescue console: ${error?.message || error}`)
+    } finally {
+      setIsOpeningConsole(false)
+    }
   }
 
   const sample = metricsQuery.data?.average
@@ -375,16 +498,31 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                         ? `Power state from ${(server as any)._power.source === 'diagnostic' ? 'a hypervisor check' : 'performance samples'}${(server as any)._apiStatus !== server.status ? ` (API says ${(server as any)._apiStatus})` : ''}`
                         : 'From the API status field, which may not reflect power state'}
                   className={`px-2 py-0.5 text-[10px] font-semibold rounded-full inline-flex items-center gap-1 ${state.pill}`}
-                >
-                  {state.busy && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
-                  {state.label}
-                </span>
-              </h1>
+                 >
+                   {state.busy && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
+                   {state.label}
+                 </span>
+                 <span
+                   data-safety-level={safetyLevel}
+                   data-safety-protected-server={lockedServer ? 'true' : undefined}
+                   title={lockedServer ? 'Read-only views and diagnostics are allowed; changes and remote access are blocked.' : maintenanceServer ? 'Operational access, firewall rules, diagnostics, power recovery, and a non-replacing temporary backup are allowed; structural changes are blocked.' : 'Normal BLDesk server actions are available.'}
+                   className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wide ${
+                     lockedServer
+                       ? 'border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+                       : maintenanceServer
+                         ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                         : 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300'
+                   }`}
+                 >
+                   {lockedServer ? <ShieldCheck className="h-3 w-3" /> : <ShieldAlert className="h-3 w-3" />}
+                   {lockedServer ? 'Read-only' : maintenanceServer ? 'Maintenance' : 'Normal'}
+                 </span>
+               </h1>
             </div>
 
             {/* Breadcrumb Specs */}
             <div className="flex flex-wrap items-center gap-2 text-xs text-[#6c757d] dark:text-slate-400 mt-1">
-              <span className="font-mono text-[#212529] dark:text-slate-200">{primaryV4}</span>
+              <span className="font-mono text-[#212529] dark:text-slate-200">{connectionV4 || 'No IPv4 address'}</span>
               <span>•</span>
               <span className="font-mono">#{server.id}</span>
               <button
@@ -408,43 +546,55 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
           <div className="flex flex-wrap items-center gap-2">
             {/* Leads the cluster: the buttons beside it are only worth
                 clicking if the port answers from here. */}
-            <ReachabilityChip r={reach} ip={primaryV4} onOpenFirewall={() => onSelectSubTab?.('firewall')} />
-            {/* SSH Key Selector */}
-            <div className="flex items-center gap-1 bg-[#f8f9fa] dark:bg-[#212529] px-2 py-1 border border-[#ced4da] dark:border-[#373b3e] rounded">
-              <Key className="w-3.5 h-3.5 text-[#f1ca00] flex-shrink-0" />
-              <select
-                value={selectedKeyPath}
-                onChange={(e) => setSelectedKeyPath(e.target.value)}
-                className="bg-transparent text-xs text-[#212529] dark:text-slate-200 focus:outline-none cursor-pointer max-w-[120px]"
+            {!diagnosticBlockReason && (
+              <ReachabilityChip r={reach} ip={connectionV4} onOpenFirewall={() => onSelectSubTab?.('firewall')} />
+            )}
+            {remoteBlockReason && (
+              <span
+                title={remoteBlockReason}
+                className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-[11px] font-semibold text-amber-700 dark:text-amber-300"
               >
-                <option value="">Default Key</option>
-                {localKeys.map((k) => (
-                  <option key={k.name} value={k.privateKeyPath || ''} className="bg-white dark:bg-[#2b3035]">
-                    {k.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+                <ShieldAlert className="h-3.5 w-3.5" />
+                Remote access blocked
+              </span>
+            )}
+            {remoteServiceProbe.kind === 'ssh' && (
+              <>
+                {/* SSH Key Selector */}
+                <div className="flex items-center gap-1 bg-[#f8f9fa] dark:bg-[#212529] px-2 py-1 border border-[#ced4da] dark:border-[#373b3e] rounded">
+                  <Key className="w-3.5 h-3.5 text-[#f1ca00] flex-shrink-0" />
+                  <select
+                    value={selectedKeyPath}
+                    onChange={(e) => setSelectedKeyPath(e.target.value)}
+                    disabled={!!remoteBlockReason || !connectionV4}
+                    className="bg-transparent text-xs text-[#212529] dark:text-slate-200 focus:outline-none cursor-pointer max-w-[120px]"
+                  >
+                    <option value="">Default Key</option>
+                    {localKeys.map((k) => (
+                      <option key={k.name} value={k.privateKeyPath || ''} className="bg-white dark:bg-[#2b3035]">
+                        {k.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            <button
-              onClick={() =>
-                launchSsh({
-                  host: primaryV4,
-                  username: 'root',
-                  privateKeyPath: selectedKeyPath || undefined
-                })
-              }
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm"
-            >
-              <Terminal className="w-3.5 h-3.5" />
-              <span>Launch SSH</span>
-            </button>
+                <button
+                  onClick={handleLaunchSsh}
+                  disabled={!!remoteBlockReason || !connectionV4}
+                  title={remoteBlockReason ?? (!connectionV4 ? 'No IPv4 address is available' : 'Launch SSH')}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Terminal className="w-3.5 h-3.5" />
+                  <span>Launch SSH</span>
+                </button>
+              </>
+            )}
 
             <button
               onClick={handleLaunchRescueConsole}
-              disabled={!consoleQuery.data}
+              disabled={isOpeningConsole || !!remoteBlockReason}
               className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded transition disabled:opacity-50"
-              title="Open Out-of-Band Rescue VNC / Serial Console"
+              title={remoteBlockReason ?? 'Open Out-of-Band Rescue VNC / Serial Console'}
             >
               <Radio className="w-3.5 h-3.5" />
               <span>Console</span>
@@ -459,17 +609,26 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
               <>
                 <button
                   onClick={() => handleAction('reboot')}
-                  disabled={!!actionInProgress}
-                  className="p-1.5 text-[#6c757d] hover:text-amber-500 hover:bg-[#e9ecef] dark:hover:bg-[#343a40] rounded transition border border-[#ced4da] dark:border-[#373b3e]"
-                  title="Reboot"
+                  disabled={!!actionInProgress || !!rebootBlockReason}
+                  className="p-1.5 text-[#6c757d] hover:text-amber-500 hover:bg-[#e9ecef] dark:hover:bg-[#343a40] rounded transition border border-[#ced4da] dark:border-[#373b3e] disabled:cursor-not-allowed disabled:opacity-50"
+                  title={rebootBlockReason ?? 'Reboot'}
                 >
                   <RotateCw className="w-3.5 h-3.5" />
                 </button>
                 <button
+                  onClick={() => handleAction('power_cycle')}
+                  disabled={!!actionInProgress || !!powerCycleBlockReason}
+                  className="p-1.5 text-[#6c757d] hover:text-rose-500 hover:bg-[#e9ecef] dark:hover:bg-[#343a40] rounded transition border border-[#ced4da] dark:border-[#373b3e] disabled:cursor-not-allowed disabled:opacity-50"
+                  title={powerCycleBlockReason ?? 'Hard power cycle'}
+                  aria-label="Power cycle"
+                >
+                  <RotateCw className="w-3.5 h-3.5 stroke-[2.75]" />
+                </button>
+                <button
                   onClick={() => handleAction('shutdown')}
-                  disabled={!!actionInProgress}
-                  className="p-1.5 text-[#6c757d] hover:text-rose-500 hover:bg-[#e9ecef] dark:hover:bg-[#343a40] rounded transition border border-[#ced4da] dark:border-[#373b3e]"
-                  title="Graceful Shutdown"
+                  disabled={!!actionInProgress || !!mutationBlockReason}
+                  className="p-1.5 text-[#6c757d] hover:text-rose-500 hover:bg-[#e9ecef] dark:hover:bg-[#343a40] rounded transition border border-[#ced4da] dark:border-[#373b3e] disabled:cursor-not-allowed disabled:opacity-50"
+                  title={mutationBlockReason ?? 'Graceful Shutdown'}
                 >
                   <Power className="w-3.5 h-3.5" />
                 </button>
@@ -477,8 +636,9 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
             ) : (
               <button
                 onClick={() => handleAction('power_on')}
-                disabled={!!actionInProgress}
-                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700/60 rounded transition hover:bg-emerald-100"
+                disabled={!!actionInProgress || !!mutationBlockReason}
+                title={mutationBlockReason ?? 'Power on server'}
+                className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-700/60 rounded transition hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
                 <span>Power On</span>
@@ -488,6 +648,31 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
 
         </div>
       </div>
+
+      {mutationBlockReason && (
+        <div
+          role="status"
+          data-safety-level={safetyLevel}
+          className="mx-6 mt-4 flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200"
+        >
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            <strong>{lockedServer ? 'Read-only server.' : maintenanceServer ? 'Maintenance server.' : 'Server changes are unavailable.'}</strong>{' '}
+            {maintenanceServer
+              ? 'Operational access, firewall rules, diagnostics, power recovery, and a non-replacing temporary backup are allowed. Structural changes stay blocked.'
+              : lockedServer
+                ? 'Read-only views, ping, uptime, and running-state checks are allowed. Remote access and every change stay blocked.'
+                : mutationBlockReason}
+          </span>
+        </div>
+      )}
+
+      {actionError && (
+        <div role="alert" className="mx-6 mt-4 flex items-center justify-between gap-3 rounded border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-800 dark:text-rose-200">
+          <span>{actionError}</span>
+          <button type="button" onClick={() => setActionError(null)} className="font-semibold hover:underline">Dismiss</button>
+        </div>
+      )}
 
       {diagnosticResult && (
         <div
@@ -576,7 +761,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                     {server.status === 'active' ? 'Online' : state.label}
                   </span>
                   <span className="text-xs text-[#6c757d] dark:text-slate-400">
-                    {primaryV4 ? '1 Gbps uplink' : 'no public address'}
+                    {publicV4 ? '1 Gbps uplink' : 'no public address'}
                   </span>
                 </div>
               </div>
@@ -628,13 +813,15 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                   <div className="flex items-center justify-between py-2.5 px-4">
                     <span className="w-32 text-[#6c757d] dark:text-slate-400">Public IPv4</span>
                     <div className="flex items-center gap-2">
-                      <span className="font-mono text-[#212529] dark:text-white font-medium">{primaryV4}</span>
-                      <button
-                        onClick={() => handleCopy(primaryV4)}
-                        className="text-[#6c757d] hover:text-[#017cb6]"
-                      >
-                        {copiedText === primaryV4 ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
+                      <span className="font-mono text-[#212529] dark:text-white font-medium">{publicV4 || '—'}</span>
+                      {publicV4 && (
+                        <button
+                          onClick={() => handleCopy(publicV4)}
+                          className="text-[#6c757d] hover:text-[#017cb6]"
+                        >
+                          {copiedText === publicV4 ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -662,16 +849,24 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                     </span>
                   </div>
 
-                  <div className="flex items-center justify-between py-2.5 px-4">
-                    <span className="w-32 text-[#6c757d] dark:text-slate-400">SSH Connect</span>
-                    <button
-                      onClick={() => handleCopy(`ssh root@${primaryV4}`)}
-                      className="flex items-center gap-1.5 text-xs text-[#017cb6] hover:underline font-mono"
-                    >
-                      <span>ssh root@{primaryV4}</span>
-                      <Copy className="w-3 h-3" />
-                    </button>
-                  </div>
+                  {remoteServiceProbe.kind === 'ssh' && (
+                    <div className="flex items-center justify-between py-2.5 px-4">
+                      <span className="w-32 text-[#6c757d] dark:text-slate-400">SSH Connect</span>
+                      {connectionV4 ? (
+                        <button
+                          onClick={handleCopySshCommand}
+                          disabled={!!remoteBlockReason}
+                          title={remoteBlockReason ?? 'Copy SSH command'}
+                          className="flex items-center gap-1.5 text-xs text-[#017cb6] hover:underline font-mono disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <span>ssh root@{connectionV4}</span>
+                          <Copy className="w-3 h-3" />
+                        </button>
+                      ) : (
+                        <span className="text-[#6c757d] dark:text-slate-400">Unavailable</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -705,27 +900,30 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
         {activeSubTab === 'remote-access' && (
           <div className="space-y-6">
             <div className="bg-white dark:bg-[#2b3035] p-5 rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm">
-              <h3 className="text-sm font-bold text-[#212529] dark:text-white mb-2">Native Terminal & SSH Keys</h3>
+              <h3 className="text-sm font-bold text-[#212529] dark:text-white mb-2">
+                {remoteServiceProbe.kind === 'ssh' ? 'Native Terminal & SSH Keys' : 'Remote Access'}
+              </h3>
               <p className="text-xs text-[#6c757d] dark:text-slate-400 mb-4">
-                Launch an instant SSH connection in your macOS/Windows terminal using your hardware-vault keys.
+                {remoteServiceProbe.kind === 'ssh'
+                  ? 'Launch an instant SSH connection in your macOS/Windows terminal using your hardware-vault keys.'
+                  : 'This Windows server uses RDP on TCP 3389. BLDesk checks its reachability; connect with your RDP client or use the out-of-band rescue console here.'}
               </p>
               <div className="flex items-center gap-3">
-                <button
-                  onClick={() =>
-                    launchSsh({
-                      host: primaryV4,
-                      username: 'root',
-                      privateKeyPath: selectedKeyPath || undefined
-                    })
-                  }
-                  className="px-4 py-2 bg-[#017cb6] hover:bg-[#016594] text-white text-xs font-medium rounded transition flex items-center gap-2 shadow-sm"
-                >
-                  <Terminal className="w-4 h-4" />
-                  <span>Launch Terminal Now</span>
-                </button>
+                {remoteServiceProbe.kind === 'ssh' && (
+                  <button
+                    onClick={handleLaunchSsh}
+                    disabled={!!remoteBlockReason || !connectionV4}
+                    title={remoteBlockReason ?? (!connectionV4 ? 'No IPv4 address is available' : 'Launch SSH')}
+                    className="px-4 py-2 bg-[#017cb6] hover:bg-[#016594] text-white text-xs font-medium rounded transition flex items-center gap-2 shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Terminal className="w-4 h-4" />
+                    <span>Launch Terminal Now</span>
+                  </button>
+                )}
                 <button
                   onClick={handleLaunchRescueConsole}
-                  disabled={!consoleQuery.data}
+                  disabled={isOpeningConsole || !!remoteBlockReason}
+                  title={remoteBlockReason ?? 'Open Out-of-Band Rescue VNC / Serial Console'}
                   className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-medium rounded transition flex items-center gap-2 shadow-sm disabled:opacity-50"
                 >
                   <Radio className="w-4 h-4" />
@@ -739,130 +937,165 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
         {/* BACKUPS TAB */}
         {activeSubTab === 'backups' && (
           <div className="bg-white dark:bg-[#2b3035] p-5 rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm">
-            <BackupManager client={client} initialServerId={server.id} servers={allServers ?? [server]} />
+            <BackupManager
+              key={`server-backups-${server.id}`}
+              client={client}
+              initialServerId={server.id}
+              servers={allServers ?? [server]}
+            />
           </div>
         )}
 
         {/* NETWORK TAB */}
-        {activeSubTab === 'network' && <ServerNetwork client={client} server={server} />}
+        {activeSubTab === 'network' && (
+          <ServerNetwork client={client} server={server} mutationBlockReason={mutationBlockReason} />
+        )}
 
         {/* FIREWALL TAB */}
         {activeSubTab === 'firewall' && (
           <div className="bg-white dark:bg-[#2b3035] p-5 rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm">
-            <FirewallManager client={client} initialServerId={server.id} servers={allServers ?? [server]} />
+            <FirewallManager
+              client={client}
+              initialServerId={server.id}
+              profileId={profileId}
+              servers={firewallServers}
+              mutationBlockReason={firewallBlockReason}
+            />
           </div>
         )}
 
         {/* SETTINGS TAB */}
 
         {activeSubTab === 'settings' && (
-          <ServerSettings client={client} server={server} servers={allServers ?? [server]} />
+          <ServerSettings
+            client={client}
+            server={server}
+            servers={actionableServers}
+            mutationBlockReason={mutationBlockReason}
+            powerCycleBlockReason={powerCycleBlockReason}
+          />
         )}
 
         {/* RECOVERY TAB */}
         {activeSubTab === 'change-plan' && (
-          <div className="p-4 sm:p-6">
-            <div className="bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e] p-4 sm:p-5 shadow-sm space-y-4">
-              <div>
-                <h3 className="text-xs font-bold text-[#212529] dark:text-white uppercase tracking-wider">Change Plan</h3>
-                <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-1">
-                  Moves the server to a different plan. The server restarts to apply the change.
-                </p>
+          <SafetyBoundary reason={mutationBlockReason}>
+            <div className="p-4 sm:p-6">
+              <div className="bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e] p-4 sm:p-5 shadow-sm space-y-4">
+                <div>
+                  <h3 className="text-xs font-bold text-[#212529] dark:text-white uppercase tracking-wider">Change Plan</h3>
+                  <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-1">
+                    Moves the server to a different plan. The server restarts to apply the change.
+                  </p>
+                </div>
+                <ChangePlanPanel
+                  client={client}
+                  server={server}
+                  busy={actionInProgress !== null || !!mutationBlockReason}
+                  onApply={(payload, summary, changes, confirm) =>
+                    void handleAction('resize', payload, {
+                      // A resize restarts the server; releasing addresses escalates it further (see ChangePlanPanel).
+                      summary: `${summary}. The server restarts to apply it.`,
+                      severity: 'destructive',
+                      changes,
+                      ...confirm
+                    })
+                  }
+                />
               </div>
-              <ChangePlanPanel
-                client={client}
-                server={server}
-                busy={actionInProgress !== null}
-                onApply={(payload, summary, changes, confirm) =>
-                  void handleAction('resize', payload, {
-                    // A resize restarts the server; releasing addresses escalates it further (see ChangePlanPanel).
-                    summary: `${summary}. The server restarts to apply it.`,
-                    severity: 'destructive',
-                    changes,
-                    ...confirm
-                  })
-                }
-              />
             </div>
-          </div>
+          </SafetyBoundary>
         )}
 
         {activeSubTab === 'cancel' && (
-          <div className="p-4 sm:p-6">
-            <div className="bg-white dark:bg-[#2b3035] rounded-lg border border-rose-300 dark:border-rose-900 p-4 sm:p-5 shadow-sm space-y-3">
-              <h3 className="text-xs font-bold text-rose-700 dark:text-rose-300 uppercase tracking-wider">
-                Cancel Server
-              </h3>
-              <p className="text-xs text-[#495057] dark:text-slate-300">
-                Cancels the Cloud Server service. It is cancelled within five minutes, after which an invoice is
-                generated for usage to date. The server and its data are destroyed and cannot be recovered.
-              </p>
-              <button
-                type="button"
-                onClick={() => void handleCancelServer()}
-                disabled={!!actionInProgress}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-rose-600 text-white disabled:opacity-40"
-              >
-                <span>Cancel Server</span>
-              </button>
+          <SafetyBoundary reason={mutationBlockReason}>
+            <div className="p-4 sm:p-6">
+              <div className="bg-white dark:bg-[#2b3035] rounded-lg border border-rose-300 dark:border-rose-900 p-4 sm:p-5 shadow-sm space-y-3">
+                <h3 className="text-xs font-bold text-rose-700 dark:text-rose-300 uppercase tracking-wider">
+                  Cancel Server
+                </h3>
+                <p className="text-xs text-[#495057] dark:text-slate-300">
+                  Cancels the Cloud Server service. It is cancelled within five minutes, after which an invoice is
+                  generated for usage to date. The server and its data are destroyed and cannot be recovered.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void handleCancelServer()}
+                  disabled={!!actionInProgress || !!mutationBlockReason}
+                  title={mutationBlockReason ?? 'Cancel server'}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded bg-rose-600 text-white disabled:opacity-40"
+                >
+                  <span>Cancel Server</span>
+                </button>
+              </div>
             </div>
-          </div>
+          </SafetyBoundary>
         )}
 
         {activeSubTab === 'recovery' && (
           <div className="bg-white dark:bg-[#2b3035] p-5 rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-[#212529] dark:text-white">Emergency Recovery & Rescue</h3>
-            <p className="text-xs text-[#6c757d] dark:text-slate-400">
-              Run diagnostics against the VPS or reboot into safe rescue mode.
-            </p>
+              <h3 className="text-sm font-bold text-[#212529] dark:text-white">Emergency Recovery & Rescue</h3>
+              <p className="text-xs text-[#6c757d] dark:text-slate-400">
+                Run diagnostics against the VPS or boot into rescue mode.
+              </p>
 
             {/* The host node is already on the server object, so this needs no
                 request. Shown beside the VPS diagnostics because the two used to
                 be conflated: the `uptime` action returns the guest's uptime, not
                 the hypervisor's, and they are routinely weeks apart. */}
-            {server.host && (
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs p-2.5 rounded bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e]">
-                <span className="text-[#495057] dark:text-[#adb5bd]">
-                  Host node{' '}
-                  <span className="font-mono font-medium text-[#212529] dark:text-white">
-                    {server.host.display_name || '—'}
-                  </span>
-                </span>
-                {typeof server.host.uptime_ms === 'number' && (
+              {server.host && (
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs p-2.5 rounded bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e]">
                   <span className="text-[#495057] dark:text-[#adb5bd]">
-                    Host uptime{' '}
-                    <span className="font-medium text-[#212529] dark:text-white">
-                      {formatUptime(server.host.uptime_ms)}
+                    Host node{' '}
+                    <span className="font-mono font-medium text-[#212529] dark:text-white">
+                      {server.host.display_name || '—'}
                     </span>
                   </span>
-                )}
-              </div>
-            )}
+                  {typeof server.host.uptime_ms === 'number' && (
+                    <span className="text-[#495057] dark:text-[#adb5bd]">
+                      Host uptime{' '}
+                      <span className="font-medium text-[#212529] dark:text-white">
+                        {formatUptime(server.host.uptime_ms)}
+                      </span>
+                    </span>
+                  )}
+                </div>
+              )}
 
-            <div className="flex flex-wrap gap-2 pt-2">
-              <DiagnosticButton
-                label="VPS Ping Check"
-                busyLabel="Pinging..."
-                active={actionInProgress === 'ping'}
-                disabled={!!actionInProgress}
-                onClick={() => handleAction('ping')}
-              />
-              <DiagnosticButton
-                label="VPS Uptime"
-                busyLabel="Checking..."
-                active={actionInProgress === 'uptime'}
-                disabled={!!actionInProgress}
-                onClick={() => handleAction('uptime')}
-              />
-              <button
-                onClick={() => handleAction('enable_rescue_mode')}
-                disabled={!!actionInProgress}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-400 text-xs font-medium rounded hover:bg-amber-500/20 transition disabled:opacity-50"
-              >
-                {actionInProgress === 'enable_rescue_mode' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-                {actionInProgress === 'enable_rescue_mode' ? 'Enabling...' : 'Boot into Rescue Mode'}
-              </button>
-            </div>
+              <div className="flex flex-wrap gap-2 pt-2">
+                <DiagnosticButton
+                  label="VPS Ping Check"
+                  busyLabel="Pinging..."
+                  active={actionInProgress === 'ping'}
+                  disabled={!!actionInProgress || !!diagnosticBlockReason}
+                  title={diagnosticBlockReason ?? "Ask BinaryLane to send an ICMP ping to this server's public interface. A failed check can mean ICMP is blocked, not that the server is off."}
+                  onClick={() => handleAction('ping')}
+                />
+                <DiagnosticButton
+                  label="VPS Uptime"
+                  busyLabel="Checking..."
+                  active={actionInProgress === 'uptime'}
+                  disabled={!!actionInProgress || !!diagnosticBlockReason}
+                  title={diagnosticBlockReason ?? "Read the VPS's continuous uptime; this is not a network reachability test."}
+                  onClick={() => handleAction('uptime')}
+                />
+                <DiagnosticButton
+                  label="Running State"
+                  busyLabel="Checking..."
+                  active={actionInProgress === 'is_running'}
+                  disabled={!!actionInProgress || !!diagnosticBlockReason}
+                  title={diagnosticBlockReason ?? 'Ask BinaryLane whether the VM is running. A running VM can still be unreachable or unresponsive.'}
+                  onClick={() => handleAction('is_running')}
+                />
+                <button
+                  onClick={() => handleAction('enable_rescue_mode')}
+                  disabled={!!actionInProgress || !!mutationBlockReason}
+                  title={mutationBlockReason ?? 'Boot into rescue mode'}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500/10 border border-amber-500/40 text-amber-700 dark:text-amber-400 text-xs font-medium rounded hover:bg-amber-500/20 transition disabled:opacity-50"
+                >
+                  {actionInProgress === 'enable_rescue_mode' && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  {actionInProgress === 'enable_rescue_mode' ? 'Enabling...' : 'Boot into Rescue Mode'}
+                </button>
+              </div>
           </div>
         )}
       </div>

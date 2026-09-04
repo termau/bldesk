@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import {
   Tag,
   HardDrive,
@@ -45,11 +45,21 @@ interface ServerSettingsProps {
   servers: any[]
   client: BinaryLaneClient | null
   server: Server
+  /** Blocks ordinary BinaryLane writes without hiding the settings data. */
+  mutationBlockReason?: string | null
+  /** Power cycle has its own Maintenance-tier allowance. */
+  powerCycleBlockReason?: string | null
 }
 
 type SettingsTab = 'hostname' | 'disks' | 'advanced' | 'alerts' | 'region' | 'partner' | 'danger'
 
-export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: initialServer, servers: allServers }) => {
+export const ServerSettings: React.FC<ServerSettingsProps> = ({
+  client,
+  server: initialServer,
+  servers: allServers,
+  mutationBlockReason = null,
+  powerCycleBlockReason = mutationBlockReason
+}) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>('hostname')
   const [notice, setNotice] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
@@ -67,6 +77,12 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
   const confirmAction = useConfirm()
   const mutatingCount = useIsMutating({ mutationKey: networkActionMutationKey(server.id) })
   const busy = mutatingCount > 0 || actionMutation.isPending
+  const mutationControlsDisabled = busy || !!mutationBlockReason
+  const powerCycleControlsDisabled = busy || !!powerCycleBlockReason
+  const mutationBlockReasonRef = useRef<string | null>(mutationBlockReason)
+  const powerCycleBlockReasonRef = useRef<string | null>(powerCycleBlockReason)
+  mutationBlockReasonRef.current = mutationBlockReason
+  powerCycleBlockReasonRef.current = powerCycleBlockReason
 
   // --- Form States ---
   // Hostname
@@ -152,9 +168,31 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
    * the dialog should show beyond the title and the server: a summary, a
    * before → after table, warnings, and how bad getting it wrong is.
    */
-  const executeAction = async (label: string, payload: any, req: Omit<ConfirmRequest, 'title' | 'target'>): Promise<boolean> => {
+  const executeAction = async (
+    label: string,
+    payload: any,
+    req: Omit<ConfirmRequest, 'title' | 'target'>,
+    operation: 'mutation' | 'power-cycle' = 'mutation'
+  ): Promise<boolean> => {
+    const currentBlockReason = () => operation === 'power-cycle'
+      ? powerCycleBlockReasonRef.current
+      : mutationBlockReasonRef.current
+    const initialBlockReason = currentBlockReason()
+    if (initialBlockReason) {
+      setErrorMsg(initialBlockReason)
+      return false
+    }
     const c = await confirmAction({ title: label, target: { kind: 'server', id: server.id, name: server.name }, ...req })
     if (!c.ok) return false
+    const latestBlockReason = currentBlockReason()
+    if (latestBlockReason) {
+      void updateChange(c.changeId, {
+        outcome: 'failed',
+        detail: `Blocked locally before the request was sent: ${latestBlockReason}`
+      })
+      setErrorMsg(latestBlockReason)
+      return false
+    }
     setErrorMsg(null)
     setNotice(null)
     try {
@@ -325,7 +363,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
     await executeAction(
       'Hard Power Cycle',
       { type: 'power_cycle' },
-      { summary: 'Cuts power at the hypervisor and starts the server again. Equivalent to pulling the plug: anything unsaved in the guest is lost.', severity: 'destructive', confirmLabel: 'Power cycle' }
+      { summary: 'Cuts power at the hypervisor and starts the server again. Equivalent to pulling the plug: anything unsaved in the guest is lost.', severity: 'destructive', confirmLabel: 'Power cycle' },
+      'power-cycle'
     )
   }
 
@@ -369,6 +408,19 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
 
   return (
     <div className="space-y-4">
+      {mutationBlockReason && (
+        <div
+          role="status"
+          data-safety-mutation-controls="blocked"
+          className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 text-amber-800 dark:text-amber-200 text-xs rounded flex items-start gap-2"
+        >
+          <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+          <span>
+            <strong>Read-only settings.</strong> {mutationBlockReason} You can still inspect every section and switch tabs.
+            {!powerCycleBlockReason && ' This server’s safety level still permits a confirmed power cycle.'}
+          </span>
+        </div>
+      )}
       {/* Mutating / In-progress Action Alert */}
       {busy && (
         <div
@@ -480,7 +532,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                 type="text"
                 value={hostnameInput}
                 onChange={(e) => setHostnameInput(e.target.value)}
-                disabled={busy}
+                disabled={mutationControlsDisabled}
+                title={mutationBlockReason ?? undefined}
                 className={`${inputClass} w-full font-mono`}
                 placeholder="my-server-name"
                 required
@@ -488,7 +541,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
             </div>
             <button
               type="submit"
-              disabled={busy || !hostnameInput.trim() || hostnameInput.trim() === server.name}
+              disabled={mutationControlsDisabled || !hostnameInput.trim() || hostnameInput.trim() === server.name}
+              title={mutationBlockReason ?? 'Change server name'}
               className={primaryBtn}
             >
               <Tag className="w-3.5 h-3.5" />
@@ -553,7 +607,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                                 value={resizeDiskSize}
                                 onChange={(e) => setResizeDiskSize(e.target.value)}
                                 className={`${inputClass} w-24`}
-                                disabled={busy}
+                                disabled={mutationControlsDisabled}
+                                title={mutationBlockReason ?? undefined}
                               />
                               <span className="text-xs text-[#6c757d]">GB</span>
                             </div>
@@ -566,7 +621,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                             <div className="flex items-center justify-end gap-1.5">
                               <button
                                 onClick={() => handleResizeDisk(disk)}
-                                disabled={busy || !resizeDiskSize}
+                                disabled={mutationControlsDisabled || !resizeDiskSize}
+                                title={mutationBlockReason ?? 'Resize disk'}
                                 className={primaryBtn}
                               >
                                 Save
@@ -586,7 +642,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                                   setResizeDiskId(disk.id)
                                   setResizeDiskSize(String(disk.size_gigabytes))
                                 }}
-                                disabled={busy}
+                                disabled={mutationControlsDisabled}
+                                title={mutationBlockReason ?? 'Resize disk'}
                                 className="px-2.5 py-1 text-xs text-[#017cb6] hover:underline font-medium"
                               >
                                 Resize
@@ -594,9 +651,9 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                               {!disk.primary && (
                                 <button
                                   onClick={() => handleDeleteDisk(disk)}
-                                  disabled={busy}
+                                  disabled={mutationControlsDisabled}
                                   className="text-rose-600 hover:text-rose-700 p-1 transition"
-                                  title="Delete secondary disk"
+                                  title={mutationBlockReason ?? 'Delete secondary disk'}
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
@@ -636,14 +693,15 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                   max="2000"
                   value={newDiskSize}
                   onChange={(e) => setNewDiskSize(e.target.value)}
-                  disabled={busy}
+                  disabled={mutationControlsDisabled}
+                  title={mutationBlockReason ?? undefined}
                   className={`${inputClass} w-28`}
                   placeholder="Size in GB"
                   required
                 />
                 <span className="text-xs text-[#6c757d] dark:text-slate-400">GB</span>
               </div>
-              <button type="submit" disabled={busy || !newDiskSize} className={primaryBtn}>
+              <button type="submit" disabled={mutationControlsDisabled || !newDiskSize} title={mutationBlockReason ?? 'Attach disk'} className={primaryBtn}>
                 <Plus className="w-3.5 h-3.5" />
                 <span>Attach Disk</span>
               </button>
@@ -674,7 +732,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                 <select
                   value={machineType}
                   onChange={(e) => setMachineType(e.target.value as VmMachineType)}
-                  disabled={busy}
+                  disabled={mutationControlsDisabled}
+                  title={mutationBlockReason ?? undefined}
                   className={`${inputClass} w-full`}
                 >
                   <option value="">Default (Automatic)</option>
@@ -696,7 +755,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                 <select
                   value={processorModel}
                   onChange={(e) => setProcessorModel(parseInt(e.target.value, 10))}
-                  disabled={busy}
+                  disabled={mutationControlsDisabled}
+                  title={mutationBlockReason ?? undefined}
                   className={`${inputClass} w-full`}
                 >
                   <option value="-1">Host Default (Auto)</option>
@@ -717,7 +777,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
               <select
                 value={videoDevice}
                 onChange={(e) => setVideoDevice(e.target.value as VideoDevice)}
-                disabled={busy}
+                disabled={mutationControlsDisabled}
+                title={mutationBlockReason ?? undefined}
                 className={`${inputClass} w-full`}
               >
                 <option value="cirrus-logic">Cirrus Logic (Default Standard)</option>
@@ -746,7 +807,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                         <input
                           type="checkbox"
                           checked={isChecked}
-                          disabled={busy}
+                          disabled={mutationControlsDisabled}
+                          title={mutationBlockReason ?? undefined}
                           onChange={(e) => {
                             if (e.target.checked) {
                               setSelectedFeatures([...selectedFeatures, feat.slug])
@@ -767,7 +829,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
               </div>
             )}
 
-            <button type="submit" disabled={busy} className={primaryBtn}>
+            <button type="submit" disabled={mutationControlsDisabled} title={mutationBlockReason ?? 'Save advanced features'} className={primaryBtn}>
               <Cpu className="w-3.5 h-3.5" />
               <span>Save Advanced Features</span>
             </button>
@@ -805,7 +867,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                     min="1"
                     max="100"
                     value={alertForm.cpu.value}
-                    disabled={busy || !alertForm.cpu.enabled}
+                    disabled={mutationControlsDisabled || !alertForm.cpu.enabled}
+                    title={mutationBlockReason ?? undefined}
                     onChange={(e) =>
                       setAlertForm({
                         ...alertForm,
@@ -818,7 +881,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                   <input
                     type="checkbox"
                     checked={alertForm.cpu.enabled}
-                    disabled={busy}
+                    disabled={mutationControlsDisabled}
+                    title={mutationBlockReason ?? undefined}
                     onChange={(e) =>
                       setAlertForm({
                         ...alertForm,
@@ -842,7 +906,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                     min="1"
                     max="100"
                     value={alertForm['memory-used'].value}
-                    disabled={busy || !alertForm['memory-used'].enabled}
+                    disabled={mutationControlsDisabled || !alertForm['memory-used'].enabled}
+                    title={mutationBlockReason ?? undefined}
                     onChange={(e) =>
                       setAlertForm({
                         ...alertForm,
@@ -858,7 +923,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                   <input
                     type="checkbox"
                     checked={alertForm['memory-used'].enabled}
-                    disabled={busy}
+                    disabled={mutationControlsDisabled}
+                    title={mutationBlockReason ?? undefined}
                     onChange={(e) =>
                       setAlertForm({
                         ...alertForm,
@@ -882,7 +948,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                     min="1"
                     max="100"
                     value={alertForm['storage-used'].value}
-                    disabled={busy || !alertForm['storage-used'].enabled}
+                    disabled={mutationControlsDisabled || !alertForm['storage-used'].enabled}
+                    title={mutationBlockReason ?? undefined}
                     onChange={(e) =>
                       setAlertForm({
                         ...alertForm,
@@ -898,7 +965,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                   <input
                     type="checkbox"
                     checked={alertForm['storage-used'].enabled}
-                    disabled={busy}
+                    disabled={mutationControlsDisabled}
+                    title={mutationBlockReason ?? undefined}
                     onChange={(e) =>
                       setAlertForm({
                         ...alertForm,
@@ -922,7 +990,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                     min="1"
                     max="100"
                     value={alertForm['data-transfer-used'].value}
-                    disabled={busy || !alertForm['data-transfer-used'].enabled}
+                    disabled={mutationControlsDisabled || !alertForm['data-transfer-used'].enabled}
+                    title={mutationBlockReason ?? undefined}
                     onChange={(e) =>
                       setAlertForm({
                         ...alertForm,
@@ -938,7 +1007,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                   <input
                     type="checkbox"
                     checked={alertForm['data-transfer-used'].enabled}
-                    disabled={busy}
+                    disabled={mutationControlsDisabled}
+                    title={mutationBlockReason ?? undefined}
                     onChange={(e) =>
                       setAlertForm({
                         ...alertForm,
@@ -954,7 +1024,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
               </div>
             </div>
 
-            <button type="submit" disabled={busy} className={primaryBtn}>
+            <button type="submit" disabled={mutationControlsDisabled} title={mutationBlockReason ?? 'Save alert thresholds'} className={primaryBtn}>
               <Bell className="w-3.5 h-3.5" />
               <span>Save Alert Thresholds</span>
             </button>
@@ -995,7 +1065,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
               <select
                 value={selectedRegion}
                 onChange={(e) => setSelectedRegion(e.target.value)}
-                disabled={busy || regionsQuery.isLoading}
+                disabled={mutationControlsDisabled || regionsQuery.isLoading}
+                title={mutationBlockReason ?? undefined}
                 className={`${inputClass} w-full`}
               >
                 {(regionsQuery.data || []).map((r) => (
@@ -1008,7 +1079,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
 
             <button
               type="submit"
-              disabled={busy || !selectedRegion || selectedRegion === server.region?.slug}
+              disabled={mutationControlsDisabled || !selectedRegion || selectedRegion === server.region?.slug}
+              title={mutationBlockReason ?? 'Migrate server'}
               className={primaryBtn}
             >
               <ArrowRightLeft className="w-3.5 h-3.5" />
@@ -1040,7 +1112,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
               <select
                 value={selectedPartnerId}
                 onChange={(e) => setSelectedPartnerId(e.target.value)}
-                disabled={busy}
+                disabled={mutationControlsDisabled}
+                title={mutationBlockReason ?? undefined}
                 className={`${inputClass} w-full`}
               >
                 <option value="">No Partner Server (Independent)</option>
@@ -1052,7 +1125,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
               </select>
             </div>
 
-            <button type="submit" disabled={busy} className={primaryBtn}>
+            <button type="submit" disabled={mutationControlsDisabled} title={mutationBlockReason ?? 'Update partner pairing'} className={primaryBtn}>
               <Users className="w-3.5 h-3.5" />
               <span>Update Partner Pairing</span>
             </button>
@@ -1078,7 +1151,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                     Generates a new root password and sends it to your account email.
                   </p>
                 </div>
-                <button onClick={handleResetPassword} disabled={busy} className={primaryBtn}>
+                <button onClick={handleResetPassword} disabled={mutationControlsDisabled} title={mutationBlockReason ?? 'Reset password'} className={primaryBtn}>
                   <Lock className="w-3.5 h-3.5" />
                   <span>Reset Password</span>
                 </button>
@@ -1093,7 +1166,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                     Force an immediate hardware power reset on the physical hypervisor.
                   </p>
                 </div>
-                <button onClick={handlePowerCycle} disabled={busy} className={primaryBtn}>
+                <button onClick={handlePowerCycle} disabled={powerCycleControlsDisabled} title={powerCycleBlockReason ?? 'Force power cycle'} className={primaryBtn}>
                   <RotateCw className="w-3.5 h-3.5" />
                   <span>Force Power Cycle</span>
                 </button>
@@ -1115,12 +1188,13 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                 type="text"
                 value={rebuildImage}
                 onChange={(e) => setRebuildImage(e.target.value)}
-                disabled={busy}
+                disabled={mutationControlsDisabled}
+                title={mutationBlockReason ?? undefined}
                 className={`${inputClass} w-64`}
                 placeholder="Image slug (e.g. ubuntu-24-04-x64)"
                 required
               />
-              <button type="submit" disabled={busy || !rebuildImage.trim()} className={dangerBtn}>
+              <button type="submit" disabled={mutationControlsDisabled || !rebuildImage.trim()} title={mutationBlockReason ?? 'Rebuild operating system'} className={dangerBtn}>
                 <AlertTriangle className="w-3.5 h-3.5" />
                 <span>Rebuild Operating System</span>
               </button>

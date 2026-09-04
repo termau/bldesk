@@ -21,7 +21,7 @@ export function useServers(client: BinaryLaneClient | null, profileId?: string) 
           params: { query: { per_page: 200, page } }
         })
         if (error) {
-          console.warn('[useServers] Query error:', error)
+          console.warn('[useServers] Query error:', describeApiError(error))
           // A failed first page must not become "no servers": returning [] here
           // replaced the cached list with nothing on any transient API failure
           // (blank sidebar, empty matrix, tray at 0) until the next poll. Throw
@@ -132,22 +132,6 @@ export function useServerMetrics(client: BinaryLaneClient | null, serverId: numb
     },
     enabled: !!client && !!serverId,
     refetchInterval: 5000 // live gauges poll every 5s
-  })
-}
-
-export function useServerConsole(client: BinaryLaneClient | null, serverId: number | null) {
-  return useQuery({
-    queryKey: ['serverConsole', serverId],
-    queryFn: async () => {
-      if (!client || !serverId) return null
-      const { data, error } = await client.GET('/v2/servers/{server_id}/console', {
-        params: { path: { server_id: serverId } }
-      })
-      if (error) throw new Error(JSON.stringify(error))
-      return data?.console || null
-    },
-    enabled: !!client && !!serverId,
-    staleTime: 60000 // console URLs expire after temporary token
   })
 }
 
@@ -892,7 +876,7 @@ export function useServerBackups(client: BinaryLaneClient | null, serverId: numb
       const { data, error } = await client.GET('/v2/servers/{server_id}/backups', {
         params: { path: { server_id: serverId } }
       })
-      if (error) return []
+      if (error) throw new Error(describeApiError(error))
       return data?.backups || []
     },
     enabled: !!client && !!serverId
@@ -907,7 +891,7 @@ export function useServerSnapshots(client: BinaryLaneClient | null, serverId: nu
       const { data, error } = await client.GET('/v2/servers/{server_id}/snapshots', {
         params: { path: { server_id: serverId } }
       })
-      if (error) return []
+      if (error) throw new Error(describeApiError(error))
       return data?.snapshots || []
     },
     enabled: !!client && !!serverId
@@ -929,7 +913,7 @@ export function useServerActions(client: BinaryLaneClient | null, serverId: numb
       const { data, error } = await client.GET('/v2/servers/{server_id}/actions', {
         params: { path: { server_id: serverId } }
       })
-      if (error) return []
+      if (error) throw new Error(describeApiError(error))
       return data?.actions || []
     },
     enabled: !!client && !!serverId,

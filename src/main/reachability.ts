@@ -3,14 +3,16 @@
  *
  * The point of the desktop app is that it sits where the customer sits: mPanel
  * can tell you a server is running, but only something on the customer's network
- * can tell you whether *they* can reach port 22. These probes answer that.
+ * can tell you whether *they* can reach the guest's remote-management service.
+ * BLDesk checks SSH/TCP 22 for Unix-like images and RDP/TCP 3389 for Windows.
  *
  * Three deliberate constraints:
  *
  * 1. **No raw sockets.** ICMP needs privileges we should not ask for, so ping
  *    shells out to the system binary and TCP uses an ordinary connect. A TCP
- *    connect to 22 is the more useful signal anyway - it is the thing the user
- *    is actually trying to do, and it survives networks that drop ICMP.
+ *    connect to the normal SSH or RDP port is the more useful signal anyway -
+ *    it is the thing the user is actually trying to do, and it survives
+ *    networks that drop ICMP.
  *
  * 2. **No shell, ever.** The host reaches us from the renderer, so `ping` and
  *    `traceroute` are spawned with an argument array and `shell: false`, and the

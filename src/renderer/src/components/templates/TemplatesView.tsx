@@ -23,11 +23,14 @@ import {
   ClipboardPaste
 } from 'lucide-react'
 import type { components } from '@shared/api/schema'
+import { templateSlug } from '@shared/templates'
 import type { BinaryLaneClient } from '../../api/client'
 import { useRegions, useSizes, useDistributionImages, useVpcs, useSshKeys } from '../../api/queries'
 import { Modal } from '../ui/Modal'
 import { useConfirm } from '../../context/ConfirmContext'
+import { useProfileSafety } from '../../context/ProfileSafetyContext'
 import { CreateServerModal } from '../servers/CreateServerModal'
+import { SafetyPolicyBadge } from '../ui/SafetyPolicyBadge'
 import {
   TEMPLATE_KIND,
   TEMPLATES_EVENT,
@@ -98,6 +101,11 @@ function emptyTemplate(): ServerTemplate {
 
 export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, profileId, draft, onDraftConsumed, applyRequest, onApplyConsumed }) => {
   const confirmAction = useConfirm()
+  const { accessMode, collectionMutationBlockReason, resourceActionBlockReason } = useProfileSafety()
+  const collectionMutationBlockReasonRef = useRef(collectionMutationBlockReason)
+  const resourceActionBlockReasonRef = useRef(resourceActionBlockReason)
+  collectionMutationBlockReasonRef.current = collectionMutationBlockReason
+  resourceActionBlockReasonRef.current = resourceActionBlockReason
   const [stored, setStored] = useState<ListedServerTemplate[]>([])
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -109,6 +117,10 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
   const [create, setCreate] = useState<{ prefill: CreateServerPrefill; template: ServerTemplate; rules: FwRule[] } | null>(null)
   const [jobs, setJobs] = useState<TemplateJob[]>(listTemplateJobs())
   const fileRef = useRef<HTMLInputElement>(null)
+  const deploymentBlockReason = accessMode === 'observe'
+    ? 'Observe-only safety blocks creating servers.'
+    : null
+  const collectionBlockReason = collectionMutationBlockReason()
 
   const refresh = async () => {
     try {
@@ -128,6 +140,11 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
     window.addEventListener(TEMPLATE_JOBS_EVENT, onJobs)
     return () => window.removeEventListener(TEMPLATE_JOBS_EVENT, onJobs)
   }, [])
+  useEffect(() => {
+    if (!deploymentBlockReason) return
+    setApplying(null)
+    setCreate(null)
+  }, [deploymentBlockReason])
 
   const items = useMemo<ListedServerTemplate[]>(() => {
     const own = new Set(stored.map((s) => s.slug))
@@ -160,14 +177,25 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
     const hit = items.find((i) => i.template.name.toLowerCase() === q || i.slug === q) ?? items.find((i) => i.template.name.toLowerCase().startsWith(q))
     if (hit) {
       setSelectedSlug(hit.slug)
-      setApplying({ template: hit.template, hostname: applyRequest.hostname })
+      if (deploymentBlockReason) setError(deploymentBlockReason)
+      else setApplying({ template: hit.template, hostname: applyRequest.hostname })
     } else setError(`No template called “${applyRequest.template}”.`)
     onApplyConsumed?.()
-  }, [applyRequest, items])
+  }, [applyRequest, items, deploymentBlockReason])
 
   // --- actions
 
   const handleSave = async (t: ServerTemplate, oldSlug?: string) => {
+    const blockReason = oldSlug
+      ? resourceActionBlockReasonRef.current('template', oldSlug, 'maintenance')
+      : collectionMutationBlockReasonRef.current()
+    if (blockReason) throw new Error(`Blocked locally: ${blockReason}`)
+    if (oldSlug && templateSlug(t.name) !== oldSlug) {
+      const renameBlockReason = resourceActionBlockReasonRef.current('template', oldSlug, 'destructive')
+      if (renameBlockReason) {
+        throw new Error(`Blocked locally: ${renameBlockReason} Template renaming is available only at the Normal tier.`)
+      }
+    }
     const slug = await saveServerTemplate(t, oldSlug)
     setEditing(null)
     setSelectedSlug(slug)
@@ -175,6 +203,11 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
   }
 
   const handleDelete = async (item: ListedServerTemplate) => {
+    const initialBlockReason = resourceActionBlockReasonRef.current('template', item.slug, 'destructive')
+    if (initialBlockReason) {
+      setError(`Blocked locally: ${initialBlockReason}`)
+      return
+    }
     const result = await confirmAction({
       title: 'Delete template',
       target: { kind: 'account', name: item.template.name },
@@ -185,6 +218,8 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
     })
     if (!result.ok) return
     try {
+      const currentBlockReason = resourceActionBlockReasonRef.current('template', item.slug, 'destructive')
+      if (currentBlockReason) throw new Error(`Blocked locally: ${currentBlockReason}`)
       await removeServerTemplate(item.slug)
       if (selectedSlug === item.slug) setSelectedSlug(null)
     } catch (err: any) {
@@ -193,6 +228,11 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
   }
 
   const handleDuplicate = (item: ListedServerTemplate) => {
+    const blockReason = collectionMutationBlockReasonRef.current()
+    if (blockReason) {
+      setError(`Blocked locally: ${blockReason}`)
+      return
+    }
     const copy: ServerTemplate = JSON.parse(JSON.stringify(item.template))
     copy.name = item.builtin ? item.template.name.replace(/^/, 'My ') : `${item.template.name} copy`
     copy.created_at = new Date().toISOString()
@@ -216,14 +256,20 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
   }
 
   const importText = async (text: string, fallbackName: string) => {
+    const initialBlockReason = collectionMutationBlockReasonRef.current()
+    if (initialBlockReason) throw new Error(`Blocked locally: ${initialBlockReason}`)
     const parsed = templatesFromImport(text, fallbackName)
     let saved = 0
     for (const t of parsed) {
       try {
+        const currentBlockReason = collectionMutationBlockReasonRef.current()
+        if (currentBlockReason) throw new Error(`Blocked locally: ${currentBlockReason}`)
         await saveServerTemplate(t)
         saved++
       } catch (err: any) {
         if (/already exists/.test(err?.message || '')) {
+          const currentBlockReason = collectionMutationBlockReasonRef.current()
+          if (currentBlockReason) throw new Error(`Blocked locally: ${currentBlockReason}`)
           await saveServerTemplate({ ...t, name: `${t.name} (imported)` })
           saved++
         } else throw err
@@ -240,10 +286,40 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
     }
   }
 
-  const startApply = (t: ServerTemplate) => setApplying({ template: t, hostname: '' })
+  const beginNewTemplate = (): void => {
+    const blockReason = collectionMutationBlockReasonRef.current()
+    if (blockReason) {
+      setError(`Blocked locally: ${blockReason}`)
+      return
+    }
+    setEditing({ template: emptyTemplate() })
+  }
+
+  const beginEditTemplate = (item: ListedServerTemplate): void => {
+    if (item.builtin) return
+    const blockReason = resourceActionBlockReasonRef.current('template', item.slug, 'maintenance')
+    if (blockReason) {
+      setError(`Blocked locally: ${blockReason}`)
+      return
+    }
+    setEditing({ template: JSON.parse(JSON.stringify(item.template)), oldSlug: item.slug })
+  }
+
+  const startApply = (t: ServerTemplate) => {
+    if (deploymentBlockReason) {
+      setError(deploymentBlockReason)
+      return
+    }
+    setApplying({ template: t, hostname: '' })
+  }
 
   const handleApplySubmit = (hostname: string, values: Record<string, string>) => {
     if (!applying) return
+    if (deploymentBlockReason) {
+      setApplying(null)
+      setError(deploymentBlockReason)
+      return
+    }
     const t = applying.template
     try {
       const all = withBuiltins(t, hostname, values)
@@ -272,11 +348,26 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
         </div>
         <div className="flex items-center gap-2">
           <input ref={fileRef} type="file" accept=".yaml,.yml,.json,.txt" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.currentTarget.value = '' }} />
-          <button className={btn} onClick={() => fileRef.current?.click()}><Upload className="w-3.5 h-3.5" />Import file</button>
-          <button className={btn} onClick={() => setImportOpen(true)}><ClipboardPaste className="w-3.5 h-3.5" />Paste</button>
+          <button
+            className={btn}
+            onClick={() => fileRef.current?.click()}
+            disabled={!!collectionBlockReason}
+            title={collectionBlockReason ?? 'Import templates (new templates start Normal)'}
+          ><Upload className="w-3.5 h-3.5" />Import file</button>
+          <button
+            className={btn}
+            onClick={() => setImportOpen(true)}
+            disabled={!!collectionBlockReason}
+            title={collectionBlockReason ?? 'Paste templates (new templates start Normal)'}
+          ><ClipboardPaste className="w-3.5 h-3.5" />Paste</button>
           <button className={btn} onClick={handleExportAll}><Download className="w-3.5 h-3.5" />Export all</button>
           {canReveal && <button className={btn} onClick={reveal} title="Show the template files on disk"><FolderOpen className="w-3.5 h-3.5" /></button>}
-          <button className={btnPrimary} onClick={() => setEditing({ template: emptyTemplate() })}><Plus className="w-3.5 h-3.5" />New template</button>
+          <button
+            className={btnPrimary}
+            onClick={beginNewTemplate}
+            disabled={!!collectionBlockReason}
+            title={collectionBlockReason ?? 'Create template (starts Normal)'}
+          ><Plus className="w-3.5 h-3.5" />New template</button>
         </div>
       </div>
 
@@ -284,6 +375,13 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
         <div className={`mb-3 flex items-start justify-between gap-3 px-3 py-2 rounded border text-xs ${error ? 'border-rose-300 bg-rose-50 text-rose-700 dark:bg-rose-900/20 dark:text-rose-300 dark:border-rose-800' : 'border-emerald-300 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800'}`}>
           <span className="whitespace-pre-wrap">{error || notice}</span>
           <button onClick={() => { setError(null); setNotice(null) }}><X className="w-3.5 h-3.5" /></button>
+        </div>
+      )}
+
+      {deploymentBlockReason && (
+        <div className="mb-3 flex items-start gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+          <Shield className="mt-0.5 h-4 w-4 flex-shrink-0" />
+          <span>{deploymentBlockReason} Existing templates remain readable and exportable; local edits follow each template’s saved tier.</span>
         </div>
       )}
 
@@ -351,7 +449,11 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
               item={selected}
               servers={servers}
               onApply={() => startApply(selected.template)}
-              onEdit={() => setEditing({ template: JSON.parse(JSON.stringify(selected.template)), oldSlug: selected.builtin ? undefined : selected.slug })}
+              applyBlockReason={deploymentBlockReason}
+              editBlockReason={selected.builtin ? null : resourceActionBlockReason('template', selected.slug, 'maintenance')}
+              duplicateBlockReason={collectionBlockReason}
+              deleteBlockReason={selected.builtin ? null : resourceActionBlockReason('template', selected.slug, 'destructive')}
+              onEdit={() => beginEditTemplate(selected)}
               onDuplicate={() => handleDuplicate(selected)}
               onExport={() => handleExport(selected)}
               onDelete={() => void handleDelete(selected)}
@@ -367,6 +469,9 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
           client={client}
           initial={editing.template}
           isNew={!editing.oldSlug}
+          nameChangeBlockReason={editing.oldSlug
+            ? resourceActionBlockReason('template', editing.oldSlug, 'destructive')
+            : null}
           onCancel={() => setEditing(null)}
           onSave={(t) => handleSave(t, editing.oldSlug)}
         />
@@ -392,7 +497,7 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
       )}
 
       <CreateServerModal
-        isOpen={!!create}
+        isOpen={!!create && !deploymentBlockReason}
         client={client}
         initial={create?.prefill ?? null}
         onClose={() => setCreate(null)}
@@ -422,11 +527,27 @@ const TemplateDetail: React.FC<{
   item: ListedServerTemplate
   servers: Server[]
   onApply: () => void
+  applyBlockReason: string | null
+  editBlockReason: string | null
+  duplicateBlockReason: string | null
+  deleteBlockReason: string | null
   onEdit: () => void
   onDuplicate: () => void
   onExport: () => void
   onDelete: () => void
-}> = ({ item, servers, onApply, onEdit, onDuplicate, onExport, onDelete }) => {
+}> = ({
+  item,
+  servers,
+  onApply,
+  applyBlockReason,
+  editBlockReason,
+  duplicateBlockReason,
+  deleteBlockReason,
+  onEdit,
+  onDuplicate,
+  onExport,
+  onDelete
+}) => {
   const t = item.template
   const s = t.spec
   const vars = templateVariables(t)
@@ -441,6 +562,14 @@ const TemplateDetail: React.FC<{
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-base font-bold text-[#212529] dark:text-white">{t.name}</h3>
               {item.builtin && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#f1ca00]/20 text-[#7a6500] dark:text-[#f1ca00]">STARTER</span>}
+              {!item.builtin && (
+                <SafetyPolicyBadge
+                  scope="resource"
+                  resourceKind="template"
+                  resourceId={item.slug}
+                  resourceLabel={t.name || item.slug}
+                />
+              )}
               {(t.labels ?? []).filter((l) => l !== 'starter').map((l) => <span key={l} className="px-1.5 py-0.5 rounded text-[10px] bg-[#e9ecef] dark:bg-[#373b3e] text-[#495057] dark:text-slate-300">{l}</span>)}
             </div>
             {t.description && <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-1 max-w-2xl">{t.description}</p>}
@@ -451,11 +580,37 @@ const TemplateDetail: React.FC<{
             )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
-            <button className={btnPrimary} onClick={onApply} disabled={!!item.error}><Rocket className="w-3.5 h-3.5" />New server from this</button>
-            {!item.builtin && <button className={btn} onClick={onEdit} disabled={!!item.error}><Pencil className="w-3.5 h-3.5" />Edit</button>}
-            <button className={btn} onClick={onDuplicate} disabled={!!item.error}><Copy className="w-3.5 h-3.5" />{item.builtin ? 'Make mine' : 'Duplicate'}</button>
+            <button
+              className={btnPrimary}
+              onClick={onApply}
+              disabled={!!item.error || !!applyBlockReason}
+              title={applyBlockReason ?? 'Create a new server from this template'}
+            >
+              <Rocket className="w-3.5 h-3.5" />New server from this
+            </button>
+            {!item.builtin && (
+              <button
+                className={btn}
+                onClick={onEdit}
+                disabled={!!item.error || !!editBlockReason}
+                title={editBlockReason ?? 'Edit template'}
+              ><Pencil className="w-3.5 h-3.5" />Edit</button>
+            )}
+            <button
+              className={btn}
+              onClick={onDuplicate}
+              disabled={!!item.error || !!duplicateBlockReason}
+              title={duplicateBlockReason ?? (item.builtin ? 'Make a local copy' : 'Duplicate template')}
+            ><Copy className="w-3.5 h-3.5" />{item.builtin ? 'Make mine' : 'Duplicate'}</button>
             <button className={btn} onClick={onExport} disabled={!!item.error}><Download className="w-3.5 h-3.5" />Export</button>
-            {!item.builtin && <button className={`${btn} border-rose-300 text-rose-600 hover:border-rose-500`} onClick={onDelete}><Trash2 className="w-3.5 h-3.5" />Delete</button>}
+            {!item.builtin && (
+              <button
+                className={`${btn} border-rose-300 text-rose-600 hover:border-rose-500`}
+                onClick={onDelete}
+                disabled={!!deleteBlockReason}
+                title={deleteBlockReason ?? 'Delete template'}
+              ><Trash2 className="w-3.5 h-3.5" />Delete</button>
+            )}
           </div>
         </div>
         {item.error && <p className="mt-3 text-xs text-rose-600">This file could not be read: {item.error}</p>}
@@ -530,9 +685,10 @@ const TemplateEditor: React.FC<{
   client: BinaryLaneClient | null
   initial: ServerTemplate
   isNew: boolean
+  nameChangeBlockReason: string | null
   onCancel: () => void
   onSave: (t: ServerTemplate) => void | Promise<void>
-}> = ({ client, initial, isNew, onCancel, onSave }) => {
+}> = ({ client, initial, isNew, nameChangeBlockReason, onCancel, onSave }) => {
   const [t, setT] = useState<ServerTemplate>(initial)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
@@ -591,7 +747,23 @@ const TemplateEditor: React.FC<{
         <div className="grid grid-cols-1 md:grid-cols-[1fr_2fr] gap-3">
           <div>
             <label className={label}>Name</label>
-            <input className={input} value={t.name} onChange={(e) => setT({ ...t, name: e.target.value })} placeholder="Web server" autoFocus />
+            <input
+              className={input}
+              value={t.name}
+              onChange={(e) => setT({ ...t, name: e.target.value })}
+              placeholder="Web server"
+              autoFocus
+              disabled={!!nameChangeBlockReason}
+              data-safety-template-rename={nameChangeBlockReason ? 'blocked' : 'allowed'}
+              title={nameChangeBlockReason
+                ? `${nameChangeBlockReason} Template renaming is available only at the Normal tier.`
+                : 'Template name'}
+            />
+            {nameChangeBlockReason && (
+              <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-300">
+                This tier keeps the template name fixed so its saved protection cannot be bypassed by renaming it.
+              </p>
+            )}
           </div>
           <div>
             <label className={label}>Description</label>

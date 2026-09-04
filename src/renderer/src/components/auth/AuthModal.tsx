@@ -1,14 +1,26 @@
-import React, { useState } from 'react'
-import { X, Key, ShieldCheck, ExternalLink, Trash2, CheckCircle2, AlertCircle, Loader2, RefreshCw } from 'lucide-react'
+import React, { useEffect, useState } from 'react'
+import { Key, ShieldCheck, ExternalLink, Trash2, CheckCircle2, AlertCircle, Loader2, RefreshCw } from 'lucide-react'
 import { AccountProfile } from '@shared/ipc-types'
-import { createBinaryLaneClient } from '../../api/client'
+import type { ProfileAccessMode, ServerSafetyLevel } from '@shared/binarylane-policy'
+import {
+  getResourceSafetyLevel,
+  normalizeResourceSafetyTarget,
+  normalizeResourceSafetyTargets,
+  resourceSafetyKey,
+  type ResourceSafetyLevel,
+  type ResourceSafetyTarget
+} from '@shared/resource-safety'
+import type { SafetySettingsTarget } from '../../context/ProfileSafetyContext'
 import { useConfirm } from '../../context/ConfirmContext'
+import { Modal } from '../ui/Modal'
 
 interface AuthModalProps {
   isOpen: boolean
   onClose: () => void
-  profiles: Omit<AccountProfile, 'token'>[]
+  profiles: AccountProfile[]
   activeProfile: AccountProfile | null
+  servers: Array<{ id: number; name: string }>
+  safetyTarget?: SafetySettingsTarget | null
   onProfileAddedOrUpdated: () => void
 }
 
@@ -17,6 +29,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   profiles,
   activeProfile,
+  servers,
+  safetyTarget,
   onProfileAddedOrUpdated
 }) => {
   const [profileName, setProfileName] = useState('')
@@ -25,6 +39,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [isValidating, setIsValidating] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [successMsg, setSuccessMsg] = useState<string | null>(null)
+  const [safetyMode, setSafetyMode] = useState<ProfileAccessMode>('observe')
+  const [safetyProtectedServerIds, setSafetyProtectedServerIds] = useState<number[]>([])
+  const [safetyMaintenanceServerIds, setSafetyMaintenanceServerIds] = useState<number[]>([])
+  const [safetyProtectedResources, setSafetyProtectedResources] = useState<ResourceSafetyTarget[]>([])
+  const [safetyMaintenanceResources, setSafetyMaintenanceResources] = useState<ResourceSafetyTarget[]>([])
+  const [isSavingSafety, setIsSavingSafety] = useState(false)
+  const [isConfirmingProfileDelete, setIsConfirmingProfileDelete] = useState(false)
   /**
    * Replacing a key on an existing profile, rather than adding a new account.
    * Previously the only entry point was "add", so repairing a profile whose token
@@ -33,10 +54,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
    */
   const [updating, setUpdating] = useState<{ id: string; name: string } | null>(null)
 
+  useEffect(() => {
+    if (!isOpen || !activeProfile) return
+    setSafetyMode(activeProfile.accessMode)
+    setSafetyProtectedServerIds(activeProfile.protectedServerIds)
+    setSafetyMaintenanceServerIds(activeProfile.maintenanceServerIds ?? [])
+    setSafetyProtectedResources(normalizeResourceSafetyTargets(activeProfile.protectedResources))
+    setSafetyMaintenanceResources(normalizeResourceSafetyTargets(activeProfile.maintenanceResources))
+  }, [
+    isOpen,
+    activeProfile?.id,
+    activeProfile?.accessMode,
+    activeProfile?.protectedServerIds,
+    activeProfile?.maintenanceServerIds,
+    activeProfile?.protectedResources,
+    activeProfile?.maintenanceResources
+  ])
+
   if (!isOpen) return null
 
   const handleOpenTokenPage = () => {
     window.bldeskApi?.openExternal?.('https://home.binarylane.com.au/api-info')
+  }
+
+  const handleClose = () => {
+    setTokenInput('')
+    setProfileName('')
+    setUpdating(null)
+    setErrorMsg(null)
+    setSuccessMsg(null)
+    onClose()
   }
 
   const handleSaveToken = async (e: React.FormEvent) => {
@@ -65,26 +112,23 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     setIsValidating(true)
 
     try {
-      // Validate token live against BinaryLane API
-      const client = createBinaryLaneClient(cleanToken)
-      const { data, error } = await client.GET('/v2/account')
+      // The token crosses the narrow bridge once; saved credentials never return.
+      const validation = await window.bldeskApi?.validateBinaryLaneToken?.(cleanToken)
+      if (!validation?.success) throw new Error(validation?.error || 'API token verification failed.')
 
-      if (error || !data?.account) {
-        throw new Error('API token verification failed. Please ensure the token is active and has correct permissions.')
-      }
-
-      const verifiedEmail = data.account.email
+      const verifiedEmail = validation.email
       const name = updating?.name || profileName.trim() || verifiedEmail || 'BinaryLane Account'
 
-      // Save encrypted into SafeStorage Vault
-      const result = await window.bldeskApi?.saveProfile?.({
+      // Privileged storage forces new credentials to observe-only and preserves
+      // policy on a verified same-account rotation. Renderer input cannot choose.
+      const result = await window.bldeskApi.saveProfile({
         profileId: updating?.id,
         name,
         token: cleanToken,
         isDefault
       })
 
-      if (result?.error) {
+      if (result.error) {
         throw new Error(result.error)
       }
 
@@ -96,7 +140,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       setTimeout(() => {
         setSuccessMsg(null)
-        onClose()
+        handleClose()
       }, 1200)
     } catch (err: any) {
       setErrorMsg(err.message || 'Verification failed.')
@@ -106,7 +150,110 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   }
 
   const confirmAction = useConfirm()
+
+  const handleSaveSafety = async () => {
+    if (!activeProfile) return
+    if (
+      safetyMode === 'guarded' &&
+      safetyProtectedServerIds.length === 0 && safetyMaintenanceServerIds.length === 0 &&
+      safetyProtectedResources.length === 0 && safetyMaintenanceResources.length === 0
+    ) {
+      setErrorMsg('Select at least one server or resource as Read-only or Maintenance before enabling Protected mode.')
+      return
+    }
+
+    setIsSavingSafety(true)
+    setErrorMsg(null)
+    setSuccessMsg(null)
+    try {
+      const result = await window.bldeskApi.updateProfileSafety(
+        activeProfile.id,
+        safetyMode,
+        safetyProtectedServerIds,
+        safetyMaintenanceServerIds,
+        safetyProtectedResources,
+        safetyMaintenanceResources
+      )
+      if (!result.success) throw new Error(result.error || 'Could not save the safety policy.')
+      setSuccessMsg('Local safety policy saved.')
+      onProfileAddedOrUpdated()
+    } catch (error: any) {
+      setErrorMsg(error?.message || 'Could not save the safety policy.')
+    } finally {
+      setIsSavingSafety(false)
+    }
+  }
+
+  const setServerSafetyLevel = (serverId: number, nextLevel: ServerSafetyLevel) => {
+    if (!activeProfile) return
+    const persistedLevel: ServerSafetyLevel = activeProfile.protectedServerIds.includes(serverId)
+      ? 'locked'
+      : (activeProfile.maintenanceServerIds ?? []).includes(serverId)
+        ? 'maintenance'
+        : 'testable'
+
+    if (persistedLevel === 'locked' || (persistedLevel === 'maintenance' && nextLevel === 'testable')) return
+    if (nextLevel !== 'testable' && safetyMode === 'full') setSafetyMode('guarded')
+
+    setSafetyProtectedServerIds((current) =>
+      nextLevel === 'locked'
+        ? [...new Set([...current, serverId])]
+        : current.filter((id) => id !== serverId)
+    )
+    setSafetyMaintenanceServerIds((current) =>
+      nextLevel === 'maintenance'
+        ? [...new Set([...current, serverId])]
+        : current.filter((id) => id !== serverId)
+    )
+  }
+
+  const setResourceSafetyLevel = (
+    targetValue: ResourceSafetyTarget,
+    nextLevel: ResourceSafetyLevel
+  ) => {
+    if (!activeProfile) return
+    const target = normalizeResourceSafetyTarget(targetValue.kind, targetValue.id)
+    const key = resourceSafetyKey(target)
+    if (!target || !key) return
+    const persistedLevel = getResourceSafetyLevel(activeProfile, target.kind, target.id)
+    if (persistedLevel === 'locked' || (persistedLevel === 'maintenance' && nextLevel === 'testable')) return
+    if (nextLevel !== 'testable' && safetyMode === 'full') setSafetyMode('guarded')
+
+    setSafetyProtectedResources((current) => normalizeResourceSafetyTargets(
+      nextLevel === 'locked'
+        ? [...current, target]
+        : current.filter((candidate) => resourceSafetyKey(candidate) !== key)
+    ))
+    setSafetyMaintenanceResources((current) => normalizeResourceSafetyTargets(
+      nextLevel === 'maintenance'
+        ? [...current, target]
+        : current.filter((candidate) => resourceSafetyKey(candidate) !== key)
+    ))
+  }
+
+  const focusedResource = safetyTarget
+    ? normalizeResourceSafetyTarget(safetyTarget.kind, safetyTarget.id)
+    : null
+  const focusedResourceKey = resourceSafetyKey(focusedResource)
+  const resourceTargets = normalizeResourceSafetyTargets([
+    ...safetyProtectedResources,
+    ...safetyMaintenanceResources,
+    ...(focusedResource ? [focusedResource] : [])
+  ])
+
+  const resourceLabel = (target: ResourceSafetyTarget): string => {
+    if (resourceSafetyKey(target) === focusedResourceKey && safetyTarget?.label) return safetyTarget.label
+    switch (target.kind) {
+      case 'vpc': return `VPC #${target.id}`
+      case 'domain': return target.id
+      case 'load-balancer': return `Load balancer #${target.id}`
+      case 'ssh-key': return `SSH key #${target.id}`
+      case 'template': return `Template ${target.id}`
+    }
+  }
+
   const handleDeleteProfile = async (id: string, name: string) => {
+    setIsConfirmingProfileDelete(true)
     const ok = await confirmAction({
       title: 'Remove account profile',
       target: { kind: 'account', name },
@@ -114,39 +261,43 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       severity: 'destructive',
       log: false,
       confirmLabel: 'Remove profile'
-    })
+    }).finally(() => setIsConfirmingProfileDelete(false))
     if (!ok.ok) return
+    setErrorMsg(null)
+    setSuccessMsg(null)
     try {
-      await window.bldeskApi?.deleteProfile?.(id)
+      const result = await window.bldeskApi?.deleteProfile?.(id)
+      if (!result?.success) throw new Error(result?.error || 'The profile could not be removed from the credential vault.')
       onProfileAddedOrUpdated()
     } catch (err: any) {
-      alert(`Delete failed: ${err.message}`)
+      setErrorMsg(`Delete failed: ${err.message || 'Unknown error'}`)
     }
   }
 
   const handleSetActive = async (id: string) => {
-    await window.bldeskApi?.setActiveProfile?.(id)
-    onProfileAddedOrUpdated()
+    setErrorMsg(null)
+    setSuccessMsg(null)
+    try {
+      const result = await window.bldeskApi?.setActiveProfile?.(id)
+      if (!result?.success) throw new Error(result?.error || 'The active profile could not be changed.')
+      onProfileAddedOrUpdated()
+    } catch (err: any) {
+      setErrorMsg(`Profile switch failed: ${err.message || 'Unknown error'}`)
+    }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overlay-safe bg-black/60 backdrop-blur-sm animate-in fade-in duration-100">
-      <div className="w-full max-w-md bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg shadow-2xl overflow-hidden flex flex-col text-xs">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[#ced4da] dark:border-[#373b3e] bg-[#f1f1f1] dark:bg-[#262a2e]">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-[#017cb6]" />
-            <h3 className="font-bold text-sm text-[#212529] dark:text-white">Hardware Encrypted Vault</h3>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1 text-[#6c757d] hover:text-[#212529] dark:hover:text-white rounded"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        <div className="p-5 space-y-5 overflow-y-auto max-h-[80vh]">
+    <Modal
+      title="OS-Protected Credential Vault"
+      icon={ShieldCheck}
+      headTone="text-[#017cb6]"
+      onClose={handleClose}
+      size="sm"
+      z={60}
+      busy={isValidating || isSavingSafety || isConfirmingProfileDelete}
+      labelledBy="credential-vault-title"
+    >
+      <div className="p-5 space-y-5 text-xs">
           {/* Active Profiles List */}
           {profiles.length > 0 && (
             <div className="space-y-2">
@@ -180,6 +331,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             ACTIVE
                           </span>
                         )}
+                        <span className={`px-1.5 py-0.5 text-[9px] font-bold rounded ${
+                          p.accessMode === 'full'
+                            ? 'bg-amber-600 text-white'
+                            : p.accessMode === 'guarded'
+                              ? 'bg-emerald-700 text-white'
+                              : 'bg-slate-600 text-white'
+                        }`}>
+                          {p.accessMode === 'full' ? 'FULL' : p.accessMode === 'guarded' ? 'GUARDED' : 'OBSERVE'}
+                        </span>
                         <button
                           onClick={() => {
                             setUpdating({ id: p.id, name: p.name })
@@ -207,6 +367,129 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </div>
           )}
 
+          {activeProfile && (
+            <div className="space-y-3 rounded border border-emerald-700/50 bg-emerald-50/70 dark:bg-emerald-950/20 p-3">
+              <div>
+                <div className="font-semibold text-[#212529] dark:text-white">Live-account safety</div>
+                <p className="mt-1 text-[10px] leading-relaxed text-[#6c757d] dark:text-[#adb5bd]">
+                  Observe-only blocks changes and remote access. Protected mode assigns compact tiers to each entity independently:
+                  locking a VPC does not lock its member servers, and locking a server does not lock its VPC. Read-only blocks changes;
+                  Maintenance permits reviewed operational or in-place work but not structural server changes or resource deletion;
+                  Normal keeps ordinary reviewed BLDesk work available. Saved tiers can only be strengthened here.
+                </p>
+              </div>
+
+              <label className="block">
+                <span className="mb-1 block text-[11px] text-[#6c757d]">Safety mode</span>
+                <select
+                  value={safetyMode}
+                  onChange={(event) => setSafetyMode(event.target.value as ProfileAccessMode)}
+                  className="w-full rounded border border-[#ced4da] bg-white px-3 py-1.5 text-[#212529] dark:border-[#373b3e] dark:bg-[#212529] dark:text-white"
+                >
+                  <option value="observe">Observe only — no changes or remote access</option>
+                  <option value="guarded">Protected mode — per-entity safety</option>
+                  {activeProfile.accessMode === 'full' &&
+                    safetyProtectedServerIds.length === 0 && safetyMaintenanceServerIds.length === 0 &&
+                    safetyProtectedResources.length === 0 && safetyMaintenanceResources.length === 0 && (
+                    <option value="full">Full access — legacy unrestricted mode</option>
+                  )}
+                </select>
+              </label>
+
+              <div>
+                <div className="mb-1 text-[11px] text-[#6c757d]">Per-server safety level</div>
+                {servers.length === 0 ? (
+                  <div className="rounded bg-white/70 p-2 text-[10px] text-[#6c757d] dark:bg-black/20">
+                    The read-only server list has not loaded yet. Leave this dialog open briefly, or reopen it
+                    after the dashboard appears.
+                  </div>
+                ) : (
+                  <div className="max-h-32 space-y-1 overflow-y-auto rounded border border-[#ced4da] bg-white/70 p-2 dark:border-[#373b3e] dark:bg-black/20">
+                    {servers.map((server) => {
+                      const persistedLevel: ServerSafetyLevel = activeProfile.protectedServerIds.includes(server.id)
+                        ? 'locked'
+                        : (activeProfile.maintenanceServerIds ?? []).includes(server.id)
+                          ? 'maintenance'
+                          : 'testable'
+                      const selectedLevel: ServerSafetyLevel = safetyProtectedServerIds.includes(server.id)
+                        ? 'locked'
+                        : safetyMaintenanceServerIds.includes(server.id)
+                          ? 'maintenance'
+                          : 'testable'
+                      return (
+                        <label key={server.id} className="flex items-center gap-2 text-[11px] text-[#212529] dark:text-white">
+                          <span className="min-w-0 flex-1 truncate">{server.name}</span>
+                          <span className="font-mono text-[9px] text-[#6c757d]">#{server.id}</span>
+                          <select
+                            value={selectedLevel}
+                            disabled={persistedLevel === 'locked'}
+                            onChange={(event) => setServerSafetyLevel(server.id, event.target.value as ServerSafetyLevel)}
+                            aria-label={`Safety level for ${server.name}`}
+                            className="rounded border border-[#ced4da] bg-white px-1.5 py-1 text-[10px] font-semibold dark:border-[#495057] dark:bg-[#212529] dark:text-white disabled:opacity-70"
+                          >
+                            {persistedLevel === 'testable' && <option value="testable">Normal</option>}
+                            {persistedLevel !== 'locked' && <option value="maintenance">Maintenance</option>}
+                            <option value="locked">Read-only</option>
+                          </select>
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="mb-1 text-[11px] text-[#6c757d]">Per-resource safety level</div>
+                {resourceTargets.length === 0 ? (
+                  <div className="rounded bg-white/70 p-2 text-[10px] text-[#6c757d] dark:bg-black/20">
+                    Open a VPC, domain, load balancer, SSH key, or template badge to add that entity here. Unlisted resources remain Normal.
+                  </div>
+                ) : (
+                  <div className="max-h-28 space-y-1 overflow-y-auto rounded border border-[#ced4da] bg-white/70 p-2 dark:border-[#373b3e] dark:bg-black/20">
+                    {resourceTargets.map((target) => {
+                      const key = resourceSafetyKey(target)!
+                      const persistedLevel = getResourceSafetyLevel(activeProfile, target.kind, target.id)
+                      const selectedLevel: ResourceSafetyLevel = safetyProtectedResources.some(
+                        (candidate) => resourceSafetyKey(candidate) === key
+                      )
+                        ? 'locked'
+                        : safetyMaintenanceResources.some((candidate) => resourceSafetyKey(candidate) === key)
+                          ? 'maintenance'
+                          : 'testable'
+                      const label = resourceLabel(target)
+                      return (
+                        <label key={key} className="flex items-center gap-2 text-[11px] text-[#212529] dark:text-white">
+                          <span className="min-w-0 flex-1 truncate">{label}</span>
+                          <span className="font-mono text-[9px] uppercase text-[#6c757d]">{target.kind}</span>
+                          <select
+                            value={selectedLevel}
+                            disabled={persistedLevel === 'locked'}
+                            onChange={(event) => setResourceSafetyLevel(target, event.target.value as ResourceSafetyLevel)}
+                            aria-label={`Safety level for ${label}`}
+                            className="rounded border border-[#ced4da] bg-white px-1.5 py-1 text-[10px] font-semibold dark:border-[#495057] dark:bg-[#212529] dark:text-white disabled:opacity-70"
+                          >
+                            {persistedLevel === 'testable' && <option value="testable">Normal</option>}
+                            {persistedLevel !== 'locked' && <option value="maintenance">Maintenance</option>}
+                            <option value="locked">Read-only</option>
+                          </select>
+                        </label>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSaveSafety}
+                disabled={isSavingSafety}
+                className="w-full rounded bg-emerald-700 py-1.5 font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+              >
+                {isSavingSafety ? 'Saving safety policy…' : 'Save safety policy'}
+              </button>
+            </div>
+          )}
+
           {/* Add New Profile Form */}
           {updating && (
           <div className="mb-3 flex items-center justify-between gap-2 p-2.5 rounded border border-[#017cb6] bg-[#017cb6]/10 text-[#017cb6] dark:text-[#4db2e0] text-xs">
@@ -216,7 +499,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             </span>
             <button
               type="button"
-              onClick={() => setUpdating(null)}
+              onClick={() => {
+                setUpdating(null)
+                setTokenInput('')
+              }}
               className="underline font-medium hover:no-underline flex-shrink-0"
             >
               Cancel
@@ -304,8 +590,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </button>
             </div>
           </form>
-        </div>
       </div>
-    </div>
+    </Modal>
   )
 }

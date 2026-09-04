@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react'
-import { Globe, Plus, Trash2, Search, RefreshCw, Loader2, X, ChevronLeft, ChevronRight, ExternalLink} from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import { Globe, Plus, Trash2, Search, RefreshCw, Loader2, X, ChevronLeft, ChevronRight, ExternalLink, AlertCircle } from 'lucide-react'
 import { BinaryLaneClient } from '../../api/client'
 import { useDomains, useDomainRecords, useLocalNameservers } from '../../api/queries'
 import { useConfirm } from '../../context/ConfirmContext'
+import { useProfileSafety } from '../../context/ProfileSafetyContext'
 import { describeApiError } from '../../api/queries'
 import { recordChange, updateChange } from '../../lib/changelog'
 import { describeDnsRecord } from '../../lib/diff'
+import { SafetyPolicyBadge } from '../ui/SafetyPolicyBadge'
 
 interface DnsManagerProps {
   client: BinaryLaneClient | null
@@ -125,6 +127,34 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
   const [recordData, setRecordData] = useState('')
   const [recordTtl] = useState(300)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const { resourceActionBlockReason, openSafetySettings } = useProfileSafety()
+  const resourceActionBlockReasonRef = useRef(resourceActionBlockReason)
+  resourceActionBlockReasonRef.current = resourceActionBlockReason
+  const selectedDomainBlockReason = selectedDomain
+    ? resourceActionBlockReason('domain', selectedDomain, 'maintenance')
+    : null
+
+  const ensureDomainActionAllowed = (
+    domainName: string,
+    operation: 'maintenance' | 'destructive',
+    changeId?: string
+  ): boolean => {
+    const reason = resourceActionBlockReasonRef.current('domain', domainName, operation)
+    if (!reason) {
+      setActionError(null)
+      return true
+    }
+    setActionError(reason)
+    if (changeId) {
+      void updateChange(changeId, {
+        outcome: 'failed',
+        detail: `Blocked locally before the request was sent: ${reason}`
+      })
+    }
+    return false
+  }
 
   const domainsQuery = useDomains(client)
   const nameserversQuery = useLocalNameservers(client)
@@ -152,19 +182,21 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
     if (!client) return
     try {
       // history: n/a — asks BinaryLane's nameservers to reload; no record changes
-      await client.POST('/v2/domains/refresh_nameserver_cache')
+      const { error } = await client.POST('/v2/domains/refresh_nameserver_cache')
+      if (error) throw new Error(describeApiError(error))
+      setActionError(null)
       window.bldeskApi?.sendNotification?.({
         title: 'DNS Cache Flushed',
         body: 'BinaryLane authoritative nameserver cache refreshed successfully.'
       })
     } catch (err: any) {
-      alert(`Flush failed: ${err.message}`)
+      setActionError(`DNS cache refresh failed: ${err.message || 'Unknown error'}`)
     }
   }
 
   const handleCreateRecord = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!client || !selectedDomain) return
+    if (!client || !selectedDomain || !ensureDomainActionAllowed(selectedDomain, 'maintenance')) return
 
     setIsSubmitting(true)
     // The form is the review: a record add is small and shown in full, so it
@@ -176,6 +208,10 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
       changes: [{ label: `${recordType} ${recordName.trim()}`, to: recordData.trim() }],
       source: 'ui'
     })
+    if (!ensureDomainActionAllowed(selectedDomain, 'maintenance', changeId)) {
+      setIsSubmitting(false)
+      return
+    }
     try {
       const { error } = await client.POST('/v2/domains/{domain_name}/records', {
         params: { path: { domain_name: selectedDomain } },
@@ -198,14 +234,14 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
       })
     } catch (err: any) {
       void updateChange(changeId, { outcome: 'failed', detail: err.message })
-      alert(`Failed to add record: ${err.message}`)
+      setActionError(`Failed to add DNS record: ${err.message || 'Unknown error'}`)
     } finally {
       setIsSubmitting(false)
     }
   }
 
   const handleDeleteRecord = async (recordId: number, name: string, type: string) => {
-    if (!client || !selectedDomain) return
+    if (!client || !selectedDomain || !ensureDomainActionAllowed(selectedDomain, 'maintenance')) return
     const rec = records.find((r: any) => r.id === recordId)
     const c = await confirmAction({
       title: 'Delete DNS record',
@@ -216,6 +252,7 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
       confirmLabel: 'Delete record'
     })
     if (!c.ok) return
+    if (!ensureDomainActionAllowed(selectedDomain, 'maintenance', c.changeId)) return
 
     try {
       const { error } = await client.DELETE('/v2/domains/{domain_name}/records/{record_id}', {
@@ -235,7 +272,7 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
       })
     } catch (err: any) {
       void updateChange(c.changeId, { outcome: 'failed', detail: err.message })
-      alert(`Failed to delete record: ${err.message}`)
+      setActionError(`Failed to delete DNS record: ${err.message || 'Unknown error'}`)
     }
   }
 
@@ -246,7 +283,7 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
    * offered inside the dialog.
    */
   const handleRemoveDnsHosting = async (domain: any) => {
-    if (!client || !domain) return
+    if (!client || !domain || !ensureDomainActionAllowed(domain.name, 'destructive')) return
     const recordCount = selectedDomain === domain.name ? records.length : undefined
     const c = await confirmAction({
       title: 'Remove DNS hosting',
@@ -258,6 +295,7 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
       confirmLabel: 'Remove DNS hosting'
     })
     if (!c.ok) return
+    if (!ensureDomainActionAllowed(domain.name, 'destructive', c.changeId)) return
     setRemoveBusy(true)
     try {
       const { error } = await client.DELETE('/v2/domains/{domain_name}', {
@@ -282,7 +320,7 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
       setDomainPage((p) => Math.min(p, lastPage))
     } catch (err: any) {
       void updateChange(c.changeId, { outcome: 'failed', detail: err.message })
-      alert(`Failed to remove DNS hosting: ${err.message || 'Unknown error'}`)
+      setActionError(`Failed to remove DNS hosting: ${err.message || 'Unknown error'}`)
     } finally {
       setRemoveBusy(false)
     }
@@ -300,6 +338,9 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
     (currentPage - 1) * DOMAINS_PER_PAGE,
     currentPage * DOMAINS_PER_PAGE
   )
+  const menuRemoveBlockReason = menu
+    ? resourceActionBlockReason('domain', menu.domain.name, 'destructive')
+    : null
 
   return (
     <div className="h-full flex flex-col p-6 space-y-6 overflow-y-auto bg-[#f8f9fa] dark:bg-[#212529] text-[#212529] dark:text-[#f8f9fa]">
@@ -317,13 +358,32 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
 
         <button
           onClick={handleFlushCache}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#212529] dark:text-slate-200 bg-white dark:bg-[#2b3035] hover:bg-[#f1f1f1] dark:hover:bg-[#343a40] border border-[#ced4da] dark:border-[#373b3e] rounded transition shadow-sm"
-          title="Force nameserver cache flush"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-[#212529] dark:text-slate-200 bg-white dark:bg-[#2b3035] hover:bg-[#f1f1f1] dark:hover:bg-[#343a40] border border-[#ced4da] dark:border-[#373b3e] rounded transition shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
+          title="Force nameserver cache flush (does not change DNS records)"
         >
           <RefreshCw className="w-3.5 h-3.5" />
           <span>Flush DNS Cache</span>
         </button>
       </div>
+
+      {actionError && (
+        <div role="alert" className="flex items-start gap-2.5 rounded-lg border border-rose-300 bg-rose-50 px-3 py-2 text-xs text-rose-700 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-300">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span className="flex-1">{actionError}</span>
+          {selectedDomainBlockReason && selectedDomain && (
+            <button
+              type="button"
+              onClick={() => openSafetySettings({ kind: 'domain', id: selectedDomain, label: selectedDomain })}
+              className="shrink-0 font-semibold underline underline-offset-2"
+            >
+              Review safety
+            </button>
+          )}
+          <button type="button" onClick={() => setActionError(null)} aria-label="Dismiss message" className="shrink-0 opacity-70 hover:opacity-100">
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1">
         {/* Domain List Sidebar */}
@@ -353,9 +413,8 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
             {visibleDomains.map((domain) => {
               const isSelected = selectedDomain === domain.name
               return (
-                <button
+                <div
                   key={domain.name}
-                  onClick={() => handleSelectDomain(domain.name)}
                   onContextMenu={(e) => {
                     e.preventDefault()
                     setMenu({ x: e.clientX, y: e.clientY, domain })
@@ -366,12 +425,24 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
                       : 'hover:bg-[#f8f9fa] dark:hover:bg-[#32383e] text-[#212529] dark:text-slate-200'
                   }`}
                 >
-                  <span className="font-mono truncate">{domain.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectDomain(domain.name)}
+                    className="min-w-0 flex-1 truncate text-left font-mono focus:outline-none focus:underline"
+                  >
+                    {domain.name}
+                  </button>
                   <span className="flex items-center gap-2 flex-shrink-0">
+                    <SafetyPolicyBadge
+                      scope="resource"
+                      resourceKind="domain"
+                      resourceId={domain.name}
+                      resourceLabel={domain.name}
+                    />
                     <DelegationBadge domain={domain} localNameservers={localNameservers} />
                     <span className="text-[10px] text-[#6c757d]">TTL {domain.ttl}s</span>
                   </span>
-                </button>
+                </div>
               )
             })}
 
@@ -424,7 +495,9 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
 
                 <button
                   onClick={() => setIsAddingRecord(true)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm"
+                  disabled={!!selectedDomainBlockReason}
+                  title={selectedDomainBlockReason ?? 'Add DNS record'}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Add Record</span>
@@ -478,8 +551,9 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
                           <td className="py-2 px-4 text-right">
                             <button
                               onClick={() => handleDeleteRecord(r.id, r.name, r.type)}
-                              className="text-[#6c757d] hover:text-rose-500 p-1 rounded transition"
-                              title="Delete Record"
+                              disabled={!!selectedDomainBlockReason}
+                              className="text-[#6c757d] hover:text-rose-500 p-1 rounded transition disabled:cursor-not-allowed disabled:opacity-40"
+                              title={selectedDomainBlockReason ?? 'Delete Record'}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
@@ -574,8 +648,9 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
                 </button>
                 <button
                   type="submit"
-                  disabled={isSubmitting}
-                  className="px-4 py-1.5 bg-[#017cb6] hover:bg-[#016594] text-white text-xs font-medium rounded transition flex items-center gap-1.5 shadow-sm"
+                  disabled={isSubmitting || !!selectedDomainBlockReason}
+                  title={selectedDomainBlockReason ?? 'Save DNS record'}
+                  className="px-4 py-1.5 bg-[#017cb6] hover:bg-[#016594] text-white text-xs font-medium rounded transition flex items-center gap-1.5 shadow-sm disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>Save Record</span>
@@ -620,13 +695,14 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
             </MenuItem>
             <div className="my-1 border-t border-[#ced4da] dark:border-[#373b3e]" />
             <button
-              disabled={removeBusy}
+              disabled={removeBusy || !!menuRemoveBlockReason}
+              title={menuRemoveBlockReason ?? 'Remove DNS hosting'}
               onClick={() => {
                 const d = menu.domain
                 setMenu(null)
                 void handleRemoveDnsHosting(d)
               }}
-              className="w-full text-left px-3 py-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition"
+              className="w-full text-left px-3 py-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition disabled:cursor-not-allowed disabled:opacity-40"
             >
               Remove DNS hosting...
             </button>

@@ -4,6 +4,7 @@ import {
   Server as ServerIcon,
   Play,
   RotateCw,
+  Zap,
   Loader2,
   Power,
   Terminal,
@@ -14,8 +15,11 @@ import {
   LayoutGrid,
   List,
   ShieldAlert,
+  ShieldCheck,
   Link2,
-  FileCode2
+  FileCode2,
+  AlertTriangle,
+  RefreshCw
 } from 'lucide-react'
 import { components } from '@shared/api/schema'
 import { BinaryLaneClient } from '../../api/client'
@@ -31,12 +35,46 @@ import { describeStatus, compareByBuildingFirst } from '../../lib/serverStatus'
 import { useConfirm } from '../../context/ConfirmContext'
 import { updateChange } from '../../lib/changelog'
 import { powerActionSummary } from '../../lib/actionLabels'
+import { useProfileSafety } from '../../context/ProfileSafetyContext'
+import type { ServerOperationClass, ServerSafetyLevel } from '@shared/binarylane-policy'
+import { remoteServiceProbeForImage } from '@shared/remote-service'
 
 type ServerResponse = components['schemas']['Server']
+
+const ServerSafetyBadge: React.FC<{ level: ServerSafetyLevel }> = ({ level }) => {
+  const locked = level === 'locked'
+  const maintenance = level === 'maintenance'
+  return (
+    <span
+      data-safety-level={level}
+      data-safety-protected-server={locked ? 'true' : undefined}
+      title={
+        locked
+          ? 'Read-only: views and diagnostics are allowed; changes and remote access are blocked.'
+          : maintenance
+            ? 'Maintenance: operational access, firewall rules, diagnostics, power recovery, and a non-replacing temporary backup are allowed; structural changes are blocked.'
+            : 'Normal: ordinary BLDesk server actions are available while profile-wide protections remain active.'
+      }
+      className={`shrink-0 inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide no-underline ${
+        locked
+          ? 'border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-300'
+          : maintenance
+            ? 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+            : 'border-sky-500/40 bg-sky-500/10 text-sky-700 dark:text-sky-300'
+      }`}
+    >
+      {locked ? <ShieldCheck className="w-3 h-3" /> : <ShieldAlert className="w-3 h-3" />}
+      {locked ? 'Read' : maintenance ? 'Maint' : 'Normal'}
+    </span>
+  )
+}
 
 interface ServerListProps {
   servers: ServerResponse[]
   isLoading: boolean
+  hasLoadError: boolean
+  isRetrying: boolean
+  onRetry: () => void
   client: BinaryLaneClient | null
   onSelectServer: (server: ServerResponse) => void
   onOpenTerminal: (ip: string) => void
@@ -49,6 +87,9 @@ interface ServerListProps {
 export const ServerList: React.FC<ServerListProps> = ({
   servers,
   isLoading,
+  hasLoadError,
+  isRetrying,
+  onRetry,
   client,
   onSelectServer,
   onOpenTerminal: _onOpenTerminal,
@@ -58,12 +99,28 @@ export const ServerList: React.FC<ServerListProps> = ({
   const [searchTerm, setSearchTerm] = useState('')
   const [regionFilter, setRegionFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [safetySort, setSafetySort] = useState<'default' | 'read-first' | 'maintenance-first' | 'normal-first'>('default')
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table')
   const [copiedIp, setCopiedIp] = useState<string | null>(null)
   const [isCreateOpen, setIsCreateOpen] = useState(false)
   const [actionInProgressServerId, setActionInProgressServerId] = useState<number | null>(null)
   const [copiedLinkId, setCopiedLinkId] = useState<number | null>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const hasUncachedLoadError = hasLoadError && servers.length === 0
+  const { accessMode, serverSafetyLevel, serverActionBlockReason } = useProfileSafety()
+  const createBlockReason = accessMode === 'observe'
+    ? 'Observe-only safety blocks creating servers.'
+    : null
+
+  React.useEffect(() => {
+    if (createBlockReason) setIsCreateOpen(false)
+  }, [createBlockReason])
+
+  const handleOpenCreate = () => {
+    if (createBlockReason) return
+    setIsCreateOpen(true)
+  }
 
   const handleCopyLink = async (serverId: number, e?: React.MouseEvent) => {
     e?.stopPropagation()
@@ -91,6 +148,10 @@ export const ServerList: React.FC<ServerListProps> = ({
   const confirmAction = useConfirm()
   const handleAction = async (serverId: number, actionType: string, e: React.MouseEvent) => {
     e.stopPropagation()
+    const operation: ServerOperationClass =
+      actionType === 'reboot' ? 'reboot' : actionType === 'power_cycle' ? 'power-cycle' : 'mutation'
+    const blockReason = serverActionBlockReason(serverId, operation)
+    if (blockReason) return
     if (actionInProgressServerId !== null) return
     const target = servers.find((s) => s.id === serverId)
     const c = await confirmAction({
@@ -102,6 +163,7 @@ export const ServerList: React.FC<ServerListProps> = ({
     if (!c.ok) return
 
     setActionInProgressServerId(serverId)
+    setActionError(null)
     try {
       const queued = await serverAction.mutateAsync({
         serverId,
@@ -109,9 +171,14 @@ export const ServerList: React.FC<ServerListProps> = ({
       })
       // "Requested" was honest but final — it never said how the action ended.
       // Tracking turns it into a reported outcome.
-      if (queued) {
-        track(queued, describeActionType(actionType), target?.name, c.changeId)
+      if (!queued) {
+        void updateChange(c.changeId, {
+          outcome: 'failed',
+          detail: 'BinaryLane returned no action record, so BLDesk cannot track whether the request ran.'
+        })
+        return
       }
+      track(queued, describeActionType(actionType), target?.name, c.changeId)
       window.bldeskApi?.sendNotification?.({
         title: `Server Action: ${actionType}`,
         body: `Action requested successfully for server #${serverId}.`,
@@ -119,18 +186,20 @@ export const ServerList: React.FC<ServerListProps> = ({
       })
     } catch (err: any) {
       void updateChange(c.changeId, { outcome: 'failed', detail: err.message })
-      alert(`Action failed: ${err.message || 'Unknown error'}`)
+      setActionError(`Action failed: ${err.message || 'Unknown error'}`)
     } finally {
       setActionInProgressServerId(null)
     }
   }
 
-  const handleLaunchNativeSsh = (ip: string, e: React.MouseEvent) => {
+  const handleLaunchNativeSsh = (serverId: number, ip: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    launchSsh({ host: ip, username: 'root' })
+    const blockReason = serverActionBlockReason(serverId, 'remote-access')
+    if (blockReason) return
+    launchSsh({ serverId, host: ip, username: 'root' })
   }
 
-  const filteredServers = [...servers].sort(compareByBuildingFirst).filter((s) => {
+  const filteredServers = [...servers].filter((s) => {
     const matchesSearch =
       s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (s.networks?.v4 || []).some((net) => net.ip_address.includes(searchTerm)) ||
@@ -140,6 +209,18 @@ export const ServerList: React.FC<ServerListProps> = ({
     const matchesStatus = statusFilter === 'all' || s.status === statusFilter
 
     return matchesSearch && matchesRegion && matchesStatus
+  }).sort((a, b) => {
+    if (safetySort !== 'default') {
+      const order: Record<Exclude<typeof safetySort, 'default'>, Record<ServerSafetyLevel, number>> = {
+        'read-first': { locked: 0, maintenance: 1, testable: 2 },
+        'maintenance-first': { maintenance: 0, locked: 1, testable: 2 },
+        'normal-first': { testable: 0, maintenance: 1, locked: 2 }
+      }
+      const rank = order[safetySort]
+      const tierDifference = rank[serverSafetyLevel(a.id)] - rank[serverSafetyLevel(b.id)]
+      if (tierDifference !== 0) return tierDifference
+    }
+    return compareByBuildingFirst(a, b)
   })
 
   /*
@@ -170,7 +251,7 @@ export const ServerList: React.FC<ServerListProps> = ({
             <ServerIcon className="w-5 h-5 text-[#017cb6]" />
             <span>Virtual Servers</span>
             <span className="text-xs font-normal text-[#6c757d] dark:text-slate-400 bg-[#e9ecef] dark:bg-[#2b3035] px-2 py-0.5 rounded-full border border-[#ced4da] dark:border-[#373b3e]">
-              {filteredServers.length} {filteredServers.length === 1 ? 'server' : 'servers'}
+              {hasUncachedLoadError ? 'count unavailable' : `${filteredServers.length} ${filteredServers.length === 1 ? 'server' : 'servers'}`}
             </span>
           </h1>
           <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-0.5">
@@ -209,8 +290,10 @@ export const ServerList: React.FC<ServerListProps> = ({
           </div>
 
           <button
-            onClick={() => setIsCreateOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm"
+            onClick={handleOpenCreate}
+            disabled={!!createBlockReason}
+            title={createBlockReason ?? (accessMode === 'guarded' ? 'Add server — starts with Normal access' : 'Add server')}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Plus className="w-4 h-4" />
             <span>Add Server</span>
@@ -259,6 +342,19 @@ export const ServerList: React.FC<ServerListProps> = ({
             <option value="off">Off / Stopped</option>
             <option value="archive">Archive</option>
           </select>
+
+          {/* Safety Sort */}
+          <select
+            value={safetySort}
+            onChange={(e) => setSafetySort(e.target.value as typeof safetySort)}
+            aria-label="Sort servers by safety level"
+            className="bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] text-xs text-[#212529] dark:text-[#f8f9fa] px-3 py-2 rounded focus:outline-none focus:border-[#017cb6]"
+          >
+            <option value="default">Default order</option>
+            <option value="read-first">Read-only first</option>
+            <option value="maintenance-first">Maintenance first</option>
+            <option value="normal-first">Normal first</option>
+          </select>
         </div>
       </div>
 
@@ -270,8 +366,53 @@ export const ServerList: React.FC<ServerListProps> = ({
         </div>
       )}
 
+      {/* A read failure is unknown state, never evidence that the account is empty. */}
+      {!isLoading && hasUncachedLoadError && (
+        <div role="alert" className="flex flex-col items-center justify-center p-10 text-center bg-white dark:bg-[#2b3035] rounded-lg border border-amber-500/40 shadow-sm">
+          <AlertTriangle className="w-10 h-10 text-amber-600 dark:text-amber-400 mb-3" />
+          <h3 className="text-sm font-semibold text-[#212529] dark:text-white">Couldn't load the server list</h3>
+          <p className="text-xs text-[#6c757d] dark:text-slate-400 max-w-md mt-1 mb-4">
+            BLDesk did not receive a current list, so it cannot determine whether this account has servers. No server actions were attempted.
+          </p>
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={isRetrying}
+            className="inline-flex items-center gap-1.5 rounded bg-[#017cb6] px-4 py-2 text-xs font-semibold text-white hover:bg-[#016594] disabled:cursor-wait disabled:opacity-60"
+          >
+            {isRetrying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            {isRetrying ? 'Retrying…' : 'Retry'}
+          </button>
+        </div>
+      )}
+
+      {!isLoading && hasLoadError && servers.length > 0 && (
+        <div role="status" className="flex items-center justify-between gap-3 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+          <div className="flex min-w-0 items-center gap-2">
+            <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+            <span><strong>Server list may be out of date.</strong> The latest refresh failed, so BLDesk is showing the last successfully loaded list.</span>
+          </div>
+          <button
+            type="button"
+            onClick={onRetry}
+            disabled={isRetrying}
+            className="inline-flex flex-shrink-0 items-center gap-1 rounded border border-amber-600/40 px-2 py-1 font-semibold hover:bg-amber-500/15 disabled:cursor-wait disabled:opacity-60"
+          >
+            {isRetrying ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            {isRetrying ? 'Retrying…' : 'Retry'}
+          </button>
+        </div>
+      )}
+
+      {actionError && (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-800 dark:text-rose-200">
+          <span>{actionError}</span>
+          <button type="button" onClick={() => setActionError(null)} className="font-semibold hover:underline">Dismiss</button>
+        </div>
+      )}
+
       {/* Empty State */}
-      {!isLoading && filteredServers.length === 0 && (
+      {!isLoading && !hasUncachedLoadError && filteredServers.length === 0 && (
         <div className="flex flex-col items-center justify-center p-12 text-center bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e]">
           <ServerIcon className="w-10 h-10 text-[#6c757d] dark:text-slate-500 mb-3" />
           <h3 className="text-sm font-semibold text-[#212529] dark:text-white">No servers found</h3>
@@ -281,8 +422,10 @@ export const ServerList: React.FC<ServerListProps> = ({
               : 'You do not have any virtual servers configured yet in this account.'}
           </p>
           <button
-            onClick={() => setIsCreateOpen(true)}
-            className="px-4 py-2 bg-[#017cb6] hover:bg-[#016594] text-white text-xs font-medium rounded transition"
+            onClick={handleOpenCreate}
+            disabled={!!createBlockReason}
+            title={createBlockReason ?? 'Deploy new server'}
+            className="px-4 py-2 bg-[#017cb6] hover:bg-[#016594] text-white text-xs font-medium rounded transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             Deploy New Server
           </button>
@@ -309,6 +452,12 @@ export const ServerList: React.FC<ServerListProps> = ({
                 const state = describeStatus(server.status)
                 const ramGB = (server.memory / 1024).toFixed(0)
                 const distroIcon = logoForDistribution(server.image?.distribution)
+                const safetyLevel = serverSafetyLevel(server.id)
+                const supportsNativeSsh = remoteServiceProbeForImage(server.image).kind === 'ssh'
+                const remoteBlockReason = serverActionBlockReason(server.id, 'remote-access')
+                const rebootBlockReason = serverActionBlockReason(server.id, 'reboot')
+                const powerCycleBlockReason = serverActionBlockReason(server.id, 'power-cycle')
+                const mutationBlockReason = serverActionBlockReason(server.id, 'mutation')
 
                 return (
                   <tr
@@ -325,6 +474,7 @@ export const ServerList: React.FC<ServerListProps> = ({
                           className={`w-2 h-2 shrink-0 rounded-full ${state.dot} ${state.busy ? 'animate-pulse' : ''}`}
                         />
                         <span>{server.name}</span>
+                        <ServerSafetyBadge level={safetyLevel} />
                       </div>
                       <div className="flex items-center gap-1.5 text-[11px] text-[#6c757d] dark:text-slate-400 mt-1">
                         <img src={distroIcon} alt="" className="w-4 h-4 shrink-0 object-contain" />
@@ -402,13 +552,19 @@ export const ServerList: React.FC<ServerListProps> = ({
                         >
                           {copiedLinkId === server.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Link2 className="w-3.5 h-3.5" />}
                         </button>
-                        {publicIps[0]?.ip_address && (
+                        {supportsNativeSsh && publicIps[0]?.ip_address && (
                           <button
-                            onClick={(e) => handleLaunchNativeSsh(publicIps[0].ip_address, e)}
-                            className="flex items-center gap-1 px-2.5 py-1 bg-[#017cb6] hover:bg-[#016594] text-white rounded text-xs font-medium transition shadow-sm"
-                            title="Launch Native SSH"
+                            onClick={(e) => handleLaunchNativeSsh(server.id, publicIps[0].ip_address, e)}
+                            disabled={!!remoteBlockReason}
+                            data-safety-remote-access={remoteBlockReason ? 'blocked' : 'allowed'}
+                            className={`flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition ${
+                              remoteBlockReason
+                                ? 'cursor-not-allowed border border-slate-500/30 bg-transparent text-slate-500 shadow-none dark:text-slate-500'
+                                : 'bg-[#017cb6] text-white shadow-sm hover:bg-[#016594]'
+                            }`}
+                            title={remoteBlockReason ?? 'Launch Native SSH'}
                           >
-                            <Terminal className="w-3 h-3" />
+                            {remoteBlockReason ? <ShieldAlert className="w-3 h-3" /> : <Terminal className="w-3 h-3" />}
                             <span>SSH</span>
                           </button>
                         )}
@@ -428,17 +584,29 @@ export const ServerList: React.FC<ServerListProps> = ({
                           <>
                             <button
                               onClick={(e) => handleAction(server.id, 'reboot', e)}
-                              disabled={actionInProgressServerId !== null}
+                              disabled={actionInProgressServerId !== null || !!rebootBlockReason}
+                              data-server-action="reboot"
+                              aria-label={rebootBlockReason ? `Reboot unavailable: ${rebootBlockReason}` : 'Reboot server'}
                               className="p-1.5 text-[#6c757d] hover:text-amber-500 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] rounded transition disabled:opacity-30"
-                              title="Reboot"
+                              title={rebootBlockReason ?? 'Reboot'}
                             >
                               <RotateCw className="w-3.5 h-3.5" />
                             </button>
                             <button
-                              onClick={(e) => handleAction(server.id, 'shutdown', e)}
-                              disabled={actionInProgressServerId !== null}
+                              onClick={(e) => handleAction(server.id, 'power_cycle', e)}
+                              disabled={actionInProgressServerId !== null || !!powerCycleBlockReason}
+                              data-server-action="power-cycle"
+                              aria-label={powerCycleBlockReason ? `Hard power cycle unavailable: ${powerCycleBlockReason}` : 'Hard power cycle server'}
                               className="p-1.5 text-[#6c757d] hover:text-rose-500 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] rounded transition disabled:opacity-30"
-                              title="Shutdown"
+                              title={powerCycleBlockReason ?? 'Hard power cycle'}
+                            >
+                              <Zap className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => handleAction(server.id, 'shutdown', e)}
+                              disabled={actionInProgressServerId !== null || !!mutationBlockReason}
+                              className="p-1.5 text-[#6c757d] hover:text-rose-500 hover:bg-black/[0.05] dark:hover:bg-white/[0.06] rounded transition disabled:opacity-30"
+                              title={mutationBlockReason ?? 'Shutdown'}
                             >
                               <Power className="w-3.5 h-3.5" />
                             </button>
@@ -446,9 +614,9 @@ export const ServerList: React.FC<ServerListProps> = ({
                         ) : (
                           <button
                             onClick={(e) => handleAction(server.id, 'power_on', e)}
-                            disabled={actionInProgressServerId !== null}
+                            disabled={actionInProgressServerId !== null || !!mutationBlockReason}
                             className="flex items-center gap-1 px-2 py-1 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 rounded text-xs transition hover:bg-emerald-500/20 disabled:opacity-30"
-                            title="Power On"
+                            title={mutationBlockReason ?? 'Power On'}
                           >
                             <Play className="w-3 h-3 fill-current" />
                             <span>On</span>
@@ -472,6 +640,9 @@ export const ServerList: React.FC<ServerListProps> = ({
             const state = describeStatus(server.status)
             const distroIcon = logoForDistribution(server.image?.distribution)
             const ramGB = (server.memory / 1024).toFixed(0)
+            const safetyLevel = serverSafetyLevel(server.id)
+            const supportsNativeSsh = remoteServiceProbeForImage(server.image).kind === 'ssh'
+            const remoteBlockReason = serverActionBlockReason(server.id, 'remote-access')
 
             return (
               <div
@@ -487,6 +658,7 @@ export const ServerList: React.FC<ServerListProps> = ({
                         <h3 className="font-bold text-sm text-[#017cb6] hover:underline truncate max-w-[180px]">
                           {server.name}
                         </h3>
+                        <div className="mt-1"><ServerSafetyBadge level={safetyLevel} /></div>
                         <span className="text-[11px] text-[#6c757d] dark:text-slate-400 font-mono">
                           #{server.id}
                         </span>
@@ -536,12 +708,19 @@ export const ServerList: React.FC<ServerListProps> = ({
                   <span className="text-[11px] text-[#6c757d] dark:text-slate-400">
                     {server.region?.name || server.region?.slug?.toUpperCase()}
                   </span>
-                  {primaryIp && (
+                  {supportsNativeSsh && primaryIp && (
                     <button
-                      onClick={(e) => handleLaunchNativeSsh(primaryIp, e)}
-                      className="px-2.5 py-1 bg-[#017cb6] hover:bg-[#016594] text-white rounded text-xs font-medium transition flex items-center gap-1"
+                      onClick={(e) => handleLaunchNativeSsh(server.id, primaryIp, e)}
+                      disabled={!!remoteBlockReason}
+                      data-safety-remote-access={remoteBlockReason ? 'blocked' : 'allowed'}
+                      title={remoteBlockReason ?? 'Launch Native SSH'}
+                      className={`flex items-center gap-1 rounded px-2.5 py-1 text-xs font-medium transition ${
+                        remoteBlockReason
+                          ? 'cursor-not-allowed border border-slate-500/30 bg-transparent text-slate-500 shadow-none dark:text-slate-500'
+                          : 'bg-[#017cb6] text-white hover:bg-[#016594]'
+                      }`}
                     >
-                      <Terminal className="w-3 h-3" />
+                      {remoteBlockReason ? <ShieldAlert className="w-3 h-3" /> : <Terminal className="w-3 h-3" />}
                       <span>SSH</span>
                     </button>
                   )}
@@ -558,7 +737,11 @@ export const ServerList: React.FC<ServerListProps> = ({
           state={contextMenu}
           onClose={() => setContextMenu(null)}
           onOpen={(s) => onSelectServer(s)}
-          onSsh={(ip) => launchSsh({ host: ip, username: 'root' })}
+          onSsh={(serverId, ip) => {
+            const blockReason = serverActionBlockReason(serverId, 'remote-access')
+            if (blockReason) return
+            launchSsh({ serverId, host: ip, username: 'root' })
+          }}
           onCopyLink={(id) => handleCopyLink(id)}
           onAction={(id, type) => handleAction(id, type, { stopPropagation: () => {} } as React.MouseEvent)}
           actionInProgress={actionInProgressServerId !== null}

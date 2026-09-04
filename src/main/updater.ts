@@ -3,6 +3,7 @@ import electronUpdater, { type UpdateInfo, type ProgressInfo } from 'electron-up
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { UpdateChannel, UpdaterState, UpdaterStatus } from '../shared/ipc-types'
+import { IS_PRODUCTION_BUILD } from './developmentUserData'
 
 // electron-updater is CJS with dynamic getter exports; resolve via namespace/default
 const autoUpdater = (electronUpdater as any).autoUpdater || (electronUpdater as any).default?.autoUpdater || electronUpdater
@@ -37,6 +38,10 @@ interface UpdaterSettings {
   channel: UpdateChannel
 }
 
+function updatesSupported(): boolean {
+  return IS_PRODUCTION_BUILD && app.isPackaged
+}
+
 function settingsPath(): string {
   return join(app.getPath('userData'), SETTINGS_FILE)
 }
@@ -67,7 +72,7 @@ export class UpdaterManager {
     status: 'idle',
     currentVersion: app.getVersion(),
     channel: 'stable',
-    supported: app.isPackaged
+    supported: updatesSupported()
   }
   private static timer: NodeJS.Timeout | null = null
   private static initialised = false
@@ -76,14 +81,14 @@ export class UpdaterManager {
     if (this.initialised) return
     this.initialised = true
 
-    const settings = readSettings()
-    this.state.channel = settings.channel
-
-    if (!app.isPackaged) {
-      console.log('[Updater] Not packaged; auto-update disabled (dev mode).')
+    if (!updatesSupported()) {
+      console.log('[Updater] Auto-update disabled for this build flavor.')
       this.setState({ status: 'idle' })
       return
     }
+
+    const settings = readSettings()
+    this.state.channel = settings.channel
 
     autoUpdater.logger = {
       info: (m: any) => console.log('[Updater]', m),
@@ -125,7 +130,7 @@ export class UpdaterManager {
   }
 
   static async check(): Promise<UpdaterState> {
-    if (!app.isPackaged) return this.getState()
+    if (!updatesSupported()) return this.getState()
     if (this.state.status === 'checking' || this.state.status === 'downloading') return this.getState()
     this.setState({ status: 'checking', error: undefined })
     try {
@@ -137,17 +142,19 @@ export class UpdaterManager {
   }
 
   static install(): void {
+    if (!updatesSupported()) return
     if (this.state.status !== 'ready') return
     // isSilent=false shows the installer UI on Windows; forceRunAfter restarts the app.
     setImmediate(() => autoUpdater.quitAndInstall(false, true))
   }
 
   static setChannel(channel: UpdateChannel): UpdaterState {
+    if (!updatesSupported()) return this.getState()
     if (channel !== 'stable' && channel !== 'beta') return this.getState()
     writeSettings({ channel })
     this.applyChannel(channel)
     this.setState({ channel, status: 'idle', availableVersion: undefined, error: undefined })
-    if (app.isPackaged) void this.check()
+    void this.check()
     return this.getState()
   }
 
@@ -183,7 +190,7 @@ export class UpdaterManager {
   }
 
   private static applyChannel(channel: UpdateChannel): void {
-    if (!app.isPackaged) return
+    if (!updatesSupported()) return
     // "latest" is electron-updater's name for the stable channel file.
     autoUpdater.channel = channel === 'beta' ? 'beta' : 'latest'
     autoUpdater.allowPrerelease = channel === 'beta'

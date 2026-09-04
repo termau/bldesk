@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react'
-import { Key, Plus, Trash2, Copy, Check, Loader2, Sparkles, X } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import { Key, Plus, Trash2, Copy, Check, Loader2, ShieldAlert, Sparkles, X } from 'lucide-react'
 import { BinaryLaneClient } from '../../api/client'
 import { useSshKeys, useAddSshKeyMutation, useDeleteSshKeyMutation } from '../../api/queries'
 import { useConfirm } from '../../context/ConfirmContext'
 import { recordChange, updateChange } from '../../lib/changelog'
+import { useProfileSafety } from '../../context/ProfileSafetyContext'
+import { SafetyPolicyBadge } from '../ui/SafetyPolicyBadge'
 
 interface SshKeysManagerProps {
   client: BinaryLaneClient | null
@@ -15,12 +17,24 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
   const [publicKey, setPublicKey] = useState('')
   const [localKeys, setLocalKeys] = useState<{ name: string; publicKey: string }[]>([])
   const [copiedId, setCopiedId] = useState<number | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const sshKeysQuery = useSshKeys(client)
   const addKeyMutation = useAddSshKeyMutation(client)
   const deleteKeyMutation = useDeleteSshKeyMutation(client)
+  const confirmAction = useConfirm()
+  const { collectionMutationBlockReason, resourceActionBlockReason } = useProfileSafety()
+  const collectionMutationBlockReasonRef = useRef(collectionMutationBlockReason)
+  const resourceActionBlockReasonRef = useRef(resourceActionBlockReason)
+  collectionMutationBlockReasonRef.current = collectionMutationBlockReason
+  resourceActionBlockReasonRef.current = resourceActionBlockReason
+  const collectionBlockReason = collectionMutationBlockReason()
 
   const keys = sshKeysQuery.data || []
+
+  const reportBlocked = (reason: string): void => {
+    setActionError(`Blocked locally: ${reason}`)
+  }
 
   useEffect(() => {
     // Scan local ~/.ssh directory
@@ -36,6 +50,12 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
   }
 
   const handleImportLocalKey = async (localKey: { name: string; publicKey: string }) => {
+    const blockReason = collectionMutationBlockReasonRef.current()
+    if (blockReason) {
+      reportBlocked(blockReason)
+      return
+    }
+    setActionError(null)
     const changeId = await recordChange({
       label: 'Add SSH key',
       target: { kind: 'sshkey', name: localKey.name },
@@ -45,6 +65,8 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
       source: 'ui'
     })
     try {
+      const currentBlockReason = collectionMutationBlockReasonRef.current()
+      if (currentBlockReason) throw new Error(`Blocked locally: ${currentBlockReason}`)
       await addKeyMutation.mutateAsync({
         name: localKey.name,
         publicKey: localKey.publicKey
@@ -56,14 +78,20 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
       })
     } catch (err: any) {
       void updateChange(changeId, { outcome: 'failed', detail: err.message })
-      alert(`Import failed: ${err.message}`)
+      setActionError(`Import failed: ${err.message}`)
     }
   }
 
   const handleManualAdd = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!keyName.trim() || !publicKey.trim()) return
+    const blockReason = collectionMutationBlockReasonRef.current()
+    if (blockReason) {
+      reportBlocked(blockReason)
+      return
+    }
 
+    setActionError(null)
     const changeId = await recordChange({
       label: 'Add SSH key',
       target: { kind: 'sshkey', name: keyName.trim() },
@@ -72,6 +100,8 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
       source: 'ui'
     })
     try {
+      const currentBlockReason = collectionMutationBlockReasonRef.current()
+      if (currentBlockReason) throw new Error(`Blocked locally: ${currentBlockReason}`)
       await addKeyMutation.mutateAsync({
         name: keyName.trim(),
         publicKey: publicKey.trim()
@@ -86,12 +116,17 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
       })
     } catch (err: any) {
       void updateChange(changeId, { outcome: 'failed', detail: err.message })
-      alert(`Failed to add key: ${err.message}`)
+      setActionError(`Failed to add key: ${err.message}`)
     }
   }
 
-  const confirmAction = useConfirm()
   const handleDeleteKey = async (keyId: number, name: string) => {
+    const blockReason = resourceActionBlockReasonRef.current('ssh-key', keyId, 'destructive')
+    if (blockReason) {
+      reportBlocked(blockReason)
+      return
+    }
+    setActionError(null)
     const c = await confirmAction({
       title: 'Delete SSH key',
       target: { kind: 'sshkey', id: keyId, name },
@@ -101,6 +136,8 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
     })
     if (!c.ok) return
     try {
+      const currentBlockReason = resourceActionBlockReasonRef.current('ssh-key', keyId, 'destructive')
+      if (currentBlockReason) throw new Error(`Blocked locally: ${currentBlockReason}`)
       await deleteKeyMutation.mutateAsync(keyId)
       void updateChange(c.changeId, { outcome: 'completed' })
       window.bldeskApi?.sendNotification?.({
@@ -109,7 +146,7 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
       })
     } catch (err: any) {
       void updateChange(c.changeId, { outcome: 'failed', detail: err.message })
-      alert(`Delete failed: ${err.message}`)
+      setActionError(`Delete failed: ${err.message}`)
     }
   }
 
@@ -128,13 +165,33 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
         </div>
 
         <button
-          onClick={() => setIsAdding(true)}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm"
+          onClick={() => {
+            if (collectionBlockReason) return reportBlocked(collectionBlockReason)
+            setActionError(null)
+            setIsAdding(true)
+          }}
+          disabled={!!collectionBlockReason}
+          title={collectionBlockReason ?? 'Add SSH key (starts Normal)'}
+          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Plus className="w-4 h-4" />
           <span>Add SSH Key</span>
         </button>
       </div>
+
+      {collectionBlockReason && (
+        <div role="status" className="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{collectionBlockReason} Account keys remain visible, and local discovery and public-key copying remain available.</span>
+        </div>
+      )}
+
+      {actionError && (
+        <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-800 dark:text-rose-200">
+          <span>{actionError}</span>
+          <button type="button" onClick={() => setActionError(null)} className="font-semibold hover:underline">Dismiss</button>
+        </div>
+      )}
 
       {/* Local Auto-Discovery Card */}
       {localKeys.length > 0 && (
@@ -164,8 +221,9 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
                   ) : (
                     <button
                       onClick={() => handleImportLocalKey(lk)}
-                      disabled={addKeyMutation.isPending}
-                      className="px-2.5 py-1 text-[11px] font-medium bg-[#017cb6] hover:bg-[#016594] text-white rounded transition shadow-sm"
+                      disabled={addKeyMutation.isPending || !!collectionBlockReason}
+                      title={collectionBlockReason ?? 'Import this key into the BinaryLane account (starts Normal)'}
+                      className="px-2.5 py-1 text-[11px] font-medium bg-[#017cb6] hover:bg-[#016594] text-white rounded transition shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       Import
                     </button>
@@ -202,9 +260,21 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-[#ced4da]/60 dark:divide-[#373b3e]">
-              {keys.map((k) => (
+              {keys.map((k) => {
+                const deleteBlockReason = resourceActionBlockReason('ssh-key', k.id, 'destructive')
+                return (
                 <tr key={k.id} className="hover:bg-[#f8f9fa] dark:hover:bg-[#32383e] transition">
-                  <td className="py-3 px-4 font-bold text-[#017cb6]">{k.name}</td>
+                  <td className="py-3 px-4 font-bold text-[#017cb6]">
+                    <span className="inline-flex items-center gap-2">
+                      {k.name}
+                      <SafetyPolicyBadge
+                        scope="resource"
+                        resourceKind="ssh-key"
+                        resourceId={k.id}
+                        resourceLabel={k.name || `SSH key #${k.id}`}
+                      />
+                    </span>
+                  </td>
                   <td className="py-3 px-4 font-mono text-[#6c757d] dark:text-slate-300 text-[11px]">
                     {k.fingerprint || '—'}
                   </td>
@@ -222,15 +292,17 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
                       </button>
                       <button
                         onClick={() => handleDeleteKey(k.id, k.name || "SSH Key")}
-                        className="text-[#6c757d] hover:text-rose-500 p-1 rounded"
-                        title="Delete Key"
+                        disabled={!!deleteBlockReason}
+                        className="text-[#6c757d] hover:text-rose-500 p-1 rounded disabled:cursor-not-allowed disabled:opacity-40"
+                        title={deleteBlockReason ?? 'Delete Key'}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   </td>
                 </tr>
-              ))}
+                )
+              })}
             </tbody>
           </table>
         )}
@@ -247,7 +319,18 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
               </button>
             </div>
 
+            {actionError && (
+              <div role="alert" className="rounded border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs text-rose-800 dark:text-rose-200">
+                {actionError}
+              </div>
+            )}
+
             <form onSubmit={handleManualAdd} className="space-y-4">
+              {collectionBlockReason && (
+                <div className="rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-200">
+                  {collectionBlockReason}
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-medium text-[#495057] dark:text-[#ced4da] mb-1">
                   Key Name
@@ -286,8 +369,9 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
                 </button>
                 <button
                   type="submit"
-                  disabled={addKeyMutation.isPending}
-                  className="px-4 py-1.5 bg-[#017cb6] hover:bg-[#016594] text-white text-xs font-medium rounded transition flex items-center gap-1.5 shadow-sm"
+                  disabled={addKeyMutation.isPending || !!collectionBlockReason}
+                  title={collectionBlockReason ?? 'Save SSH key (starts Normal)'}
+                  className="px-4 py-1.5 bg-[#017cb6] hover:bg-[#016594] text-white text-xs font-medium rounded transition flex items-center gap-1.5 shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {addKeyMutation.isPending && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>Save SSH Key</span>
