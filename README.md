@@ -74,6 +74,12 @@ npm run dev
 
 ### Packaging & Builds
 
+The platform commands below build the isolated **BLDesk Local Dev** flavor with
+a separate application identity and data directory. They produce the complete
+local artifact set but never publish, register the production deep-link scheme,
+or enable auto-update. Production artifacts are created only by the release
+workflow.
+
 ```bash
 # Build macOS application (.app, .dmg, .zip)
 npm run build:mac
@@ -107,7 +113,8 @@ git tag v1.0.X
 git push && git push --tags
 ```
 
-For more in-depth architectural and agent instructions, see [AGENTS.md](AGENTS.md) and [docs/AUTO_UPDATE.md](docs/AUTO_UPDATE.md).
+For more in-depth architectural and agent instructions, see [AGENTS.md](AGENTS.md),
+[Live-account safety](docs/LIVE_ACCOUNT_SAFETY.md), and [docs/AUTO_UPDATE.md](docs/AUTO_UPDATE.md).
 
 ---
 

@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
 ---
+
+## [Unreleased]
+
+### Added
+- **Per-entity live-account safety**: Observe-only and Protected profile modes with compact Read-only, Maintenance, and Normal tiers for servers, VPCs, domains, load balancers, SSH keys, and local templates. Entity membership does not cascade protection; cross-entity actions check only the server/resources they actually change.
+- **Tier-aware diagnostics and remote access**: read-only ping, uptime, and running-state checks remain available at every tier; Maintenance permits reviewed recovery and operational work. Windows reachability uses RDP on TCP 3389 while SSH-capable guests use TCP 22.
+### Changed
+- Local development and packaging use a separate BLDesk Local Dev identity, data/session directory, updater state, and non-publishing builder configuration.
+
+### Fixed
+- Firewall exposure summaries now respect ordered first-match rules and distinguish SSH, RDP, and other administrative ports.
+- Reboot and hard power-cycle controls now use distinct icons and accessible labels.
+
+---
  
 ## [1.0.60-beta.3] - 2026-09-04
 

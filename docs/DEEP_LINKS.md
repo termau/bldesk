@@ -20,7 +20,7 @@ This also covers the "usability polish" items from FEATURES.md #12 that sit on t
 Any link accepts `?account=<profile name or email>`. If a saved profile matches (case-insensitive on name or email), BLDesk switches to it before routing. If nothing matches it logs a warning and uses the active profile.
 
 ```
-bldesk://server/12345/firewall?account=adam%40mammoth.com.au
+bldesk://server/12345/firewall?account=user%40example.com
 ```
 
 Unknown hosts, non-numeric ids, unknown sub-tabs (silently dropped → overview), and anything not starting with `bldesk:` are rejected by the parser; nothing user-controlled reaches a shell or a file path.

@@ -41,11 +41,16 @@ npm run build
 # Run in dev mode with Hot Module Replacement (HMR):
 npm run dev
 
-# Run built production bundle preview:
+# Rebuild and launch the isolated local flavor (no production data or updater):
 npm run start
 ```
 
 ### 3. Local Packaging (Non-publishing)
+
+These commands package the isolated **BLDesk Local Dev** identity, use separate
+local app/session data, retain each platform's full artifact set, and always
+pass `--publish never`. Production packaging remains the explicit release path.
+
 ```bash
 # Package local unpacked directory build:
 npm run build:unpack
