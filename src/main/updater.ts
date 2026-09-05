@@ -93,6 +93,15 @@ export class UpdaterManager {
     }
     autoUpdater.autoDownload = true
     autoUpdater.autoInstallOnAppQuit = true
+    try {
+      autoUpdater.setFeedURL({
+        provider: 'github',
+        owner: 'termau',
+        repo: 'bldesk'
+      })
+    } catch (err) {
+      console.warn('[Updater] setFeedURL initialization failed:', err)
+    }
     this.applyChannel(settings.channel)
 
     autoUpdater.on('checking-for-update', () => this.setState({ status: 'checking', error: undefined }))
@@ -209,8 +218,8 @@ export class UpdaterManager {
 function isFeedUnreachable(err: any): boolean {
   if (err?.statusCode === 404) return true
   const code = err?.code
-  if (typeof code === 'string' && OFFLINE_CODES.has(code)) return true
-  return /HttpError:\s*404|\b404\s+Not Found\b/i.test(err?.message || '')
+  if (typeof code === 'string' && (OFFLINE_CODES.has(code) || code === 'ENOENT')) return true
+  return /HttpError:\s*404|\b404\s+Not Found\b|app-update\.yml/i.test(err?.message || '')
 }
 
 function notesToString(info: UpdateInfo): string | undefined {

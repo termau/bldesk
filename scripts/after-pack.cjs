@@ -26,6 +26,18 @@ exec "$HERE/bldesk.bin" "$@"
 `
 
 exports.default = async function afterPack(context) {
+  const resourcesDir = context.resourcesDir || (
+    context.electronPlatformName === 'darwin'
+      ? join(context.appOutDir, 'BLDesk.app', 'Contents', 'Resources')
+      : join(context.appOutDir, 'resources')
+  )
+  if (resourcesDir && existsSync(resourcesDir)) {
+    const updateYml = join(resourcesDir, 'app-update.yml')
+    if (!existsSync(updateYml)) {
+      writeFileSync(updateYml, 'owner: termau\nrepo: bldesk\nprovider: github\nupdaterCacheDirName: bldesk-updater\n')
+    }
+  }
+
   if (context.electronPlatformName !== 'linux') return
   const dir = context.appOutDir
   const real = join(dir, 'bldesk')
