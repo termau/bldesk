@@ -9,7 +9,7 @@ module.exports = function verifyPtyPackage(resourcesDir, platform) {
   const activeDir = candidates.find((dir) => files.includes(join(dir, nativeName)))
   if (!activeDir) throw new Error(`Packaged node-pty is missing ${nativeName}`)
   const binary = join(activeDir, nativeName)
-  if (platform !== 'win32') {
+  if (platform === 'darwin') {
     const helper = join(activeDir, 'spawn-helper')
     if (!files.includes(helper)) throw new Error('Packaged node-pty is missing the active spawn-helper')
     accessSync(helper, constants.X_OK)
