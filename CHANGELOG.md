@@ -7,10 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
  
 ## [Unreleased]
 
+## [1.0.61-beta.2] - 2026-09-06
+
 ### Added
-- Desktop embedded SSH tabs with scrollback search, explicit reopen after restart, native-terminal preference and palette `ssh <server> --native` override.
-- Reviewed parallel SSH broadcast with per-host output/exit status and originating-profile History; command text is recorded, terminal output is not.
-- SSH-only PTY IPC ownership/argv guards, native-module packaging and terminal regression tests. Android retains external SSH handoff.
+- **Desktop Embedded SSH**:
+  - Interactive multi-session terminal tabs powered by `node-pty` and `xterm.js`, with per-session scrollback search (Ctrl+F), refit and native zoom tracking.
+  - Non-interactive parallel SSH broadcast with real OpenSSH remote command execution, per-host exit status, and history logging without persisting sensitive remote output.
+  - Process lifecycle management capped at 32 concurrent sessions with automatic cleanup on tab close and application quit.
+  - Reopen previous sessions prompt after application restart.
+  - Desktop-only safeguards: Android retains external SSH client intent handoff.
+- **PTY Security & IPC Guards**:
+  - Strict host, user, port, and key argument validation preventing shell injection; OpenSSH is invoked via argv array directly from PATH.
+  - IPC restricted to main window and main frame; comprehensive typecheck guards (`scripts/check-pty-guards.mjs`).
+- **Packaging & Electron 33 Native Build**:
+  - Pinned `@electron/rebuild: 3.7.2` via npm overrides to guarantee ABI 130 compatibility across macOS, Linux, and Windows.
+  - Package validation hook in `scripts/after-pack.cjs` that fails builds loud if any platform target is missing `pty.node` or platform spawn helpers.
+  - Verified live SSH connectivity to real BinaryLane VPS instance (`scratchpad`).
 
 ## [1.0.61-beta.1] - 2026-09-05
 
