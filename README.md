@@ -11,35 +11,52 @@ A modern, high-performance, cross-platform desktop management client for [Binary
 
 ---
 
-## 📸 Screenshots
+## What you can do
 
-### 🌙 Virtual Servers Dashboard (Dark Mode)
-![BLDesk Virtual Servers Dashboard](docs/screenshots/dashboard-dark.png)
+BLDesk brings BinaryLane account management together with fleet-wide views and local desktop tools. Features below are implemented in the current source; [FEATURES.md](FEATURES.md) separates the inventory from the roadmap.
 
-### ☀️ Cloud Network Firewall (Light Mode)
-![BLDesk Cloud Network Firewall](docs/screenshots/firewall-light.png)
+- **Manage a fleet:** grid/list views, filters, server controls and one active account profile at a time.
+- **See the whole network:** regional/VPC topology, load-balancer backends and firewall-derived exposure, with SVG/PNG export.
+- **Compare utilisation:** a sortable fleet heatmap plus per-server CPU, memory, storage and network history.
+- **Review firewall changes:** ordered IPv4 rules, a fleet matrix, audit flags, local tags/groups and per-target diffs when copying rulesets.
+- **Build repeatably:** whole-server YAML templates, built-in starters, variables and capture from an existing server, followed by the Create Server review.
+- **Change plans deliberately:** resources, licences, backup/offsite options, pre-action backup, monthly-cost comparison and explicit review of address releases or reinstall.
+- **Recover and inspect:** on-demand backups, slot/replacement selection, restore, read-only backup attachment, download links and nightly schedule controls.
+- **Work quickly:** a verb-first command palette with glob/ID/IP/tag targets, native SSH handoff, desktop TCP reachability/traceroute and server/help deep links.
+- **Follow outcomes:** page-action confirmation dialogs, change tables/diffs, typed irreversible confirmations, local per-profile History and running-action tracking.
+- **Manage account resources:** hosted DNS zones and record add/delete, SSH public keys, VPC membership, load-balancer pools, account details and billing.
+- **Keep guidance close:** 33 bundled help pages, contextual links and Ask BinaryLane answers with source articles. Local help remains usable offline.
+- **Use desktop conveniences:** light/dark themes, 80–150% zoom, tray shortcuts/notifications and update channels; Android uses a Capacitor shell and native HTTP.
 
-### ☀️ Server Backups (Light Mode)
-![BLDesk Server Backups](docs/screenshots/backups-light.png)
+The palette has its own target-list review; Create Server uses its form. The terminal is a **native SSH handoff, not an embedded session**. DNS editing, VPC route editing and load-balancer health-check configuration are not exposed in this client; see [implemented boundaries](FEATURES.md#important-boundaries). Secure credential storage has fallback paths, so a protected device remains important.
 
----
+## Screenshots
 
-## ✨ Key Features
+Real BLDesk, populated entirely with a fictional **Atlas Cloud demo fleet**: 18 servers across Sydney, Brisbane and Melbourne, three VPCs and three load balancers. Names, addresses, metrics, balances and backup records are synthetic. No live account was used. [Capture recipe and source checks](docs/SHOWCASE.md).
 
-* **⚡ Complete Compute Fleet Management**: Live server grid/list with real-time status gauges, OS distribution logos (Ubuntu, Debian, Windows, Alma, Rocky, CentOS, FreeBSD, openSUSE, Fedora, cPanel, BYO), IP addressing, and quick action buttons.
-* **🎨 Authentic PanelSite Look & Feel**: Styled in official BinaryLane blue (`#017cb6`), dark slate (`#343a40`), and gold accents (`#f1ca00`) with persistent **Dark Mode / Light Mode** switching.
-* **🛡️ Built-in Anti-Spam & Mutation Safeguards**: Zero-retry policy on mutations, client-side 1.5s in-flight request deduplication, and UI double-click locks to prevent accidental duplicate actions.
-* **⚡ 0ms Instant Cold-Start**: Local profile caching rehydrates server lists instantaneously on startup while performing non-blocking background synchronization.
-* **🔒 Hardware-Encrypted Vault**: API tokens and OAuth credentials secured with Electron `safeStorage` (macOS Keychain, Windows DPAPI, Linux Secret Service).
-* **🖥️ Native & Embedded Terminals**: One-click SSH launch in your native terminal (iTerm2, macOS Terminal, Windows Terminal, Alacritty) or inline web terminal via `xterm.js`.
-* **🌐 VPCs, Firewalls & Load Balancers**: Interactive Inbound/Outbound firewall rule manager, VPC network routing, and load balancer health monitoring.
-* **💾 On-Demand & Automated Backups**: Take a point-in-time backup into a daily, weekly, monthly or temporary slot, manage scheduled nightly backups, and mount backup images as secondary drives.
-* **🌍 DNS Zone Manager**: Full DNS record management (A, AAAA, CNAME, MX, TXT, SRV, NS, CAA) with real-time propagation checks.
-* **🗺️ Network Map**: the whole account as one schematic — internet, load balancers, VPCs and servers, with each server's internet-reachable ports coloured by the firewall audit; click for details, export as SVG/PNG.
-* **🛡️ Fleet Firewall Matrix**: every server × every rule on one screen with an audit (SSH/RDP open to the world, no rules, shadowed rules), copy a ruleset to many servers behind a per-target diff, and local server groups/tags (`@web`) usable as targets everywhere.
-* **🧾 Change Review & History**: every mutation is confirmed in one dialog that shows what will change (before → after, or a line diff for firewall rule sets), with type-the-name for irreversible actions, and is recorded to a local per-account History with its real outcome.
-* **🔔 Tray / Menu Bar Monitor**: Live running/off/in-progress counts and prepaid credit in the tray, a Quick SSH submenu, native notifications when a server changes state, an action finishes or fails, or credit runs low (each mutable from the tray), close-to-tray and launch-at-login.
-* **⌨️ Command Palette (`Cmd+K` / `Ctrl+K`)**: Fuzzy search across servers, IPs and tabs — and verb-first commands with glob targets: `restart wp-*`, `backup db "pre-upgrade"`, `ssh 43.224`, `open jumpbox firewall`, `dns add A foo.example.com 203.0.113.9`. Every mutating command previews its targets and needs a second `Enter`.
+### Fleet dashboard
+![BLDesk dark-mode fleet dashboard with synthetic multi-region servers](docs/screenshots/dashboard-dark.png)
+
+### Network topology
+![BLDesk network map showing three demo VPCs and load-balanced application tiers](docs/screenshots/network-map-dark.png)
+
+### Fleet utilisation
+![BLDesk fleet heatmap comparing synthetic CPU, memory, disk, network and IO metrics](docs/screenshots/heatmap-dark.png)
+
+### Firewall matrix
+![BLDesk light-mode fleet firewall matrix with synthetic rules and audit results](docs/screenshots/firewall-light.png)
+
+### Backup recovery
+![BLDesk backups for a fictional database server](docs/screenshots/backups-light.png)
+
+<details>
+<summary>More: templates, performance history and built-in help</summary>
+
+![BLDesk built-in server templates](docs/screenshots/templates-dark.png)
+![BLDesk performance history with synthetic samples](docs/screenshots/usage-showcase-dark.png)
+![BLDesk bundled firewall guide](docs/screenshots/help-dark.png)
+
+</details>
 
 ---
 

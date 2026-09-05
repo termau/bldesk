@@ -90,7 +90,7 @@ The isolated scripts used for this pass live in `/private/tmp/bldesk-help.x4y9Gb
 
 ## Screenshots and limits
 
-Screenshots in `docs/screenshots/help-light.png`, `help-dark.png`, `help-150.png` and `ask-binarylane.png` contain only fabricated account data and a generic public-article answer. The displayed Electron runtime version in the test title bar comes from the isolated launcher, not a release version bump.
+The original help screenshots used fabricated account data and a generic public-article answer. `help-light.png` and `help-dark.png` have since been refreshed with the Atlas dummy fleet; see [current screenshot provenance](SHOWCASE.md). `help-150.png` and `ask-binarylane.png` remain from the original verification run. Their displayed Electron runtime version comes from the isolated launcher, not a release version bump.
 
 Packaged Windows/Linux deep-link registration and native platform menu behaviour were not rerun for this feature; the shared parser and Electron renderer routing were tested on macOS. No destructive workflow was executed against a live account. Android emulator verification is recorded below; physical-device and older-Android testing remain outside this pass.
 

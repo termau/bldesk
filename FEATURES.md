@@ -1,256 +1,100 @@
-# BLDesk — Feature Expansion Ideas
+# BLDesk — Implemented Features and Roadmap
 
-Ideas for taking BLDesk from "mPanel in a window" to a fleet tool. Ordered roughly by how much each one changes what the app *is*. Each entry notes what already exists in the codebase that it builds on.
+Source audit: 5 September 2026, package version 1.0.61-beta.1. This inventory describes the checked-in implementation, not every capability of BinaryLane's API and not unmerged PRs. Release history lives in [CHANGELOG.md](CHANGELOG.md). User workflows live in [bundled help](docs/help).
 
-**Scorecard (v1.0.60-beta.6, 5 Sep 2026):** #2, #3, #4, #5, #8, #9, #10, #11 and #13 are built and released. #7 and #12 are part-built. #1 and #6 are untouched. Everything shipped in the same week that was *not* on this list is under [Built outside this list](#built-outside-this-list).
+## Implemented today
 
----
+| Area | What BLDesk implements | Source |
+| --- | --- | --- |
+| Compute fleet | Grid/list, name/IP/tag and region/status filters, per-server actions, inferred power state | `ServerList.tsx`, `lib/powerState.ts` |
+| Server detail | Overview, native SSH/console, historical Usage, stored cloud-init, Network, Backups, Firewall, Settings, Recovery, Change Plan, Cancel | `ServerDetails.tsx`, `src/shared/deeplink.ts` |
+| Create and Change Plan | Resource/region/image selection, licences, backup retention/offsite options, pre-action backup, price comparison and explicit address-release/reinstall review | `CreateServerModal.tsx`, `ChangePlanPanel.tsx`, `lib/serverPricing.ts`, `lib/licences.ts` |
+| Templates | Built-in starters, capture from a server, YAML edit/import/export, variables and reviewed creation, local tags and follow-up firewall application | `TemplatesView.tsx`, `lib/templateJobs.ts` |
+| Firewall | Ordered IPv4 rules, import/export/clone, fleet matrix, audit flags, per-target copy diff and local groups/tags | `FirewallManager.tsx`, `FirewallMatrix.tsx`, `lib/firewallMatch.ts` |
+| Network map | VPC membership, regional topology, load-balancer backends, rule-derived exposure, selection, mouse pan/zoom and SVG/PNG export | `NetworkMap.tsx`, `lib/networkMap.ts` |
+| Fleet heatmap | CPU/RAM/disk capacity ratios, network/IO rates, sorting, stale/missing-data states and links to Usage | `FleetHeatmap.tsx`, `lib/heatmap.ts` |
+| VPCs and load balancers | VPC create/member inspection/detach/delete; balancer create, forwarding-rule display, backend attach/detach/delete | `VpcManager.tsx`, `LoadBalancerManager.tsx` |
+| Backups | Slot/replacement selection, restore, read-only attachment/detachment, download link and nightly schedule toggle | `BackupManager.tsx`, `lib/backupSlots.ts` |
+| DNS and SSH keys | Paginated hosted zones, add/delete records, zone export before removal; account public-key add/import/copy/delete | `DnsManager.tsx`, `SshKeysManager.tsx` |
+| Account and billing | Read-only account/security fields, balances, pending charges, paginated invoices and mPanel links | `AccountOverview.tsx`, `BillingOverview.tsx` |
+| Review and History | Shared page-action review, typed irreversible confirmations, change tables/diffs, per-profile local outcomes | `context/ConfirmContext.tsx`, `HistoryView.tsx`, `lib/changelog.ts` |
+| Action tracking | Completion/error tracking and handling of actions waiting for user interaction or invoice payment | `context/ActionTrackerContext.tsx`, `ActionInteractionPrompt.tsx` |
+| Palette and deep links | Sixteen verbs, aliases, glob/ID/IP/group targets, target-list review, help search and server/tab/help URLs | `CommandPalette.tsx`, `lib/commands.ts`, `src/shared/deeplink.ts` |
+| Help | 33 bundled pages, contextual links, local search, Ask BinaryLane articles/suggestions/feedback; answers first and local hits initially capped at five | `HelpView.tsx`, `lib/help.ts`, `src/shared/help-api.ts` |
+| Desktop tools | Native SSH, local TCP reachability and on-demand traceroute, tray server shortcuts/notifications, bounded 80–150% zoom, light/dark themes | `src/main/terminal.ts`, `src/main/reachability.ts`, `src/main/tray.ts`, `src/main/zoom.ts` |
+| Profiles and updates | One active profile at a time, token replacement, desktop update channels and Android APK update checks with prerelease-aware version comparison | `AuthModal.tsx`, `src/main/safeStorage.ts`, `src/main/updater.ts`, `api/mobile-bridge.ts` |
 
-## 1. Real embedded terminal (pty)
+Component basenames above are under `src/renderer/src/components/`; `lib/`, `context/` and `api/` are under `src/renderer/src/`. See [source verification and screenshot provenance](docs/SHOWCASE.md).
 
-**Today:** `EmbeddedTerminal.tsx` renders an xterm.js box with a banner; the only action is "Launch Native SSH", which hands off to Windows Terminal / Terminal.app / etc. The box itself never receives a session. The hand-off itself got better this week (v1.0.26: macOS `Terminal.app` by default with an env override; Linux resolves a real terminal instead of crashing) and the reachability chip from #11 now sits beside the button, but nothing runs in-app.
+## Important boundaries
 
-**Proposed:**
-- Add `node-pty` to the main process. Spawn `ssh` with the argv already produced by `shared/ssh.ts` (`sshArgv`), pipe stdin/stdout over IPC to the xterm instance.
-- Tabs per server, optional split view.
-- Command palette action "SSH to <server>" opens a tab in-app instead of context-switching.
-- **Broadcast mode:** pick a tag or glob (`wp-*`), type one command, see output fan out per host in a grid. Serial or parallel execution with a per-host status pill.
-- Session persistence across app restarts (reconnect on launch), and a scrollback search.
+- **Terminal:** native SSH handoff only. The xterm display is a banner, not an embedded SSH session.
+- **Profiles:** switching is implemented; a merged cross-account fleet is not.
+- **Review:** the palette uses its own target-list panel, not the shared change-table/diff dialog. Create Server uses its form as the review. History is local to this installation/profile, not an account-wide audit service.
+- **Networking:** VPC route/MTU editing is not exposed. Load-balancer health-check path/protocol settings exist in mPanel/API but have no BLDesk editor.
+- **DNS:** the page adds/deletes records; it does not edit existing records. Its add form fixes TTL at 300 and has no priority/weight/port inputs. The palette accepts a priority.
+- **Monitoring:** map exposure is inferred from firewall rules, not measured connectivity. CPU utilisation is summed across vCPUs. Power state uses sample freshness and post-action checks rather than a guaranteed live hypervisor feed.
+- **Backup safety:** palette backup uses a free temporary slot first, otherwise replaces the oldest unlocked, unattached temporary backup.
+- **Templates:** tags apply locally immediately; firewall follow-up is an in-memory job, polling for up to 15 minutes. Reloading/quitting abandons it. Unmatched VPC/key names and unsupported cloud-init do not block creation; inspect the final form.
+- **Storage:** desktop safeStorage and Android secure storage have weaker fallbacks on failure/unavailability; do not describe all stored credentials as hardware-encrypted.
+- **Platforms:** tray, desktop zoom and native desktop probes are not universal mobile capabilities. Launch at login is offered on macOS/Windows, not Linux. Android external deep-link delivery is not implemented. PR #51's Android probe/map gestures are not counted as shipped here.
 
-**Why it matters:** this is the feature mPanel structurally cannot offer. It is the strongest reason to keep BLDesk open all day.
+## Original expansion ideas — current status
 
----
+The original numbers are retained because code comments and older discussions refer to them. “Built” describes the implemented subset below, not every original proposal.
 
-## 2. Fleet-wide firewall matrix
+### 1. Real embedded terminal (pty)
 
-**Status: built (v1.0.42; v1.0.43 pinned the audit column beside the server name and added matrix navigation).** `lib/firewallMatrix.ts` (pure: signatures, matrix, audit), `components/firewall/FirewallMatrix.tsx` (view, copy-ruleset, groups/tags), `lib/serverGroups.ts` (local groups + tags; `@name` targets). `lib/firewallMatch.ts` (v1.0.52) holds the first-match semantics, shared with #11 so the matrix and the reachability verdict never disagree. Not yet: named rule *sets* stored independently of a server (today you copy from a live server, or apply a template's rule set via #8), and per-server quick edits from the grid.
+Not implemented. Native SSH handoff exists; embedded sessions, tabs/splits, broadcast commands and reconnect persistence remain proposals.
 
-**Before:** `FirewallManager.tsx` edited advanced firewall rules for one server at a time via `change_advanced_firewall_rules`.
+### 2. Fleet-wide firewall matrix
 
-**Proposed:**
-- A matrix view: servers down the side, common rules across the top, cell = allow/deny/absent.
-- Automatic audit highlights: `22/tcp` open to `0.0.0.0/0`, servers with no rules at all, rules referencing IPs that no longer belong to the account.
-- "Copy this ruleset to N servers" with a diff preview per target before commit.
-- Named rule sets stored locally (e.g. "web-standard", "db-private") that can be applied and re-applied.
+Implemented: fleet comparison, audit flags, groups/tags, ruleset copying with per-target diffs. Independent named ruleset storage and direct grid editing remain proposals; templates can carry firewall rules.
 
-**Why it matters:** answers "which of my 33 boxes still has SSH open to the world?" in one screen.
+### 3. A tray / menu bar that earns its spot
 
----
+Implemented on desktop: fleet summary, server Open/Copy IP/SSH shortcuts, notifications, close-to-tray, and supported-platform launch at login. No tray power-action controls.
 
-## 3. A tray / menu bar that earns its spot
+### 4. Verb-first command palette
 
-**Status: built (v1.0.39).** `src/main/tray.ts` owns the tray, its settings (`<userData>/tray.json`, edited from the menu itself) and the notification gate; `src/renderer/src/lib/fleetWatch.ts` pushes the fleet summary and diffs server state. Because `Server.status` never reports `off` (see the API note at the end), `lib/powerState.ts` infers power from sample staleness plus an `is_running` check after each power action, so the tray's counts and notifications are truthful. Not yet: a tray badge for stopped servers (deliberately — a box you keep off would badge forever), and per-server quick actions beyond SSH.
+Implemented: power verbs, backup, DNS add, local tags, template-based create, SSH, console, open/link/go/help/ask. Mutating plans review targets before running. Firewall command syntax and general argument completion remain proposals. Use [actual command examples](docs/help/palette.md), not speculative grammar.
 
-**Before:** `createTray()` in `main/index.ts` offered "Open Dashboard" and "Quit". `Notification` was wired but only used on request. Servers were already polled every 15 s.
+### 5. Diff-based change review and local changelog
 
-**Proposed:**
-- Tray tooltip / badge with running / stopped / action-in-progress counts.
-- Native notifications on server state change, action completion or failure (pairs with polling `/v2/actions/{id}`), and low prepaid balance from `useBalance`.
-- "Quick SSH" submenu listing servers (feeds into #1).
-- Optional launch-at-login, minimise-to-tray on close.
+Implemented for page-level workflows, with the palette/create exceptions described above. History labels are Submitted, Completed, Errored, Failed and Lost track. Invoice/interaction waits belong to the running-action tracker. History export is not exposed.
 
-**Why it matters:** the app becomes something that runs in the background and tells you things, not something you remember to open.
+### 6. Cross-account views
 
----
+Not implemented. Multiple saved profiles exist, but only one fleet is displayed/searched at a time.
 
-## 4. Verb-first command palette
+### 7. Backup timeline
 
-**Status: built (v1.0.38).** Grammar lives in `src/renderer/src/lib/commands.ts` (pure, no React); the palette in `CommandPalette.tsx` resolves targets against the loaded server list, previews eligible / skipped / unmatched, and requires a second Enter before submitting. `@group` targets arrived with #2 (v1.0.42), `create <host> from <template>` with #8 (v1.0.57), and power verbs stopped being gated on the unreliable `status` field in v1.0.39. Not yet: `firewall allow …` (needs #2's fetch-merge-write per server), `tag …` beyond local groups (the API has no server tags), and argument completion beyond Tab-to-fill.
+Part-built: backup operations, explicit slot replacement and pre-action backup in Change Plan exist. A timeline and fleet-wide backup overview do not.
 
-**Before:** `CommandPalette.tsx` fuzzy-matched server names / IPs / VPCs and navigation tabs.
+### 8. Server templates
 
-**Proposed:** make the palette accept commands, not just nouns:
+Implemented: whole-server YAML definitions, starters, variables, capture, import/export and create-form review. See the lifecycle limitations above and [template help](docs/help/templates.md).
 
-```
-restart jumpbox
-backup wp-web-3-bne
-open console adamhomenet
-ssh 43.224
-dns add A foo.example.com 203.0.113.9
-firewall allow 443/tcp wp-*
-tag add prod wp-*
-```
+### 9. Fleet heatmap + metrics history + threshold alerts
 
-- Glob and tag matching on server names.
-- Every existing mutation becomes a one-liner; the confirm modal (#5) is the last step.
-- Recent commands, argument completion, and a `?` help overlay.
+Implemented: fleet heatmap, API-backed historical Usage graphs and per-server threshold settings. No heatmap sparklines or local historical database.
 
-**Why it matters:** the Raycast / Linear pattern. This is what makes a desktop client feel like a power tool rather than a website in a frame.
+### 10. Network map
 
----
+Implemented: topology and rule-derived exposure, selection, mouse pan/zoom and export. It is not traffic telemetry, a route editor or a guest-to-guest dependency discovery system.
 
-## 5. Diff-based change review and local changelog
+### 11. Reachability checks from the client
 
-**Status: built (v1.0.41; every mutation routed through it in v1.0.46).** `context/ConfirmContext.tsx` is the one dialog (`useConfirm()` → summary / change table / line diff / type-to-confirm), `lib/diff.ts` the LCS diff and describers, `lib/changelog.ts` + `main/changelog.ts` the per-profile JSONL log, `components/history/HistoryView.tsx` the History tab. The action tracker takes a change id and writes the outcome back, including for create-server records (v1.0.50). `scripts/check-mutation-guards.mjs` runs in CI and fails any mutation that bypasses the dialog, and since v1.0.55 every dialog in the app shares one `Modal` shell, with a guard that fails any portal outside it. Not yet: a diff for load-balancer forwarding-rule edits (that form writes fields, not a list) and export of the log.
+Implemented on desktop: TCP probe beside SSH controls and on-demand traceroute. A native ping operation exists, but there is no general standalone ping dashboard. Refusal, timeout and inability to probe are distinct; none alone proves application health. Renderer-declared targets prevent stray calls, not a hostile renderer proving account ownership.
 
-**Before:** sixteen `window.confirm()` prompts guarded destructive actions; there was no record of what was changed.
+### 12. Usability polish that compounds
 
-**Proposed:**
-- Before any mutation (firewall, DNS, LB config, server settings, rebuild/restore) show a unified diff of current → proposed and confirm *the diff*, with type-the-name confirmation for irreversible actions.
-- Append every committed change to a local per-profile changelog (JSON or SQLite in `userData`): timestamp, target, diff, resulting action id and outcome.
-- A "History" tab: "what did I change on this account last Tuesday?"
+Implemented: React-rendered row context menu (not a native Menu), deep links, auto-updates, theme switching and bounded desktop zoom with scrollable navigation. Server-list j/k shortcuts, favourites ordering, column chooser and saved filters remain proposals.
 
-**Why it matters:** safer than mPanel, and gives customers the audit trail their support desks keep asking for.
+### 13. Help & Ask BinaryLane
 
----
+Implemented: 33 local pages, contextual `components/ui/HelpLink.tsx`, palette entry points and help deep links. `HelpView.tsx` requests suggestions after three characters/200 ms and answers after three words/600 ms or explicit submission. The shared fixed origin is `https://uai.adamhomenet.com`, not the BinaryLane cloud API. Only visible query text is sent; local help remains usable offline. Generated-answer controls are separate from this internal documentation inventory.
 
-## 6. Cross-account views
+## Roadmap, not commitments
 
-**Today:** multi-profile vault exists (`safeStorage.ts`, `AuthModal.tsx`; since v1.0.35 re-entering a key updates the profile instead of duplicating it) but the UI only ever shows one profile at a time. The action tracker and change log are already scoped per profile, which is the groundwork a merged view would need.
-
-**Proposed:**
-- An "All accounts" pseudo-profile that merges server lists, each row badged with its account.
-- Consolidated billing and balance across profiles.
-- Cross-account search in the palette.
-- Optional per-profile colour so you always know which account a destructive action targets.
-
-**Why it matters:** MSPs and agencies managing client accounts are exactly the users who will install a desktop client.
-
----
-
-## 7. Backup timeline
-
-**Status: part-built.** The third bullet is done for resize; the timeline and fleet view are not.
-
-**Today:** `BackupManager.tsx` lists a server's backups, supports restore and nightly backup toggling. This week added a slot selector that only offers the retention the server actually has (v1.0.27; PR #35 moves that rule into `lib/backupSlots.ts` so Change Plan's pre-action backup shares it), direct download of backup disk images (v1.0.27), automatic rotation of the oldest temporary backup, and tracking of every backup action with BinaryLane's own progress detail ("38.5GB of 40.0 GB (310MB/s)") rather than a bare "initiated" toast (v1.0.32). Restore goes through the #5 dialog as irreversible.
-
-**Proposed:**
-- Horizontal timeline per server: nightly backups as ticks, on-demand backups as pins, hover for size / age, click-to-restore with the #5 confirm flow.
-- Fleet view: "servers with no backup in the last 7 days" in amber, "backups disabled" in red.
-- ~~One-click "back up before I do this" offered from rebuild / resize / restore dialogs.~~ Change Plan's `pre_action_backup` (PR #35) takes a backup into a chosen slot before the resize runs. Rebuild and restore still do not offer it.
-
-**Why it matters:** cheap to build from data already fetched, and it nudges users toward better backup hygiene.
-
----
-
-## 8. Cloud-init and server templates
-
-**Status: built (v1.0.57)** — reworked from the first cut, which stored bare cloud-init snippets. A template is now a *whole server*: region, plan and its options (memory, disk, IPv4 count, backup retention, offsite), image, VPC and SSH keys (by **name**, so a template moves between accounts), a firewall rule set, local tags, and cloud-init with `{{variables}}`.
-
-- `lib/serverTemplates.ts` — versioned document (`kind: bldesk/server-template@1`), variable extraction/rendering (`{{hostname}}` built in; secrets are prompted for and never written to disk), single-file and bundle import/export, capture from a live server, migration of the first-cut `name` + `user_data` documents. Store is unchanged: one YAML per template under `<userData>/templates` on desktop (the `templates:*` bridge), one localStorage key on Android.
-- `lib/starterTemplates.ts` — seven read-only starters with real cloud-init: **Ubuntu baseline**, **CIS-hardened Ubuntu 24.04** (Level 1 Server controls: admin user from the injected key, root locked out of SSH, hardened sshd, module/sysctl lockdown, auditd, AIDE, PAM policy, banners, ufw), **Docker host**, **WordPress**, **WireGuard bastion**, **k3s node**, **PostgreSQL 16**. Every starter's firewall ends in an explicit drop (BinaryLane's firewall is first-match with no implicit deny). "Make mine" duplicates one into an editable template.
-- `components/templates/TemplatesView.tsx` — its own **Templates** tab: library (mine + starters, search), spec cards, rules table, variables, cloud-init; editor with rule and variable rows and a one-click "declare the variables this cloud-init uses"; import from file or paste; export one or all.
-- **New server from this** → variables prompt (secrets get a generate button) → `CreateServerModal` opens prefilled via its `initial` prop (names resolved on the account as the lists load) → the form is still the review → after BinaryLane accepts, `lib/templateJobs.ts` waits for the build and applies the firewall rules (History entry) and local tags. The job lives outside React so leaving the tab does not abandon it.
-- **Save server as template** on a server's Cloud-init tab captures plan/region/image/VPC/firewall rules/user data; **Save this form as a template instead** on the create form captures a form you have filled in.
-- Palette: `create web-01 from CIS-hardened Ubuntu` (or `from @starter-docker-host`).
-
-**Not yet:** secrets in a vault (they are typed per apply on purpose), template versioning/diff, sharing over anything but a file.
-
-**Why it matters:** users accumulate their own templates and stop wanting to leave. Anything Ansible would do on a fresh box is a first-boot cloud-init here, with the fill-in-the-blanks handled by the client.
-
----
-
-## 9. Metrics with memory
-
-**Status: done.** All three parts are covered, two of them by BinaryLane itself:
-
-- **Fleet heatmap** — `lib/heatmap.ts` turns live sample sets into capacity ratios (CPU against 100 × vCPUs: `cpu_usage_percent` is the sum across cores, measured at 399% on a pinned 4-vCPU server), fleet-relative rate intensity with an absolute floor (about 40 Mbit/s network, 10 MB/s disk) so a quiet fleet stays neutral, and explicit stale, unavailable and inactive states; `api/queries.ts` fetches once per 5-minute sample period, timed to land just after BinaryLane publishes (about 90 s after the period ends), four requests at a time; `components/heatmap/FleetHeatmap.tsx` renders the sortable grid and opens a row's Usage tab.
-- **History** — the API already retains sample sets at day resolution for at least a year, and the Usage tab reads day, week, month and year windows from it. A local ring buffer was proposed on the assumption the API discarded history; it does not, so none is kept client-side.
-- **Alerts** — BinaryLane's own threshold alerts are exposed per server. They are evaluated server-side and fire whether or not BLDesk is running, which local tray rules could not match.
-
-**Not yet:** per-cell sparklines in the heatmap.
-
-**Why it matters:** spot a runaway box across the fleet at a glance.
-
----
-
-## 10. Network map
-
-**Status: built (v1.0.47; VPC-centric layout spanning regions in v1.0.48).** `lib/networkMap.ts` is the pure, deterministic lane layout (internet rail → load balancers → region bands → VPC boxes → servers), with VPC membership taken from the authoritative members query rather than inferred from addresses; `components/map/NetworkMap.tsx` renders it as SVG with pan/zoom, selection, a detail panel and SVG/PNG export. Exposure per server comes from the firewall audit, so the map and the matrix never disagree. Not yet: private server↔server links beyond VPC membership (BinaryLane has no such data), and route entries.
-
-**Before:** VPCs, private IPs, load balancers and firewall rules were all fetched into separate tabs.
-
-**Proposed:**
-- Render the topology: servers grouped by VPC, load balancers fronting their members, public IPs on the edge, firewall rules as annotated edges.
-- Click a node to jump to the server; hover an edge to see the rule allowing it.
-- Export as PNG/SVG for docs and tickets.
-
-**Why it matters:** the "wow" screenshot for the README and marketing page, and useful for anyone with more than a handful of servers.
-
----
-
-## 11. Reachability checks from the client
-
-**Status: built (v1.0.52; UI polish in v1.0.54).** `main/reachability.ts` is the probe worker: TCP to port 22 from the user's own machine, restricted to addresses the account owns, throttled to 30 probes a minute. `components/servers/ReachabilityBadge.tsx` leads the action cluster on Server Details with three honest states: connected (with round-trip latency), refused (port closed or sshd not running on the guest) and timeout (silently dropped). On a timeout the **firewall verdict** runs the server's rules through `lib/firewallMatch.ts`, the same first-match semantics #2 uses, and names the exact rule that blocked the packet, or says there was no matching rule (so the drop is on the guest or the route), or that the server has no rules at all. The explanation lives in the chip's bubble; the route to the rule opens in a dialog. The card opens on keyboard focus, not hover alone.
-
-**Before:** DNS manager had a propagation check; nothing probed servers from the user's machine.
-
-**Proposed:**
-- ~~TCP probe each server's public IP from where the user is, show latency next to the SSH button.~~ Done.
-- ~~"Port 22 unreachable — check your firewall rules" with a deep link to the offending rule.~~ Done.
-- ICMP probes (needs raw sockets or a helper; TCP is enough for "can I SSH").
-- Traceroute-lite on demand for support tickets.
-
-**Why it matters:** the desktop app runs where the customer is, which mPanel never can.
-
----
-
-## 12. Usability polish that compounds
-
-**Status: part-built.** Three of six done.
-
-- Keyboard navigation of the server list: `j`/`k` move, `Enter` open, `s` SSH, `r` restart (with confirm), `/` focus filter.
-- Pinned / favourite servers at the top of the list. (Groups in `lib/serverGroups.ts` can pin ids, but the list does not order by them.)
-- ~~Right-click context menus on rows (native `Menu` via IPC).~~ Done, v1.0.30: `ServerContextMenu.tsx`.
-- ~~Deep links: `bldesk://server/12345`, `bldesk://console/12345` — support staff can paste them into tickets.~~ Done, v1.0.30: `main/deeplink.ts` registers the protocol, `shared/deeplink.ts` parses it, and every server row and details header has a copy-link button.
-- ~~Auto-update via `electron-updater` so any of the above actually reaches existing installs.~~ Done, v1.0.28: `main/updater.ts` against GitHub Releases, with release notes rendered from `CHANGELOG.md` (v1.0.53 sanitises them). Android checks the same releases and downloads the APK in-app (v1.0.33), signed with a permanent keystore so it upgrades in place (v1.0.34).
-- Column chooser and saved filters on the server list.
-
----
-
-## 13. Help & Ask BinaryLane
-
-**Status: built and released (v1.0.60-beta.6, PR #48).** Desktop- and Android-emulator-verified. One Help tab, one search box, two sources. Local Markdown covers every top-level view and server sub-tab, palette verbs, shortcuts and worked examples. Contextual links and `bldesk://help/<slug>#heading` open the relevant guide. `help <words>` searches locally; `ask <question>` / `??` submits a published-article question. See [verification notes](docs/HELP_VERIFICATION.md).
-
-- `lib/help.ts` — pure local search index over bundled Markdown pages (`docs/help/*.md`), YAML frontmatter metadata, slug/heading anchor resolution, and suggestion matching.
-- `components/help/HelpView.tsx` — dedicated Help tab with reader, search query parser (`help`, `ask`, `??`, keyword filter), related articles, question feedback (helpful / not helpful), and worked examples.
-- `components/help/HelpLink.tsx` — contextual `?` help links across every top-level view and active server sub-tab, wired so clicking deep links straight to the relevant documentation section without nested button traps.
-- `shared/help-api.ts` — fixed-origin unauthenticated transport (`https://api.binarylane.com.au/api/v2/articles/ask`) sending only visible question text, with desktop IPC (`main/help.ts`) and Android Capacitor HTTP bridge (`api/mobile-bridge.ts`). 20-second timeout, no retries, offline fallback.
-- `scripts/check-help-guards.mjs` — CI guard running in `npm run typecheck` that fails if any tab, server sub-tab, or command palette verb lacks a corresponding help page, or if any `help:` markdown anchor link points to a non-existent slug or heading.
-
-**Before:** No in-app documentation, no contextual links, and no way to query BinaryLane articles or procedures without opening an external browser.
-
-**Deferred:** Streaming responses, conversational follow-ups, per-account token quotas, and local answer caching. Android 36 native bridge and phone layouts passed on a Pixel 7 ARM emulator; physical-device and older-Android coverage remain separate checks.
-
-**Why it matters:** Users can troubleshoot unreachable servers, firewall rules, VPCs, backups, and command palette actions without context-switching to a browser or documentation site.
-
----
-
-## Built outside this list
-
-Shipped between v1.0.24 (1 Sep 2026) and v1.0.60-beta.6 (5 Sep 2026) without being an entry above. Listed so the list above stays honest about what the app already is.
-
-- **Server Details parity with mPanel** (v1.0.27): a **Network** tab (interfaces, IPv6, port blocking, VPC membership, Edge DDoS status), a **Settings** tab covering the full mPanel settings suite, and a **Usage** tab with the PanelSite-style metrics graphs (paged sample sets, independent per-metric scaling, live-telemetry fallback cards, day/week/month/year windows).
-- **Change Plan and Cancel Server** (v1.0.45; full size options in v1.0.56): `ChangePlanPanel.tsx` sends the whole `resize` — plan, memory, storage, IPv4 count with named releases, backup retention, offsite — with a before → after table, the primary address never offered for release, and an address release confirmed as irreversible. PR #35 adds the rest of the action: licensed software (cPanel tiers, CloudLinux, KernelCare, retained Remote Desktop SAL), reinstall onto another image as part of the move, a pre-action backup, and a real monthly cost comparison from `lib/serverPricing.ts`, which the create form shares.
-- **Create form rebuilt to match the web panel** (v1.0.40), with `lib/serverPricing.ts` for availability reasons and pricing, and one-line plan rows with every region in the filter (v1.0.44).
-- **Truthful action tracking** (v1.0.32): `ActionTrackerContext.tsx` follows long-running actions to completion instead of timing them out, reports failed and stalled actions as such, answers actions BinaryLane pauses for operator interaction (`user_interaction_required`) or an unpaid invoice, and posts native notifications on completion. Scoped per profile.
-- **Account and billing** (v1.0.31): an Account Details view, tabbed billing with paginated invoices and unpaid-invoice surfacing, and links straight to the mPanel payment pages.
-- **DNS** (v1.0.35): the domain list pages through every zone, labels unused zones, and has row actions.
-- **Android** (v1.0.33–v1.0.44): API requests routed through the native Capacitor HTTP bridge (mutations included, v1.0.44), the API token in the hardware-backed Keystore instead of cleartext, safe-area insets on every modal and drawer, a touch-friendly section picker, and the create form and plan table fitting a phone.
-- **Desktop chrome** (v1.0.29–v1.0.58): version badge in the title bar and sidebar, one set of window chrome per platform (native traffic lights overlaid on macOS, app-drawn elsewhere), a one-pixel inset border on Linux's frameless window, and an AppImage that starts on Ubuntu 24.04's user-namespace sandbox.
-- **Contributor guard rails** (v1.0.46): `AGENTS.md`, the mutation-guard CI check, and release notes extracted from `CHANGELOG.md` at publish time.
-- **Desktop zoom shortcuts and scrollable navigation** (v1.0.60-beta.5, #18, PR #47): `Ctrl/Cmd` + plus/minus/0 zoom bounded between 80% and 150%, shared across keyboard shortcuts, the View menu, and native `zoom-changed` events; both navigation columns scroll vertically so all items remain reachable when zoomed in; guarded by `scripts/check-ui-guards.mjs`.
-- **Android offline detection** (v1.0.60-beta.6, PR #48): `ACCESS_NETWORK_STATE` declared in `AndroidManifest.xml` so offline help detects disconnected networks immediately instead of failing network timeouts.
-
----
-
-## Suggested first three
-
-The original three were #1, #4 and #3. Two of them shipped in the same week (#4 in v1.0.38, #3 in v1.0.39). Of what remains, these change the app most:
-
-1. **Real pty terminal with broadcast** (#1) — still the feature mPanel structurally cannot offer.
-2. **Cross-account views** (#6) — the multi-profile vault, per-profile change log and per-profile action tracker are all in place; only the merged UI is missing.
-3. **Backup timeline and fleet backup view** (#7) — cheap, from data already fetched, and the pre-action backup in Change Plan is a first taste of it.
-
----
-
-## API-side help worth considering
-
-Because BLDesk is a first-party client to an API BinaryLane owns, a few small server-side additions unlock disproportionate client features:
-
-- CORS headers (or a proper OAuth PKCE flow) so the renderer can run with `webSecurity` on.
-- A websocket / SSE stream for server status and action changes, so the client stops polling.
-- A lighter server list (`?fields=` or a summary endpoint) so the 15 s refresh isn't the full object × 200.
-- ~~Server-side retention of samplesets beyond "latest".~~ Already the case: the API keeps day-resolution sample sets for at least a year (see #9).
-- A per-OS software endpoint that includes disabled-but-retainable products, or a `supported_operating_systems` on `LicensedSoftware`. Today the client has to union the catalogue with what the server holds to avoid `change_licenses` silently dropping Remote Desktop SAL (see PR #35).
-- **Make `Server.status` track power state** (vps/vps #161). Today it never turns `off`; the client infers power from sample staleness plus an `is_running` after each power action (`lib/powerState.ts`). The real fix is xm → HostDaemon → WebAPI event plumbing, after which the client can drop the inference.
+Potential next work: embedded terminal sessions, cross-account views and a fleet backup timeline. These are not advertised as existing features. New work remains subject to [AGENTS.md](AGENTS.md): API-driven BinaryLane controls plus focused client conveniences, without policy layers or architecture rewrites hidden inside a feature.
