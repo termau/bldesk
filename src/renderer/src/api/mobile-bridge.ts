@@ -1,8 +1,9 @@
+import { registerPlugin } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { HELP_API_ORIGIN, HELP_TIMEOUT_MS, helpQuestion, helpFeedbackBody, readHelpAnswer, readHelpSuggestions } from '@shared/help-api'
 import { SecureStorage } from '@aparajita/capacitor-secure-storage'
-import { AccountProfile, IpcApi, UpdateChannel, UpdaterState } from '@shared/ipc-types'
+import { AccountProfile, IpcApi, TcpProbeResult, UpdateChannel, UpdaterState } from '@shared/ipc-types'
 import { formatSshCommand, sshUriHost, validateSshTarget } from '@shared/ssh'
 
 const PROFILES_KEY = 'bldesk_profiles_v1'
@@ -247,10 +248,66 @@ export async function initMobileBridge(): Promise<void> {
     }
   }
 
+/*
+ * TCP reachability on Android.
+ *
+ * A WebView cannot open a socket, so this calls the app's own NetProbe plugin.
+ * The guards are the ones `src/main/reachability.ts` applies on the desktop, and
+ * they are repeated here rather than trusted to the native side: IP literals
+ * only, addresses on the signed-in account only, and a rolling rate limit. The
+ * plugin re-checks the IP literal itself.
+ *
+ * `probePing` and `traceroute` are deliberately absent. Both need raw sockets or
+ * a shell, neither of which Android gives an app, and `IpcApi` marks them
+ * optional so the UI feature-detects and hides those controls rather than
+ * offering a button that cannot work.
+ */
+const NetProbe = registerPlugin<{
+  probeTcp(options: { host: string; port: number; timeoutMs?: number }): Promise<TcpProbeResult>
+}>('NetProbe')
+
+let allowedProbeTargets = new Set<string>()
+
+/** Same budget as the desktop: plenty for a person, useless for a scan. */
+const PROBE_RATE_LIMIT_PER_MINUTE = 30
+const recentProbes: number[] = []
+
+function underProbeRateLimit(): boolean {
+  const now = Date.now()
+  while (recentProbes.length && now - recentProbes[0] > 60_000) recentProbes.shift()
+  if (recentProbes.length >= PROBE_RATE_LIMIT_PER_MINUTE) return false
+  recentProbes.push(now)
+  return true
+}
+
+const isIpLiteral = (value: string): boolean =>
+  /^(\d{1,3}\.){3}\d{1,3}$/.test(value)
+    ? value.split('.').every((part) => Number(part) <= 255)
+    : /^[0-9a-fA-F:.]+$/.test(value) && value.includes(':')
+
   const mobileApi: IpcApi = {
     helpAsk: async question => readHelpAnswer(await helpRequest(`/api/help?q=${encodeURIComponent(helpQuestion(question))}`)),
     helpSuggest: async prefix => readHelpSuggestions(await helpRequest(`/api/help/suggest?q=${encodeURIComponent(helpQuestion(prefix))}`)),
     helpFeedback: async (id, helpful) => { await helpRequest('/api/help/feedback', helpFeedbackBody(id, helpful)) },
+    probeTcp: async (host: string, port: number, timeoutMs?: number): Promise<TcpProbeResult> => {
+      if (!isIpLiteral(host)) return { ok: false, error: 'invalid-target', detail: 'not an IP literal' }
+      if (!allowedProbeTargets.has(host)) {
+        return { ok: false, error: 'invalid-target', detail: 'not an address on this account' }
+      }
+      if (!underProbeRateLimit()) {
+        return { ok: false, error: 'invalid-target', detail: 'too many probes - wait a minute' }
+      }
+      try {
+        return await NetProbe.probeTcp({ host, port, timeoutMs })
+      } catch (e) {
+        // A missing plugin (an older shell) must read as "cannot answer", not
+        // as the port being shut.
+        return { ok: false, error: 'other', detail: e instanceof Error ? e.message : String(e) }
+      }
+    },
+    setProbeTargets: async (ips: string[]): Promise<void> => {
+      allowedProbeTargets = new Set(ips.filter(isIpLiteral))
+    },
     getProfiles: async (): Promise<Omit<AccountProfile, 'token'>[]> => {
       const list = await getStoredProfiles()
       return list.map(({ token: _, ...rest }) => rest)

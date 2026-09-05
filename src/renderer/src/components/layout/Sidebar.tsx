@@ -238,9 +238,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <ChevronLeft className="w-3.5 h-3.5" />
                   <span>All Servers</span>
                 </button>
-                <div className="font-bold text-sm truncate text-[#212529] dark:text-white" title={selectedServer.name}>
-                  {selectedServer.name}
-                </div>
+                {/*
+                  * The name is not repeated here. The detail header pins it,
+                  * with the distribution icon and the power pill, on every tab
+                  * - so this was a second copy of the one thing that never
+                  * changes while you are inside a server.
+                  */}
               </div>
 
               {/* SubNav Items */}
@@ -300,7 +303,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <ChevronLeft className="w-3.5 h-3.5" />
                     <span>Back to Server Fleet</span>
                   </button>
-                  <div className="font-bold text-sm text-white truncate mt-1">{selectedServer?.name}</div>
+                  {/* Same as the desktop sub-nav: the header above already
+                      carries the name on every tab. */}
                 </div>
               )}
 

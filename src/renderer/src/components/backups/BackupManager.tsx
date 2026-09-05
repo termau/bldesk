@@ -279,7 +279,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {!pinnedServerId && (
             <div className="flex items-center gap-2 bg-white dark:bg-[#2b3035] px-3 py-1.5 border border-[#ced4da] dark:border-[#373b3e] rounded shadow-sm">
               <Server className="w-3.5 h-3.5 text-[#017cb6]" />
@@ -416,7 +416,12 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
         )}
 
         {!backupsQuery.isLoading && backups.length > 0 && (
-          <table className="w-full text-left text-xs border-collapse">
+          /* The row is wider than a phone - the actions alone need ~250px - so
+             it scrolls sideways rather than being clipped with Download, Mount
+             and Restore unreachable. `min-w-max` stops the table squashing
+             columns into unreadable slivers instead of scrolling. */
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-max text-left text-xs border-collapse">
             <thead>
               <tr className="bg-[#f8f9fa] dark:bg-[#212529] border-b border-[#ced4da] dark:border-[#373b3e] text-[#6c757d]">
                 <th className="py-2.5 px-4">Name / Label</th>
@@ -481,7 +486,8 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
                 )
               })}
             </tbody>
-          </table>
+            </table>
+          </div>
         )}
       </div>
 

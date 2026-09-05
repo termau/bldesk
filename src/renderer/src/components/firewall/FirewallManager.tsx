@@ -624,9 +624,13 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
       <div className="bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg p-5 space-y-4 flex-1 shadow-sm">
         <div className="flex items-center justify-between border-b border-[#ced4da] dark:border-[#373b3e] pb-3">
           <div>
-            <h3 className="text-sm font-bold text-[#212529] dark:text-white flex items-center gap-2">
-              <span>Evaluated Rules for {activeServer?.name || `Server #${activeServerId}`}</span>
-              <span className="text-xs font-normal text-[#6c757d] dark:text-slate-400">
+            <h3 className="text-sm font-bold text-[#212529] dark:text-white flex flex-wrap items-baseline gap-x-2 min-w-0">
+              <span className="min-w-0 break-words">
+                Evaluated Rules for {activeServer?.name || `Server #${activeServerId}`}
+              </span>
+              {/* `whitespace-nowrap`: squeezed into the leftover column it broke
+                  across two lines as "(16" / "rules)". */}
+              <span className="text-xs font-normal whitespace-nowrap text-[#6c757d] dark:text-slate-400">
                 ({currentRules.length} rules)
               </span>
             </h3>
@@ -680,9 +684,13 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
               return (
                 <div
                   key={idx}
-                  className="p-3 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded-lg flex items-center justify-between text-xs hover:border-[#017cb6] transition"
+                  /* Wraps on a phone. The row is index, action, protocol, port,
+                     source and the controls; at 412px that is ~140px more than
+                     fits, and without wrapping the controls simply spilled out
+                     of the card with no way to reach them. */
+                  className="p-3 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded-lg flex flex-wrap items-center justify-between gap-2 text-xs hover:border-[#017cb6] transition"
                 >
-                  <div className="flex items-center gap-3 flex-1">
+                  <div className="flex flex-wrap items-center gap-3 flex-1 min-w-0">
                     {/* Index & Reordering */}
                     <div className="flex items-center gap-1 bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] px-1.5 py-0.5 rounded">
                       <span className="font-mono text-[10px] text-[#6c757d] font-bold w-4 text-center">

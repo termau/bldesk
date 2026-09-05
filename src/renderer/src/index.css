@@ -50,6 +50,22 @@
   background: #6c757d88;
 }
 
+/*
+ * Touch devices get the platform's overlay scrollbars back.
+ *
+ * Styling ::-webkit-scrollbar at all turns a WebView's overlay scrollbar into a
+ * classic one that occupies layout width - measured at 6px on Android, which is
+ * both a bar nobody asked for on a phone and a 6px strip of the screen the
+ * content no longer gets. Phones scroll by dragging the content; the bar is not
+ * the affordance there.
+ */
+@media (pointer: coarse) {
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
+
 /* Frameless Window Draggable Region */
 .titlebar-drag-region {
   -webkit-app-region: drag;

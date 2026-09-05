@@ -364,36 +364,76 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
           {/* Header Info */}
           <div>
             <div className="flex items-center gap-2">
+              {/* An arrow, not a labelled row: it used to take a whole line of
+                  its own above the title. */}
               <button
                 onClick={onBack}
-                className="md:hidden text-xs text-[#017cb6] hover:underline flex items-center gap-1"
+                aria-label="All servers"
+                title="All servers"
+                className="md:hidden shrink-0 -ml-1 p-1 text-[#017cb6] hover:text-[#016594]"
               >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Servers</span>
+                <ArrowLeft className="w-4 h-4" />
               </button>
-              <h1 className="text-lg font-bold text-[#212529] dark:text-white flex items-center gap-2">
-                <img src={distroIcon} alt="" className="w-5 h-5 object-contain" />
-                <span><span className="text-[#6c757d] dark:text-slate-400 font-normal">Server:</span> {server.name}</span>
+              {/*
+                * Deliberately does not wrap. The hostname truncates instead, so
+                * the power pill and the reachability chip stay on the title row
+                * beside each other - the two together are the answer to "is this
+                * thing up", and splitting them across lines reads as unrelated.
+                */}
+              <h1 className="text-base sm:text-lg font-bold text-[#212529] dark:text-white flex items-center gap-2 min-w-0">
+                <img src={distroIcon} alt="" className="w-5 h-5 object-contain shrink-0" />
+                {/*
+                  * No "Server:" label - the distribution icon beside it already
+                  * says what this is, and on a phone the words cost room a long
+                  * hostname needs. The name itself truncates with the full value
+                  * on hover rather than pushing the status pill off the row.
+                  */}
+                <span className="truncate" title={server.name}>
+                  {server.name}
+                </span>
                 <span
                   title={(server as any)._power
                         ? `Power state from ${(server as any)._power.source === 'diagnostic' ? 'a hypervisor check' : 'performance samples'}${(server as any)._apiStatus !== server.status ? ` (API says ${(server as any)._apiStatus})` : ''}`
                         : 'From the API status field, which may not reflect power state'}
-                  className={`px-2 py-0.5 text-[10px] font-semibold rounded-full inline-flex items-center gap-1 ${state.pill}`}
+                  className={`shrink-0 px-2 py-0.5 text-[10px] font-semibold rounded-full inline-flex items-center gap-1 ${state.pill}`}
                 >
                   {state.busy && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
                   {state.label}
                 </span>
+                {/*
+                  * Beside the power pill, because the two answer the same
+                  * question from opposite ends: the platform says it is running,
+                  * this says whether it answers from here. Reading them apart
+                  * invites trusting "Running" on its own.
+                  */}
+                <ReachabilityChip r={reach} ip={primaryV4} onOpenFirewall={() => onSelectSubTab?.('firewall')} />
               </h1>
             </div>
 
             {/* Breadcrumb Specs */}
-            <div className="flex flex-wrap items-center gap-2 text-xs text-[#6c757d] dark:text-slate-400 mt-1">
+            {/*
+              * Text flow, not flex. As flex items each piece was atomic, so
+              * "2 vCPUs / 4 GB RAM / 60 GB Disk" could not fit in what was left
+              * of the first line and wrapped whole - leaving a block of dead
+              * space to its right. Inline, the line fills and breaks where it
+              * runs out, like a sentence.
+              */}
+            {/*
+              * Left aligned with an even gap. Two other arrangements were worse:
+              * text flow filled the width but broke
+              * "2 vCPUs / 4 GB RAM / 60 GB Disk" across the line end, and
+              * `justify-between` kept the items whole but stretched the gaps
+              * until the row read as unrelated fragments. Whatever is left over
+              * sits at the end of the line, which is what a line of text
+              * normally does.
+              */}
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 text-xs text-[#6c757d] dark:text-slate-400 mt-1">
               <span className="font-mono text-[#212529] dark:text-slate-200">{primaryV4}</span>
               <span>•</span>
               <span className="font-mono">#{server.id}</span>
               <button
                 onClick={handleCopyLink}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[#6c757d] hover:text-[#017cb6] hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition"
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[#6c757d] hover:text-[#017cb6] hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition"
                 title="Copy bldesk:// link to this server"
               >
                 {linkCopied ? <Check className="w-3 h-3 text-emerald-500" /> : <Link2 className="w-3 h-3" />}
@@ -402,7 +442,9 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
               <span>•</span>
               <span>{server.region?.name || server.region?.slug?.toUpperCase()}</span>
               <span>•</span>
-              <span>{server.vcpus} vCPUs / {ramGB} GB RAM / {server.disk} GB Disk</span>
+              <span className="whitespace-nowrap">
+                {server.vcpus} vCPUs / {ramGB} GB RAM / {server.disk} GB Disk
+              </span>
               <span>•</span>
               <span>{server.image?.full_name || server.image?.name}</span>
             </div>
@@ -410,16 +452,13 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
 
           {/* Quick Action Controls */}
           <div className="flex flex-wrap items-center gap-2">
-            {/* Leads the cluster: the buttons beside it are only worth
-                clicking if the port answers from here. */}
-            <ReachabilityChip r={reach} ip={primaryV4} onOpenFirewall={() => onSelectSubTab?.('firewall')} />
             {/* SSH Key Selector */}
             <div className="flex items-center gap-1 bg-[#f8f9fa] dark:bg-[#212529] px-2 py-1 border border-[#ced4da] dark:border-[#373b3e] rounded">
               <Key className="w-3.5 h-3.5 text-[#f1ca00] flex-shrink-0" />
               <select
                 value={selectedKeyPath}
                 onChange={(e) => setSelectedKeyPath(e.target.value)}
-                className="bg-transparent text-xs text-[#212529] dark:text-slate-200 focus:outline-none cursor-pointer max-w-[120px]"
+                className="bg-transparent text-xs text-[#212529] dark:text-slate-200 focus:outline-none cursor-pointer max-w-[84px] sm:max-w-[120px]"
               >
                 <option value="">Default Key</option>
                 {localKeys.map((k) => (
@@ -442,7 +481,8 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm"
             >
               <Terminal className="w-3.5 h-3.5" />
-              <span>Launch SSH</span>
+              <span className="sm:hidden">SSH</span>
+              <span className="hidden sm:inline">Launch SSH</span>
             </button>
 
             <button
@@ -461,7 +501,9 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                 <span>Building…</span>
               </span>
             ) : isRunning ? (
-              <>
+              /* One group: these two belong together, and wrapping used to put
+                 reboot on one line and power on the next. */
+              <div className="flex shrink-0 items-center gap-2">
                 <button
                   onClick={() => handleAction('reboot')}
                   disabled={!!actionInProgress}
@@ -478,7 +520,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                 >
                   <Power className="w-3.5 h-3.5" />
                 </button>
-              </>
+              </div>
             ) : (
               <button
                 onClick={() => handleAction('power_on')}
