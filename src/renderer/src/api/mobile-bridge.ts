@@ -54,14 +54,57 @@ function broadcastMobileUpdater(patch: Partial<UpdaterState>) {
 }
 
 function semverCompare(a: string, b: string): number {
-  const pa = a.replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0)
-  const pb = b.replace(/^v/, '').split('.').map((n) => parseInt(n, 10) || 0)
+  const cleanA = a.replace(/^v/, '').trim()
+  const cleanB = b.replace(/^v/, '').trim()
+
+  const [mainA, preA] = cleanA.split('-', 2)
+  const [mainB, preB] = cleanB.split('-', 2)
+
+  const numsA = mainA.split('.').map((n) => parseInt(n, 10) || 0)
+  const numsB = mainB.split('.').map((n) => parseInt(n, 10) || 0)
+
   for (let i = 0; i < 3; i++) {
-    const na = pa[i] ?? 0
-    const nb = pb[i] ?? 0
+    const na = numsA[i] ?? 0
+    const nb = numsB[i] ?? 0
     if (na > nb) return 1
     if (na < nb) return -1
   }
+
+  // Major, minor, and patch are identical.
+  // A version without a pre-release tag has higher precedence than one with.
+  if (!preA && preB) return 1
+  if (preA && !preB) return -1
+  if (!preA && !preB) return 0
+
+  // Both have pre-release tags: compare identifier by identifier
+  const partsA = preA.split('.')
+  const partsB = preB.split('.')
+  const len = Math.max(partsA.length, partsB.length)
+
+  for (let i = 0; i < len; i++) {
+    const pA = partsA[i]
+    const pB = partsB[i]
+    if (pA === undefined) return -1
+    if (pB === undefined) return 1
+
+    const isNumA = /^\d+$/.test(pA)
+    const isNumB = /^\d+$/.test(pB)
+
+    if (isNumA && isNumB) {
+      const numA = parseInt(pA, 10)
+      const numB = parseInt(pB, 10)
+      if (numA > numB) return 1
+      if (numA < numB) return -1
+    } else if (isNumA && !isNumB) {
+      return -1
+    } else if (!isNumA && isNumB) {
+      return 1
+    } else {
+      const cmp = pA.localeCompare(pB)
+      if (cmp !== 0) return cmp > 0 ? 1 : -1
+    }
+  }
+
   return 0
 }
 
@@ -83,7 +126,11 @@ async function checkMobileGithubUpdates(): Promise<UpdaterState> {
     }
 
     const data = await res.json()
-    const release = Array.isArray(data) ? data[0] : data
+    const rawList = Array.isArray(data) ? data : [data]
+    const releases = rawList.filter((r: any) => !r.draft && r.tag_name)
+    const release = isBeta
+      ? releases[0]
+      : releases.find((r: any) => !r.prerelease) || releases[0]
     if (!release || !release.tag_name) {
       throw new Error('No release information found')
     }

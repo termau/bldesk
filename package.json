@@ -1,6 +1,6 @@
 {
   "name": "bldesk",
-  "version": "1.0.60-beta.7",
+  "version": "1.0.61-beta.1",
   "type": "module",
   "description": "BinaryLane Cloud Desktop Client",
   "main": "./out/main/index.js",

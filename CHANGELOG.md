@@ -5,6 +5,17 @@ All notable changes to the **BLDesk** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [1.0.61-beta.1] - 2026-09-05
+
+### Fixed
+- **Mobile in-app updater semver comparison**:
+  - Implemented proper SemVer 2.0 comparison in the mobile bridge (`semverCompare`), resolving an issue where Android in-app updates ignored prerelease/beta increments (e.g. comparing `1.0.60-beta.7` vs `1.0.60-beta.3` as identical).
+  - Version bump to 1.0.61-beta.1 ensures currently installed 1.0.60-beta.X devices trigger the update immediately.
+- **Unpacked desktop updater feed**:
+  - Ensured `app-update.yml` is generated across all platforms in `after-pack.cjs`, and configured static GitHub feed URL in `main/updater.ts` with graceful `check-failed` handling.
+
+---
+
 ## [1.0.60-beta.7] - 2026-09-05
 
 ### Fixed
