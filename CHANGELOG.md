@@ -5,6 +5,17 @@ All notable changes to the **BLDesk** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [1.0.60-beta.7] - 2026-09-05
+
+### Fixed
+- **Ask BinaryLane Ordering & Search Relevance** (*PR #50 by @termau*):
+  - Ask BinaryLane answer card now renders first once a question is submitted, keeping the answer above the fold.
+  - Local help hits capped at 5 with a "Show all N topics" toggle.
+  - Ignored conversational stop words (how, do, I, an, the, etc.) in `searchHelp` and dropped incidental body matches on multi-word queries.
+  - Added IP address keywords to Server Network and Change Plan help pages.
+
+---
+
 ## [1.0.60-beta.6] - 2026-09-05
 
 ### Added
