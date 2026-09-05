@@ -91,7 +91,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'account', label: 'Account Details', icon: UserCircle },
     { id: 'history', label: 'History', icon: History },
     { id: 'help', label: 'Help', icon: CircleHelp },
-    { id: 'terminal', label: 'Embedded Shell', icon: Terminal }
+    ...(window.bldeskApi?.pty ? [{ id: 'terminal' as const, label: 'Embedded SSH', icon: Terminal }] : [])
   ]
 
   const serverSubNavItems: { id: ServerSubTab; label: string }[] = [

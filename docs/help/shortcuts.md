@@ -5,6 +5,9 @@ keywords: [keyboard, shortcut, zoom, cmd k, ctrl k, escape, enter]
 ---
 
 # Keyboard shortcuts
+
+Ctrl/Cmd+F inside an embedded SSH session opens scrollback search. Find next and Previous navigate matches; Escape closes the find bar. See [Terminal](help:terminal).
+
 Use Cmd on macOS and Ctrl on Windows or Linux for the command palette and desktop zoom.
 
 ## Palette

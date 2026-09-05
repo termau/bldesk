@@ -37,6 +37,13 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Verify node-pty Linux build tools
+        if: runner.os == 'Linux'
+        run: |
+          python3 --version
+          make --version
+          g++ --version
+
       - name: Install Dependencies
         run: npm ci --legacy-peer-deps
 

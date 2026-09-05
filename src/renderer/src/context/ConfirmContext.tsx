@@ -18,6 +18,8 @@ import { recordChange, type ChangeSeverity, type ChangeTarget } from '../lib/cha
  */
 
 export interface ConfirmRequest {
+  /** Pin long-lived work to the account that supplied its targets. */
+  logProfileId?: string
   helpSlug?: string
   /** Verb phrase: "Reboot server", "Delete firewall rule". */
   title: string
@@ -113,7 +115,7 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
             changes: cur.req.changes,
             diff: cur.req.diff,
             source: cur.req.source ?? 'ui'
-          })
+          }, cur.req.logProfileId)
         }
         result = { ok: true, changeId, reason }
       }

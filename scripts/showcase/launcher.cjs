@@ -5,7 +5,8 @@ const { tmpdir } = require('node:os')
 const { join } = require('node:path')
 const { pathToFileURL } = require('node:url')
 const root = join(__dirname, '../..')
-const dir = mkdtempSync(join(tmpdir(), 'bldesk-showcase-'))
+// Optional directory used by the isolated terminal restart smoke test only.
+const dir = process.env.BLDESK_TEST_USER_DATA || mkdtempSync(join(tmpdir(), 'bldesk-showcase-'))
 app.setPath('userData', dir)
 app.setPath('sessionData', dir)
 app.setVersion(require(join(root, 'package.json')).version)
@@ -61,7 +62,16 @@ app.whenReady().then(()=>{
   session.defaultSession.protocol.handle('https',handler)
   session.defaultSession.protocol.handle('http',handler)
 })
-import(pathToFileURL(join(root,'out/main/index.js')).href).then(()=>app.whenReady()).then(()=>{
+import(pathToFileURL(process.env.BLDESK_TEST_MAIN || join(root,'out/main/index.js')).href).then(()=>app.whenReady()).then(()=>{
   const values={'vault:getProfiles':[profile],'vault:getActiveProfile':profile,'vault:getLocalSshKeys':[],'system:sendNotification':false,'net:probeTcp':{ok:true,latencyMs:8},'net:probePing':{ok:true,latencyMs:8},'net:setTargets':undefined}
   for(const [name,value] of Object.entries(values)){ipcMain.removeHandler(name);ipcMain.handle(name,()=>value)}
+  if (process.env.BLDESK_TEST_KEY) {
+    ipcMain.removeHandler('vault:getLocalSshKeys')
+    ipcMain.handle('vault:getLocalSshKeys', () => [{ name: 'Disposable test key', privateKeyPath: process.env.BLDESK_TEST_KEY, publicKey: '' }])
+    ipcMain.removeHandler('terminal:launchNative')
+    ipcMain.handle('terminal:launchNative', (_event, options) => {
+      global.showcase.nativeLaunches = [...(global.showcase.nativeLaunches || []), options]
+      return { success: true, terminal: 'smoke-test native stub' }
+    })
+  }
 })

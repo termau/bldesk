@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { VaultManager } from './safeStorage'
 import { launchNativeTerminal } from './terminal'
+import { registerPtyHandlers, closeAll as closeAllPtys } from './pty'
 import { UpdaterManager } from './updater'
 import { probeTcp, probePing, traceroute, setAllowedTargets } from './reachability'
 import { DeepLinkManager } from './deeplink'
@@ -234,6 +235,7 @@ function createTray(): void {
 }
 
 function registerIpcHandlers(): void {
+  registerPtyHandlers(() => mainWindow)
   registerHelpHandlers()
   // Vault & Auth
   ipcMain.handle('vault:getProfiles', async () => VaultManager.getProfiles())
@@ -393,6 +395,7 @@ if (!gotTheLock) {
 
   app.on('before-quit', () => {
     isQuitting = true
+    closeAllPtys()
     UpdaterManager.dispose()
     TrayManager.dispose()
   })

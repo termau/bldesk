@@ -21,6 +21,37 @@ export interface TerminalLaunchOptions {
   privateKeyPath?: string
 }
 
+export interface PtyOpenOptions extends TerminalLaunchOptions {
+  serverId?: number
+  serverName?: string
+  cols: number
+  rows: number
+  /** Broadcast only: passed after the SSH destination, never to a local shell. */
+  remoteCommand?: string
+}
+
+export interface PtySessionInfo {
+  id: string
+  serverId?: number
+  serverName: string
+  host: string
+  username: string
+  status: 'connecting' | 'live' | 'exited'
+  exitCode?: number
+  signal?: number
+  broadcast?: boolean
+}
+
+export interface PtyApi {
+  open: (options: PtyOpenOptions) => Promise<{ id: string }>
+  write: (id: string, data: string) => Promise<void>
+  resize: (id: string, cols: number, rows: number) => Promise<void>
+  close: (id: string) => Promise<void>
+  list: () => Promise<PtySessionInfo[]>
+  onData: (cb: (id: string, chunk: string) => void) => () => void
+  onExit: (cb: (id: string, code: number, signal?: number) => void) => () => void
+}
+
 export interface TerminalLaunchResult {
   success: boolean
   /** Why the launch failed — already human-readable. */
@@ -166,6 +197,7 @@ export interface IpcApi extends HelpApi {
   setActiveProfile: (profileId: string) => Promise<{ success: boolean }>
   
   // Terminal & Console
+  pty?: PtyApi
   launchNativeTerminal: (options: TerminalLaunchOptions) => Promise<TerminalLaunchResult>
   openRescueConsole: (options: ConsoleWindowOptions) => Promise<{ success: boolean }>
   

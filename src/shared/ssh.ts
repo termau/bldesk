@@ -128,13 +128,16 @@ export function validateSshTarget(options: TerminalLaunchOptions): string | null
  * `ssh [-p port] [-i key] user@host` as an argv array — never a shell string.
  * Call validateSshTarget first; this assumes the host normalises.
  */
-export function sshArgv(options: TerminalLaunchOptions): string[] {
+export function sshArgv(options: TerminalLaunchOptions, remoteCommand?: string): string[] {
   const user = options.username || 'root'
   const host = normaliseSshHost(options.host) ?? options.host.trim()
   const argv = ['ssh']
   if (options.port) argv.push('-p', String(options.port))
   if (options.privateKeyPath) argv.push('-i', options.privateKeyPath)
   argv.push(`${user}@${host}`)
+  // OpenSSH sends this to the remote login shell only AFTER authentication.
+  // Its exit status is the remote command's status (255 for SSH errors).
+  if (remoteCommand !== undefined) argv.push(remoteCommand)
   return argv
 }
 

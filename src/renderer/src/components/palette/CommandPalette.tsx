@@ -33,7 +33,7 @@ import { BinaryLaneClient } from '../../api/client'
 import { useDomains, useServerActionMutation, describeApiError } from '../../api/queries'
 import { useTrackedActions } from '../../context/ActionTrackerContext'
 import { copyDeepLink, primaryIpv4 } from '../../lib/deeplinks'
-import { launchSsh } from '../../lib/launchSsh'
+import { openSsh } from '../../lib/openSsh'
 import { searchHelp } from '../../lib/help'
 import { openHelp } from '../../lib/helpNavigation'
 import { recordChange, updateChange } from '../../lib/changelog'
@@ -192,7 +192,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     onNavigateTab('servers')
   }
 
-  const sshTo = async (s: ServerResponse) => {
+  const sshTo = async (s: ServerResponse, native = false) => {
     const ip = primaryIpv4(s)
     if (!ip) {
       setNotice(`${s.name} has no IPv4 address to SSH to.`)
@@ -200,7 +200,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     }
     rememberCommand(query)
     close()
-    await launchSsh({ host: ip, username: 'root' })
+    await openSsh({ host: ip, username: 'root', serverId: s.id, serverName: s.name }, native)
   }
 
   const consoleFor = async (s: ServerResponse) => {
@@ -506,7 +506,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       const act = (s: ServerResponse) => {
         switch (parsed.kind) {
           case 'ssh':
-            return void sshTo(s)
+            return void sshTo(s, parsed.native)
           case 'console':
             return void consoleFor(s)
           case 'open':

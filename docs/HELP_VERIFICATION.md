@@ -10,6 +10,12 @@ The initial runtime pass below verified rendering and interaction, not sentence-
 
 Paths below are relative to `src/renderer/src/` unless another root is shown. This is a manual source audit, not a claim that the help guard proves prose correct. Quoted examples were checked against the originating handler and its helpers, including the palette's `POWER_VERBS` labels rather than the shared dialog's text.
 
+The embedded-terminal additions were also checked against `src/main/pty.ts`,
+`src/shared/ssh.ts`, the installed OpenSSH `ssh(1)` manual (remote command and
+exit-status semantics), and the installed `node-pty@1.1.0` Windows backend
+(ConPTY fallback threshold). Full runtime/package evidence is in
+`docs/TERMINAL_VERIFICATION.md`.
+
 | Page in `docs/help/` | Components and helpers checked |
 | --- | --- |
 | account | `components/account/AccountOverview.tsx` — read-only fields and mPanel links |
@@ -41,7 +47,7 @@ Paths below are relative to `src/renderer/src/` unless another root is shown. Th
 | servers | `components/servers/ServerList.tsx`, `lib/powerState.ts`, `lib/actionLabels.ts` |
 | shortcuts | `components/palette/CommandPalette.tsx`, `components/layout/Sidebar.tsx`, `BottomNav.tsx`, `src/main/zoom.ts` |
 | templates | `components/templates/TemplatesView.tsx`, `components/servers/CreateServerModal.tsx`, `lib/templateJobs.ts`, `src/shared/templates.ts` |
-| terminal | `components/terminal/EmbeddedTerminal.tsx` |
+| terminal | `components/terminal/TerminalView.tsx`, `TerminalTab.tsx`, `BroadcastPanel.tsx`, `lib/terminalSessions.ts`, `lib/openSsh.ts`, `src/main/pty.ts`, `src/shared/ssh.ts` |
 | tray | `src/main/tray.ts` |
 | troubleshooting | `components/servers/ReachabilityBadge.tsx`, `lib/powerState.ts`, `components/layout/UpdateMenu.tsx`, `scripts/after-pack.cjs`, client help transport |
 | vpcs | `components/vpcs/VpcManager.tsx`, `components/servers/ServerNetwork.tsx` |

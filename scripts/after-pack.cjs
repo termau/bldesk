@@ -32,6 +32,7 @@ exports.default = async function afterPack(context) {
       : join(context.appOutDir, 'resources')
   )
   if (resourcesDir && existsSync(resourcesDir)) {
+    require('./verify-pty-package.cjs')(resourcesDir, context.electronPlatformName)
     const updateYml = join(resourcesDir, 'app-update.yml')
     if (!existsSync(updateYml)) {
       writeFileSync(updateYml, 'owner: termau\nrepo: bldesk\nprovider: github\nupdaterCacheDirName: bldesk-updater\n')

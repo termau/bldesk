@@ -21,7 +21,7 @@ function isExecutable(file: string): boolean {
  * Resolve a program name (or absolute path) to an executable, or null.
  * On Windows the bare name is tried first, then each PATHEXT extension.
  */
-function findOnPath(program: string): string | null {
+export function findOnPath(program: string): string | null {
   if (isAbsolute(program)) return isExecutable(program) ? program : null
   const dirs = (process.env.PATH || '').split(delimiter).filter(Boolean)
   // PATHEXT only applies to names without an extension; `powershell.exe` must not

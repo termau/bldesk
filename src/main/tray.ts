@@ -2,7 +2,6 @@ import { app, BrowserWindow, Menu, MenuItemConstructorOptions, Notification, Tra
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync } from 'fs'
 import { NotificationKind, SystemNotificationOptions, TrayFleetSummary, TraySettings } from '../shared/ipc-types'
-import { launchNativeTerminal } from './terminal'
 import { DeepLinkManager } from './deeplink'
 import { formatDeepLink } from '../shared/deeplink'
 import { UpdaterManager } from './updater'
@@ -264,11 +263,8 @@ export class TrayManager {
               label: 'SSH as root',
               enabled: !!srv.ip && srv.status === 'active',
               click: () => {
-                void launchNativeTerminal({ host: srv.ip!, username: 'root' }).then((r) => {
-                  if (!r.success) {
-                    this.notify({ title: `Couldn't SSH to ${srv.name}`, body: r.error || 'Unknown error' })
-                  }
-                })
+                this.showWindow()
+                DeepLinkManager.dispatch(formatDeepLink({ kind: 'ssh', serverId: srv.id }))
               }
             }
           ]
