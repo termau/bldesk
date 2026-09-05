@@ -7,7 +7,8 @@ import { ServerList } from './components/servers/ServerList'
 import { ServerDetails } from './components/servers/ServerDetails'
 import { AuthModal } from './components/auth/AuthModal'
 import { CommandPalette } from './components/palette/CommandPalette'
-import { EmbeddedTerminal } from './components/terminal/EmbeddedTerminal'
+import { TerminalView } from './components/terminal/TerminalView'
+import { openSsh } from './lib/openSsh'
 import { VpcManager } from './components/vpcs/VpcManager'
 import { DnsManager } from './components/dns/DnsManager'
 import { SshKeysManager } from './components/keys/SshKeysManager'
@@ -112,7 +113,6 @@ function MainDashboard() {
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false)
   const [profiles, setProfiles] = useState<Omit<AccountProfile, 'token'>[]>([])
   const [activeProfile, setActiveProfile] = useState<AccountProfile | null>(null)
-  const [terminalHost, setTerminalHost] = useState<string | undefined>(undefined)
   const [authErrorBanner, setAuthErrorBanner] = useState<string | null>(null)
   const [isInitializing, setIsInitializing] = useState(true)
   // Linux draws nothing around a frameless window — no border, no shadow — so
@@ -222,8 +222,7 @@ function MainDashboard() {
   }
 
   const handleOpenTerminalForIp = (ip: string) => {
-    setTerminalHost(ip)
-    setActiveTab('terminal')
+    void openSsh({ host: ip, username: 'root' })
   }
 
   const handleSelectTab = (tab: ActiveTab) => {
@@ -352,11 +351,11 @@ function MainDashboard() {
               )
             )}
 
-            {activeTab === 'terminal' && (
-              <EmbeddedTerminal
-                initialHost={terminalHost}
-                onClose={() => setActiveTab('servers')}
-              />
+            {window.bldeskApi?.pty ? <div className={activeTab === 'terminal' ? 'h-full' : 'hidden'}>
+              <TerminalView servers={servers} profileId={activeProfile?.id} active={activeTab === 'terminal'} onActivate={() => setActiveTab('terminal')} />
+            </div> : activeTab === 'terminal' && (
+              // Reachable on Android via `go terminal` or bldesk://tab/terminal even though the sidebar hides the tab.
+              <div className="p-6 text-sm text-[#6c757d] dark:text-slate-400">Embedded SSH is available in the desktop app only. Use the SSH button on a server to open your device's SSH client.</div>
             )}
 
             {activeTab === 'vpcs' && (

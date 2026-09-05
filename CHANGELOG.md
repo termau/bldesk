@@ -5,6 +5,13 @@ All notable changes to the **BLDesk** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [Unreleased]
+
+### Added
+- Desktop embedded SSH tabs with scrollback search, explicit reopen after restart, native-terminal preference and palette `ssh <server> --native` override.
+- Reviewed parallel SSH broadcast with per-host output/exit status and originating-profile History; command text is recorded, terminal output is not.
+- SSH-only PTY IPC ownership/argv guards, native-module packaging and terminal regression tests. Android retains external SSH handoff.
+
 ## [1.0.61-beta.1] - 2026-09-05
 
 ### Fixed

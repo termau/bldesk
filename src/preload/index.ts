@@ -13,6 +13,23 @@ const api: IpcApi = {
   setActiveProfile: (profileId) => ipcRenderer.invoke('vault:setActiveProfile', profileId),
 
   // Terminal & Console
+  pty: {
+    open: (options) => ipcRenderer.invoke('pty:open', options),
+    write: (id, data) => ipcRenderer.invoke('pty:write', id, data),
+    resize: (id, cols, rows) => ipcRenderer.invoke('pty:resize', id, cols, rows),
+    close: (id) => ipcRenderer.invoke('pty:close', id),
+    list: () => ipcRenderer.invoke('pty:list'),
+    onData: (cb) => {
+      const handler = (_: Electron.IpcRendererEvent, id: string, chunk: string) => cb(id, chunk)
+      ipcRenderer.on('pty:data', handler)
+      return () => ipcRenderer.removeListener('pty:data', handler)
+    },
+    onExit: (cb) => {
+      const handler = (_: Electron.IpcRendererEvent, id: string, code: number, signal?: number) => cb(id, code, signal)
+      ipcRenderer.on('pty:exit', handler)
+      return () => ipcRenderer.removeListener('pty:exit', handler)
+    }
+  },
   launchNativeTerminal: (options) => ipcRenderer.invoke('terminal:launchNative', options),
   openRescueConsole: (options) => ipcRenderer.invoke('console:openRescue', options),
 

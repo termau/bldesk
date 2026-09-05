@@ -1,6 +1,6 @@
 import { HelpLink } from '../ui/HelpLink'
 import React, { useState } from 'react'
-import { launchSsh } from '../../lib/launchSsh'
+import { openSsh } from '../../lib/openSsh'
 import {
   Server as ServerIcon,
   Play,
@@ -126,9 +126,10 @@ export const ServerList: React.FC<ServerListProps> = ({
     }
   }
 
-  const handleLaunchNativeSsh = (ip: string, e: React.MouseEvent) => {
+  const handleOpenSsh = (ip: string, e: React.MouseEvent) => {
     e.stopPropagation()
-    launchSsh({ host: ip, username: 'root' })
+    const server = servers.find((s) => s.networks?.v4?.some((n) => n.ip_address === ip))
+    void openSsh({ host: ip, username: 'root', serverId: server?.id, serverName: server?.name })
   }
 
   const filteredServers = [...servers].sort(compareByBuildingFirst).filter((s) => {
@@ -406,9 +407,9 @@ export const ServerList: React.FC<ServerListProps> = ({
                         </button>
                         {publicIps[0]?.ip_address && (
                           <button
-                            onClick={(e) => handleLaunchNativeSsh(publicIps[0].ip_address, e)}
+                            onClick={(e) => handleOpenSsh(publicIps[0].ip_address, e)}
                             className="flex items-center gap-1 px-2.5 py-1 bg-[#017cb6] hover:bg-[#016594] text-white rounded text-xs font-medium transition shadow-sm"
-                            title="Launch Native SSH"
+                            title="Open SSH"
                           >
                             <Terminal className="w-3 h-3" />
                             <span>SSH</span>
@@ -540,7 +541,7 @@ export const ServerList: React.FC<ServerListProps> = ({
                   </span>
                   {primaryIp && (
                     <button
-                      onClick={(e) => handleLaunchNativeSsh(primaryIp, e)}
+                      onClick={(e) => handleOpenSsh(primaryIp, e)}
                       className="px-2.5 py-1 bg-[#017cb6] hover:bg-[#016594] text-white rounded text-xs font-medium transition flex items-center gap-1"
                     >
                       <Terminal className="w-3 h-3" />
@@ -560,7 +561,7 @@ export const ServerList: React.FC<ServerListProps> = ({
           state={contextMenu}
           onClose={() => setContextMenu(null)}
           onOpen={(s) => onSelectServer(s)}
-          onSsh={(ip) => launchSsh({ host: ip, username: 'root' })}
+          onSsh={(ip) => { const server = contextMenu.server; void openSsh({ host: ip, username: 'root', serverId: server.id, serverName: server.name }) }}
           onCopyLink={(id) => handleCopyLink(id)}
           onAction={(id, type) => handleAction(id, type, { stopPropagation: () => {} } as React.MouseEvent)}
           actionInProgress={actionInProgressServerId !== null}

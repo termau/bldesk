@@ -62,10 +62,11 @@ create web-new from "Web starter"
 Use a template name that exists in your installation. Aliases: new, deploy. See [the template worked example](help:templates#worked-example).
 
 ## Access and links
-SSH opens your native terminal as root. Console opens the rescue console. Open navigates to the matching server and optional sub-tab; link copies its bldesk URL.
+SSH opens an embedded desktop tab as root unless Prefer native terminal is enabled. Add --native to force the OS terminal. Android retains its SSH-app handoff. See [Terminal](help:terminal). Console opens the rescue console. Open navigates to the matching server and optional sub-tab; link copies its bldesk URL.
 
 ```
 ssh jumpbox
+ssh jumpbox --native
 console #12345
 open web-01 firewall
 link web-01 network

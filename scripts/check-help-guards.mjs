@@ -27,7 +27,7 @@ const views = {
   "history": "history/HistoryView",
   "map": "map/NetworkMap",
   "heatmap": "heatmap/FleetHeatmap",
-  "terminal": "terminal/EmbeddedTerminal",
+  "terminal": "terminal/TerminalView",
   "help": "help/HelpView"
 }
 const tabs = extract('TOP_TABS'), subtabs = extract('SERVER_SUB_TABS')

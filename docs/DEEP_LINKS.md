@@ -13,7 +13,7 @@ This also covers the "usability polish" items from FEATURES.md #12 that sit on t
 | `bldesk://server/<id>` | Open the server's overview |
 | `bldesk://server/<id>/<subtab>` | Open a sub-tab: `overview`, `remote-access`, `usage`, `cloud-init`, `network`, `backups`, `firewall`, `settings`, `recovery`, `change-plan`, `cancel` |
 | `bldesk://console/<id>` | Open the server, then pop the out-of-band rescue console window |
-| `bldesk://ssh/<id>` | Open the server and launch native SSH (`root@<primary IPv4>`) |
+| `bldesk://ssh/<id>` | Open SSH to `root@<primary IPv4>` using the embedded/native preference |
 | `bldesk://tab/<name>` | Jump to a top-level tab: `servers`, `templates`, `vpcs`, `firewall`, `loadbalancers`, `dns`, `backups`, `keys`, `billing`, `account`, `history`, `help`, `map`, `heatmap`, `terminal` |
 | `bldesk://help/<slug>#<heading>` | Open bundled help, optionally at a heading; no account lookup or profile switch |
 | `bldesk://home` (or bare `bldesk://`) | Just bring the window to the front |
@@ -24,7 +24,7 @@ Links other than `bldesk://help/...` accept `?account=<profile name or email>`. 
 bldesk://server/12345/firewall?account=adam%40mammoth.com.au
 ```
 
-Unknown hosts, invalid IDs, malformed percent escapes and unknown top-level tabs are rejected. An unknown server sub-tab is dropped and falls back to Overview; it does not reject the link. Help slugs and heading IDs accept lowercase letters, digits and hyphens; an unknown help page displays “Help page not found”. SSH links resolve a server ID before invoking the native SSH launcher.
+Unknown hosts, invalid IDs, malformed percent escapes and unknown top-level tabs are rejected. An unknown server sub-tab is dropped and falls back to Overview; it does not reject the link. Help slugs and heading IDs accept lowercase letters, digits and hyphens; an unknown help page displays “Help page not found”. SSH links resolve a server ID before opening an embedded tab or following Prefer native terminal; Android retains its SSH-app handoff.
 
 ---
 

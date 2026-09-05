@@ -238,12 +238,21 @@ The workflow runs on all three OSes and creates the GitHub Release `v1.0.28`. Co
 3. For notarisation add `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`, `APPLE_TEAM_ID` and set `"mac": { "notarize": true }` in `package.json`.
 4. Remove the `CSC_IDENTITY_AUTO_DISCOVERY: false` lines from the workflow.
 
+The embedded terminal adds a native `pty.node` binary and executable
+`spawn-helper`; a future signed/notarised build must verify that both nested
+binaries are signed and load under hardened runtime. Do **not** add
+[`com.apple.security.cs.allow-unsigned-executable-memory`](https://developer.apple.com/documentation/BundleResources/Entitlements/com.apple.security.cs.allow-unsigned-executable-memory) pre-emptively. Apple
+documents it as permission to create writable/executable memory and warns that
+it increases exposure to memory-safety vulnerabilities; node-pty has not shown
+that need in the current unsigned build. Add an exception only if a signed
+package demonstrates one is required.
+
 **Windows SmartScreen.** Unsigned NSIS installers trigger SmartScreen warnings for users, but auto-update itself works (`verifyUpdateCodeSignature: false` is set). An OV/EV certificate later uses the same `CSC_LINK` / `CSC_KEY_PASSWORD` secrets on the Windows job.
 
 **Linux `deb` installs don't auto-update.** Only `AppImage` supports in-place updates. Debian users get a notification and must reinstall manually — or drop the `deb` target if that's confusing.
 
 **Portable Windows build doesn't auto-update** by design; it's kept for people who want a no-install exe.
 
-**`xterm` deprecation.** `npm install` warns that `xterm@5.3.0` is deprecated in favour of `@xterm/xterm` (and `@xterm/addon-fit`, `@xterm/addon-web-links`). Unrelated to this change; rename when touching the terminal.
+**`xterm` deprecation.** The embedded terminal intentionally stays on the existing xterm 5.3-compatible package line, including `xterm-addon-search@0.13`. Migrate the terminal and all three add-ons together to the `@xterm/*` packages in a separate dependency PR; do not mix package generations.
 
 **Repo-specific values.** `build.publish.owner` / `repo` in `package.json` are set to `termau/bldesk`. Change these if the repository moves.

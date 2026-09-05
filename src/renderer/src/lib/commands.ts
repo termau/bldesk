@@ -107,7 +107,7 @@ export const VERB_SPECS: VerbSpec[] = [
   { verb: 'dns', usage: 'dns add <TYPE> <fqdn> <value> [priority]', summary: 'Add a DNS record to a hosted zone', mutates: true },
   { verb: 'tag', usage: 'tag add|remove <name> <servers>', summary: 'Tag servers locally; @name then targets them anywhere', mutates: false },
   { verb: 'create', usage: 'create <hostname> from <template>', summary: 'New server from a template (opens the create form prefilled)', mutates: true },
-  { verb: 'ssh', usage: 'ssh <server|ip>', summary: 'Open native SSH as root', mutates: false },
+  { verb: 'ssh', usage: 'ssh <server|ip> [--native]', summary: 'Open SSH as root; --native forces the OS terminal', mutates: false },
   { verb: 'console', usage: 'console <server>', summary: 'Open the rescue console', mutates: false },
   { verb: 'open', usage: 'open <server> [subtab]', summary: 'Open a server (overview, network, firewall…)', mutates: false },
   { verb: 'link', usage: 'link <server> [subtab]', summary: 'Copy a bldesk:// link', mutates: false },
@@ -158,7 +158,7 @@ export function tokenise(input: string): string[] {
 export type ParsedCommand =
   | { kind: 'power'; verb: PowerVerb; targets: string }
   | { kind: 'backup'; targets: string; label?: string }
-  | { kind: 'ssh'; target: string }
+  | { kind: 'ssh'; target: string; native?: boolean }
   | { kind: 'console'; target: string }
   | { kind: 'open'; target: string; subTab?: DeepLinkServerSubTab; console?: boolean }
   | { kind: 'link'; target: string; subTab?: DeepLinkServerSubTab }
@@ -220,7 +220,8 @@ export function parseCommand(input: string): ParsedCommand | null {
 
     case 'ssh':
       if (args.length === 0) return incomplete()
-      return { kind: 'ssh', target: args[0] }
+      if (args[0] === '--native' || args.length > 2 || (args[1] && args[1] !== '--native')) return incomplete('Use ssh <server> [--native]')
+      return { kind: 'ssh', target: args[0], native: args[1] === '--native' }
 
     case 'console':
       if (args.length === 0) return incomplete()

@@ -114,7 +114,9 @@ instead:
 6. **Diagnostics (ping, uptime, is_running) do not confirm.** They change
    nothing. Don't add a dialog to them.
 7. **Local-only changes** (tags, groups, profiles) confirm with `log: false`
-   when destructive and don't write History — History is for BinaryLane.
+   when destructive and don't write History. The single exception is a
+   confirmed terminal broadcast: it records command text and outcomes against
+   the originating profile, but never remote output.
 8. **Don't add another `useServers()`.** Only `App.tsx` calls it; tabs receive
    `servers` as a prop. A second observer on the same key replaces the shared
    query's function, and one with a null client blanked every view.
@@ -122,6 +124,8 @@ instead:
 The check reports the file and line and the fix. A genuine exception (a file
 that must mutate without the dialog) is added to `MUTATION_EXCEPTIONS` in the
 script **with a reason** — not by working around the check.
+
+`src/main/pty.ts` is the only pty owner and only ever spawns `ssh` via `sshArgv`; `check-pty-guards.mjs` enforces the spawn expression and IPC sender checks. Never write broadcast commands as interactive keystrokes: use SSH's remote-command argument so authentication completes first and exit statuses are real. Broadcast is an explicit exception to cloud-only History: shared destructive confirmation records the command text and per-host outcomes, never terminal output. Pin that record to the originating profile. Ordinary interactive SSH does not log commands.
 
 ---
 

@@ -5,7 +5,7 @@ import { components } from '@shared/api/schema'
 import { BinaryLaneClient } from '../../api/client'
 import { useFleetFirewalls, useLoadBalancers, useVpcMembers, useVpcs } from '../../api/queries'
 import { auditServer, worstLevel, type AuditLevel, type FwRule } from '../../lib/firewallMatrix'
-import { launchSsh } from '../../lib/launchSsh'
+import { openSsh } from '../../lib/openSsh'
 import {
   INTERNET_ID,
   exposes,
@@ -565,7 +565,7 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
                         </button>
                       )}
                       {s.publicIp && (
-                        <button onClick={() => void launchSsh({ host: s.publicIp!, username: 'root' })} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[#ced4da] dark:border-[#373b3e] hover:bg-[#f8f9fa] dark:hover:bg-[#32383e]">
+                        <button onClick={() => void openSsh({ host: s.publicIp!, username: 'root', serverId: s.id, serverName: s.name })} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-[#ced4da] dark:border-[#373b3e] hover:bg-[#f8f9fa] dark:hover:bg-[#32383e]">
                           <Terminal className="w-3.5 h-3.5" /> SSH
                         </button>
                       )}

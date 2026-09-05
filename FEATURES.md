@@ -7,7 +7,7 @@ Source audit: 5 September 2026, package version 1.0.61-beta.1. This inventory de
 | Area | What BLDesk implements | Source |
 | --- | --- | --- |
 | Compute fleet | Grid/list, name/IP/tag and region/status filters, per-server actions, inferred power state | `ServerList.tsx`, `lib/powerState.ts` |
-| Server detail | Overview, native SSH/console, historical Usage, stored cloud-init, Network, Backups, Firewall, Settings, Recovery, Change Plan, Cancel | `ServerDetails.tsx`, `src/shared/deeplink.ts` |
+| Server detail | Overview, embedded/native SSH and console, historical Usage, stored cloud-init, Network, Backups, Firewall, Settings, Recovery, Change Plan, Cancel | `ServerDetails.tsx`, `src/shared/deeplink.ts` |
 | Create and Change Plan | Resource/region/image selection, licences, backup retention/offsite options, pre-action backup, price comparison and explicit address-release/reinstall review | `CreateServerModal.tsx`, `ChangePlanPanel.tsx`, `lib/serverPricing.ts`, `lib/licences.ts` |
 | Templates | Built-in starters, capture from a server, YAML edit/import/export, variables and reviewed creation, local tags and follow-up firewall application | `TemplatesView.tsx`, `lib/templateJobs.ts` |
 | Firewall | Ordered IPv4 rules, import/export/clone, fleet matrix, audit flags, per-target copy diff and local groups/tags | `FirewallManager.tsx`, `FirewallMatrix.tsx`, `lib/firewallMatch.ts` |
@@ -28,7 +28,7 @@ Component basenames above are under `src/renderer/src/components/`; `lib/`, `con
 
 ## Important boundaries
 
-- **Terminal:** native SSH handoff only. The xterm display is a banner, not an embedded SSH session.
+- **Terminal:** desktop SSH tabs and parallel broadcast; native handoff remains available. No local shell, interactive splits, serial broadcast, file transfer or recording. Android has handoff only. Broadcast command text (not output) is saved in local History.
 - **Profiles:** switching is implemented; a merged cross-account fleet is not.
 - **Review:** the palette uses its own target-list panel, not the shared change-table/diff dialog. Create Server uses its form as the review. History is local to this installation/profile, not an account-wide audit service.
 - **Networking:** VPC route/MTU editing is not exposed. Load-balancer health-check path/protocol settings exist in mPanel/API but have no BLDesk editor.
@@ -45,7 +45,7 @@ The original numbers are retained because code comments and older discussions re
 
 ### 1. Real embedded terminal (pty)
 
-Not implemented. Native SSH handoff exists; embedded sessions, tabs/splits, broadcast commands and reconnect persistence remain proposals.
+Implemented on desktop: SSH-only PTYs, persistent tabs, scrollback search, opt-in reopen after restart, parallel broadcast with shared destructive review and per-host outcomes, native preference/override, and a 32-process cap. Interactive splits, serial broadcast and recording remain out of scope. See [terminal verification](docs/TERMINAL_VERIFICATION.md) for tested platforms and remaining release checks.
 
 ### 2. Fleet-wide firewall matrix
 
@@ -97,4 +97,4 @@ Implemented: 33 local pages, contextual `components/ui/HelpLink.tsx`, palette en
 
 ## Roadmap, not commitments
 
-Potential next work: embedded terminal sessions, cross-account views and a fleet backup timeline. These are not advertised as existing features. New work remains subject to [AGENTS.md](AGENTS.md): API-driven BinaryLane controls plus focused client conveniences, without policy layers or architecture rewrites hidden inside a feature.
+Potential next work: cross-account views and a fleet backup timeline. These are not advertised as existing features. New work remains subject to [AGENTS.md](AGENTS.md): API-driven BinaryLane controls plus focused client conveniences, without policy layers or architecture rewrites hidden inside a feature.

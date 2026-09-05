@@ -5,7 +5,7 @@ keywords: [ssh, console, keys, root, connection, remote access]
 ---
 
 # Remote access
-Use Remote Access to connect to the selected server. SSH launches your platform's native terminal using the chosen local key. It is not an embedded shell or a file upload.
+Use Remote Access to connect to the selected server. SSH opens an embedded desktop tab using the chosen local key unless Prefer native terminal is enabled. Android hands off to an SSH app. See [Terminal](help:terminal); no file upload is involved.
 
 ## SSH and console
 Check the target address and key before connecting. Public keys saved in BinaryLane are separate from the private key files on your device. Adding an account key does not install it into every existing guest.

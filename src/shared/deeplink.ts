@@ -5,7 +5,7 @@
  *
  *   bldesk://server/<id>[/<subtab>]     open a server (optionally on a sub-tab)
  *   bldesk://console/<id>               open the rescue console for a server
- *   bldesk://ssh/<id>                   launch native SSH to a server's primary IPv4
+ *   bldesk://ssh/<id>                   open SSH using the desktop preference
  *   bldesk://tab/<name>                 jump to a top-level tab (vpcs, dns, firewall…)
  *   bldesk://home                       just bring the window to the front
  *

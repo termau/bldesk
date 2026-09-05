@@ -310,6 +310,7 @@ export async function initMobileBridge(): Promise<void> {
       }
       return { success: true }
     },
+    pty: undefined,
     launchNativeTerminal: async (opts) => {
       const invalid = validateSshTarget(opts)
       if (invalid) return { success: false, error: invalid }

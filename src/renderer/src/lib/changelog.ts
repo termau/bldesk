@@ -109,8 +109,7 @@ function localWrite(profileId: string, entries: ChangeEntry[]): void {
 // --- public API ---------------------------------------------------------------
 
 /** Record a change the user has just confirmed. Returns its id for later outcome updates. */
-export async function recordChange(change: NewChange): Promise<string | undefined> {
-  const profileId = currentProfileId
+export async function recordChange(change: NewChange, profileId = currentProfileId): Promise<string | undefined> {
   if (!profileId) return undefined
   const entry: ChangeEntry = {
     ...change,
@@ -129,9 +128,8 @@ export async function recordChange(change: NewChange): Promise<string | undefine
   return entry.id
 }
 
-export async function updateChange(id: string | undefined, patch: Partial<Pick<ChangeEntry, 'outcome' | 'detail' | 'actionId'>>): Promise<void> {
+export async function updateChange(id: string | undefined, patch: Partial<Pick<ChangeEntry, 'outcome' | 'detail' | 'actionId'>>, profileId = currentProfileId): Promise<void> {
   if (!id) return
-  const profileId = currentProfileId
   if (!profileId) return
   const full = { ...patch, settledAt: patch.outcome ? new Date().toISOString() : undefined }
   const api = window.bldeskApi

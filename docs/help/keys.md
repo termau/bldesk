@@ -8,7 +8,7 @@ keywords: [ssh, public key, private key, fingerprint, authentication]
 Use SSH Keys to register public keys in BinaryLane and inspect their fingerprints. These are the public keys you can select when building a server.
 
 ## Keep private keys local
-Only paste a public key into the account form. Your SSH private key belongs on your device. The server header's local-key selector chooses a file for native SSH; it does not upload that private key.
+Only paste a public key into the account form. Your SSH private key belongs on your device. The server header's local-key selector chooses a file for SSH, embedded or native; it does not upload that private key.
 
 Adding an account key does not automatically update every existing guest's authorized_keys.
 

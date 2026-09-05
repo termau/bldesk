@@ -22,13 +22,14 @@ BLDesk brings BinaryLane account management together with fleet-wide views and l
 - **Build repeatably:** whole-server YAML templates, built-in starters, variables and capture from an existing server, followed by the Create Server review.
 - **Change plans deliberately:** resources, licences, backup/offsite options, pre-action backup, monthly-cost comparison and explicit review of address releases or reinstall.
 - **Recover and inspect:** on-demand backups, slot/replacement selection, restore, read-only backup attachment, download links and nightly schedule controls.
-- **Work quickly:** a verb-first command palette with glob/ID/IP/tag targets, native SSH handoff, desktop TCP reachability/traceroute and server/help deep links.
+- **Work quickly:** a verb-first command palette with glob/ID/IP/tag targets, desktop TCP reachability/traceroute and server/help deep links.
+- **Keep SSH in context:** persistent desktop terminal tabs, scrollback search, optional reopen after restart and reviewed parallel broadcast commands with per-host output and History. Native SSH remains an explicit alternative.
 - **Follow outcomes:** page-action confirmation dialogs, change tables/diffs, typed irreversible confirmations, local per-profile History and running-action tracking.
 - **Manage account resources:** hosted DNS zones and record add/delete, SSH public keys, VPC membership, load-balancer pools, account details and billing.
 - **Keep guidance close:** 33 bundled help pages, contextual links and Ask BinaryLane answers with source articles. Local help remains usable offline.
 - **Use desktop conveniences:** light/dark themes, 80–150% zoom, tray shortcuts/notifications and update channels; Android uses a Capacitor shell and native HTTP.
 
-The palette has its own target-list review; Create Server uses its form. The terminal is a **native SSH handoff, not an embedded session**. DNS editing, VPC route editing and load-balancer health-check configuration are not exposed in this client; see [implemented boundaries](FEATURES.md#important-boundaries). Secure credential storage has fallback paths, so a protected device remains important.
+The palette has its own target-list review; Create Server uses its form. Embedded SSH is desktop-only and requires OpenSSH on PATH (Windows 10 1903+ for ConPTY); Android retains SSH-app handoff. DNS editing, VPC route editing and load-balancer health-check configuration are not exposed in this client; see [implemented boundaries](FEATURES.md#important-boundaries). Secure credential storage has fallback paths, so a protected device remains important.
 
 ## Screenshots
 
@@ -67,6 +68,7 @@ Real BLDesk, populated entirely with a fictional **Atlas Cloud demo fleet**: 18 
 | `Cmd + K` / `Ctrl + K` | Open Command Palette (search servers, VPCs, actions) |
 | `Cmd/Ctrl + +` / `Cmd/Ctrl + -` | Zoom in / out (80–150%; `Cmd/Ctrl + =` also zooms in) |
 | `Cmd/Ctrl + 0` | Reset zoom to 100% |
+| `Cmd/Ctrl + F` inside SSH | Find in terminal scrollback |
 | `Cmd + R` / `F5` | Refresh & reload current view |
 | `Cmd + Option + I` / `F12` | Toggle Developer Tools Inspector |
 

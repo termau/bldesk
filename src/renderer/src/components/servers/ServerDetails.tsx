@@ -40,7 +40,7 @@ import { VpcBadge } from '../vpcs/VpcBadge'
 import { describeStatus } from '../../lib/serverStatus'
 import { useReachability, ReachabilityChip } from './ReachabilityBadge'
 import { ChangePlanPanel } from './ChangePlanPanel'
-import { launchSsh } from '../../lib/launchSsh'
+import { openSsh } from '../../lib/openSsh'
 import { copyDeepLink } from '../../lib/deeplinks'
 import { describeActionType } from '../../lib/actionLabels'
 import { ServerSubTab } from '../layout/Sidebar'
@@ -432,7 +432,8 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
 
             <button
               onClick={() =>
-                launchSsh({
+                openSsh({
+                  serverId: server.id, serverName: server.name,
                   host: primaryV4,
                   username: 'root',
                   privateKeyPath: selectedKeyPath || undefined
@@ -710,14 +711,15 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
         {activeSubTab === 'remote-access' && (
           <div className="space-y-6">
             <div className="bg-white dark:bg-[#2b3035] p-5 rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm">
-              <h3 className="text-sm font-bold text-[#212529] dark:text-white mb-2">Native Terminal & SSH Keys</h3>
+              <h3 className="text-sm font-bold text-[#212529] dark:text-white mb-2">SSH Terminal & Local Keys</h3>
               <p className="text-xs text-[#6c757d] dark:text-slate-400 mb-4">
-                Launch an instant SSH connection in your macOS/Windows terminal using your hardware-vault keys.
+                Open SSH using the selected local key. Desktop sessions open in BLDesk unless you prefer a native terminal; Android hands off to an SSH app.
               </p>
               <div className="flex items-center gap-3">
                 <button
                   onClick={() =>
-                    launchSsh({
+                    openSsh({
+                      serverId: server.id, serverName: server.name,
                       host: primaryV4,
                       username: 'root',
                       privateKeyPath: selectedKeyPath || undefined
