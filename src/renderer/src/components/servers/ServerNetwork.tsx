@@ -58,12 +58,21 @@ const Card: React.FC<{ title: string; icon: React.ReactNode; action?: React.Reac
 )
 
 const Row: React.FC<{ label: string; children: React.ReactNode; hint?: string }> = ({ label, children, hint }) => (
-  <div className="flex items-start justify-between gap-4 py-2.5 px-4 text-xs">
-    <div className="w-44 flex-shrink-0">
+  /*
+   * Stacks below `sm`. The label takes a fixed 176px, which on a phone leaves
+   * about 188px for the controls - and the VPC row alone wants a 224px select
+   * plus a button, so everything shrank: that select rendered 49px wide with
+   * 15px of usable space for "Public network (no VPC)". Above `sm` the
+   * side-by-side layout is unchanged.
+   */
+  <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1.5 sm:gap-4 py-2.5 px-4 text-xs">
+    <div className="w-full sm:w-44 sm:flex-shrink-0">
       <div className="text-[#6c757d] dark:text-slate-400">{label}</div>
       {hint && <div className="text-[10px] text-[#adb5bd] dark:text-slate-500 mt-0.5 leading-snug">{hint}</div>}
     </div>
-    <div className="flex-1 min-w-0 flex items-center justify-end gap-2 text-[#212529] dark:text-white">{children}</div>
+    <div className="flex-1 min-w-0 flex flex-wrap items-center justify-start sm:justify-end gap-2 text-[#212529] dark:text-white">
+      {children}
+    </div>
   </div>
 )
 

@@ -194,7 +194,11 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
         )}
 
         {!sshKeysQuery.isLoading && keys.length > 0 && (
-          <table className="w-full text-left text-xs border-collapse">
+          /* A key row is ~786px - the fingerprint alone wants 342px - against a
+             412px phone, and the card clips overflow, so the fingerprint and the
+             actions were simply unreachable. Scrolls sideways now. */
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-max text-left text-xs border-collapse">
             <thead>
               <tr className="bg-[#f8f9fa] dark:bg-[#212529] border-b border-[#ced4da] dark:border-[#373b3e] text-[#6c757d]">
                 <th className="py-2.5 px-4">Name</th>
@@ -235,6 +239,7 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 
