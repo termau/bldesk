@@ -1,5 +1,53 @@
 # Help verification
 
+## Android TCP reachability (9 September 2026, 1.0.61-beta.8)
+
+Branch: `feat/android-reachability-probe`. No new runtime dependencies. Ten help
+pages mention reachability; all ten were read against the code that renders the
+claim, not only the pages this change touches. The help guard's coverage pass is
+not part of this claim - it proves the pages exist, not that they are true.
+
+| Sentence | Checked against | Result |
+| --- | --- | --- |
+| `servers.md` - "The reachability badge checks a port from your device." | `useReachability` in `ReachabilityBadge.tsx` (`supported` is `typeof api.probeTcp === 'function'`), now satisfied on Android by `api/mobile-bridge.ts` and `NetProbePlugin.java` | **Was false on Android.** The badge never rendered there, because the Capacitor bridge had no `probeTcp`, so nothing checked any port. True on that platform for the first time. |
+| `troubleshooting.md` - "The badge tests port 22 at the public address from your device, not your custom SSH destination or connect-bar port." | same, plus the `error === 'other'` arm of the failure pill | **Was capable of being false.** A shell without the plugin rejected the call, which became `error: 'other'` and rendered `Port 22 unreachable` - a tested-and-failed claim for a probe that never ran. `probeTcp` is now attached only under `Capacitor.isPluginAvailable('NetProbe')`, so the badge is absent rather than wrong, and `other` renders `Port <n> not checked` in grey. The second half holds on Android vacuously: the Connect to control is gated on `window.bldeskApi?.pty` in `ServerDetails.tsx` and the bridge sets `pty: undefined`, so there is no override to confuse it with. |
+| `server-remote-access.md` - the overridden chip's tooltip wording | the `title` on the chip wrapper in `ReachabilityBadge.tsx` | Quoted string matches the template literal exactly. This change adds a `title` to the failure pill for `other` only, and **appends** the override note rather than replacing it, so the quoted sentence stays true where both apply. Unreachable on Android, where `sshHost` is never set. |
+| `firewall.md` - "Use the badge and troubleshooting steps to separate local routing, external rules, guest rules and the SSH service." | as above | Wording unchanged and now actionable on Android, where it previously pointed at a badge that did not render. |
+| `server-overview.md` - "A failed reachability probe is a reason to investigate, not proof that the VM is off." | `ServerDetails.tsx` header, `ReachabilityBadge.tsx` | Unchanged and still true. Strengthened: a probe that never ran is now `not checked` rather than counted as a failure. |
+| `map.md` - "The map has no reachability-test control." | `components/map/NetworkMap.tsx` | Still true. This change adds no control to the map. |
+| `server-firewall.md` - "A successful write does not prove SSH is reachable." | `FirewallManager.tsx` | Unaffected. |
+| `heatmap.md`, `server-usage.md` - links to `troubleshooting` and `servers#power-is-not-reachability` | those pages' own claims | Make no claim about the probe itself. Unaffected. |
+| `terminal.md` - "Other status labels do not prove SSH is reachable" / "Valid syntax is not a reachability test" | `BroadcastPanel.tsx` | About broadcast, which is desktop-only via `pty`. Unaffected. |
+| No page claims reachability is unavailable on Android | grep of `docs/help/*.md` for platform exclusions | Confirmed. The exclusions are deep-link OS registration (`deep-links.md`), tray (`tray.md`), embedded SSH (`terminal.md`) and storage fallbacks (`getting-started.md`, `templates.md`). None mentions the badge, so adding the capability falsifies no page and needs no new exclusion note. |
+
+New user-facing strings, and the line that renders each:
+
+- `Port <n> not checked` - the `error === 'other'` arm of the failure pill in `ReachabilityBadge.tsx`. Grey rather than red, because nothing was learned about the port.
+- That pill's `title` - the probe's `detail`, with the SSH-override note appended when an override is set.
+- `Close` - `aria-label` on the card's dismiss button in `ReachabilityBadge.tsx`, rendered below `sm` only.
+
+Supersedes, rather than contradicts, one line in **SSH address follow-up (6 September 2026)**: "probing remains unchanged" was true when written. Probing is still unchanged on the desktop; it is newly implemented on Android.
+
+### Checks performed
+
+- `npm run typecheck`: both TypeScript projects and all five guards (mutation, UI, help, PTY, updater).
+- `npm run build`: production main, preload and renderer bundles.
+- `isIpLiteral` agreement: both implementations extracted from source verbatim and run against the same 28 cases, including hostname, port-suffix and mixed-form bypasses. Both accept and refuse identically. `1.2.3.4:22` was accepted before this change: it passes a character-class check, is not a literal, and would have reached `InetAddress.getByName`, which resolves what it cannot parse.
+- Real Electron, 1280x840 at 100%, isolated `userData` and the synthetic fleet with every cloud write rejected (0 attempted): the "why" card opens on keyboard focus, stays 320px and `absolute`, keeps zero right padding, and its close button is present in the DOM but `display: none` above `sm`; no horizontal page overflow; no renderer errors.
+- Real Electron, `error: 'other'` injected: the pill reads `Port 22 not checked`, background `#e9ecef`, the reason in its `title`, and no firewall explanation offered - there is no rule to blame for a probe that never ran.
+
+- Physical device, Samsung SM-S948B (Galaxy S26 Ultra), Android 16 / API 36, 1440x3120 at 560dpi giving 411 CSS px, driven over `adb forward` with CDP and real `Input.dispatchTouchEvent` touches:
+  - `typeof window.bldeskApi.probeTcp === 'function'` and `setProbeTargets` likewise, so `useReachability` reports `supported` on Android for the first time. `window.bldeskApi.pty` is `undefined` there, which is what makes the "no custom SSH destination on Android" row above true rather than merely untested.
+  - The chip renders on a real server detail and carries a real result from the device: `Port 22 unreachable`, with the no-rules explanation, and its re-check control present. The probe ran natively; nothing was stubbed.
+  - The "why" card: tapping `?` opens it `position: fixed` and screen-centred, 320px wide with 46px clear on the left and 45px on the right of a 411px viewport; tapping the close button **actually closes it**, and `?` reopens it afterwards. This is the failure that beat `blur()` and beat a `.is-dismissed` class on specificity; conditional rendering holds under a real finger.
+
+Everything above was produced by `NetProbePlugin.java`, `MainActivity.java`,
+`api/mobile-bridge.ts` and `components/servers/ReachabilityBadge.tsx`, which are
+the files this branch changes. Phone layout results belong to the branch that
+changes the layout and are recorded there.
+
+The harness is out of tree, in a temporary directory, and is not an app dependency: a copy of `scripts/showcase/launcher.cjs` whose `net:probeTcp` stub is env-driven so the failure states can be exercised, plus two check scripts. Playwright is supplied through `BLDESK_PLAYWRIGHT_MODULE` and is not installed in the repo. On Windows that variable must be a `file://` URL pointing at Playwright's `index.mjs`; `index.js` is CommonJS and its `_electron` export is not visible to a direct ESM file import.
+
 ## Browse existing SSH key files (7 September 2026, 1.0.61-beta.8)
 
 Checked `help/keys.md`, `help/server-remote-access.md` and `help/terminal.md` against the Browse… button, Key file display and cancellation flow in `ServerDetails.tsx`; the main-process `vault:chooseSshKeyFile` / `vault:getLocalSshKeys` handlers; `existingKeyFiles` in `src/main/sshKeyFiles.ts`; and `availableSshKeys` in `lib/sshKeyAssociations.ts`. Selected files use stat metadata only, with no private-content read, copy or passphrase persistence. Existing automatic discovery still reads public `.pub` files only. Local filenames are not BinaryLane account public keys. All SSH consumers include persisted selected paths when checking availability, so an external file does not become missing merely because discovery cannot find it.

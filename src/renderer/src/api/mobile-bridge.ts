@@ -1,12 +1,82 @@
 import { Preferences } from '@capacitor/preferences'
-import { Capacitor, CapacitorHttp } from '@capacitor/core'
+import { Capacitor, CapacitorHttp, registerPlugin } from '@capacitor/core'
 import { HELP_API_ORIGIN, HELP_TIMEOUT_MS, helpQuestion, helpFeedbackBody, readHelpAnswer, readHelpSuggestions } from '@shared/help-api'
 import { SecureStorage } from '@aparajita/capacitor-secure-storage'
-import { AccountProfile, IpcApi, UpdateChannel, UpdaterState } from '@shared/ipc-types'
+import { AccountProfile, IpcApi, TcpProbeResult, UpdateChannel, UpdaterState } from '@shared/ipc-types'
 import { formatSshCommand, sshUriHost, validateSshTarget } from '@shared/ssh'
 
 const PROFILES_KEY = 'bldesk_profiles_v1'
 const ACTIVE_PROFILE_KEY = 'bldesk_active_profile_id_v1'
+
+/*
+ * TCP reachability on Android.
+ *
+ * A WebView cannot open a socket, so this calls the app's own NetProbe plugin.
+ *
+ * The checks below mirror `src/main/reachability.ts` - IP literals only,
+ * addresses from the current server list, and a rolling rate limit - but they
+ * are not equivalent to it. The desktop's run in the main process, behind an
+ * IPC boundary the page cannot reach. These run in the same JavaScript context
+ * as their caller, so they stop the app probing something by accident; they do
+ * not stop anything with script access from calling the plugin directly. The
+ * bounds that survive that are the plugin's own, in `NetProbePlugin.java`.
+ *
+ * The address list is supplied by the renderer on both platforms, so it is a
+ * check against accidental calls, not proof that an address belongs to the
+ * signed-in account.
+ *
+ * `probePing` and `traceroute` are not implemented here. `IpcApi` marks both
+ * optional so a platform can decline them, and `useReachability` exposes
+ * `canTrace` separately from `supported` so the control is not rendered where
+ * it is absent - gating on the TCP probe is not enough, because this bridge
+ * has that and no traceroute.
+ *
+ * Unimplemented, not impossible. `InetAddress.isReachable` cannot name a hop
+ * and so cannot build the list on its own, but `IP_TTL` is available through
+ * `android.system.OsConstants`, and Linux can deliver ICMP errors to an
+ * unprivileged UDP socket via `IP_RECVERR` and `recvmsg(MSG_ERRQUEUE)`.
+ * Whether that holds across the devices BLDesk supports is unverified, and
+ * building it is separate work from this bridge.
+ */
+const NetProbe = registerPlugin<{
+  probeTcp(options: { host: string; port: number; timeoutMs?: number }): Promise<TcpProbeResult>
+}>('NetProbe')
+
+let allowedProbeTargets = new Set<string>()
+
+/** Same budget as the desktop: plenty for a person, useless for a scan. */
+const PROBE_RATE_LIMIT_PER_MINUTE = 30
+const recentProbes: number[] = []
+
+function underProbeRateLimit(): boolean {
+  const now = Date.now()
+  while (recentProbes.length && now - recentProbes[0] > 60_000) recentProbes.shift()
+  if (recentProbes.length >= PROBE_RATE_LIMIT_PER_MINUTE) return false
+  recentProbes.push(now)
+  return true
+}
+
+/**
+ * An IP literal, never a hostname - the same rule as `src/main/reachability.ts`.
+ *
+ * IPv4 is a dotted quad; IPv6 is hex groups and colons with at most one `::`.
+ * A character-class check is not enough: `1.2.3.4:22` passes one, is not a
+ * literal, and reaches `InetAddress.getByName` on the native side, which
+ * resolves what it cannot parse. Mixed forms (`::ffff:1.2.3.4`) are refused
+ * too - BinaryLane hands out neither, and every form allowed here is a form
+ * the plugin has to accept.
+ */
+const isIpLiteral = (value: string): boolean => {
+  if (/^(\d{1,3}\.){3}\d{1,3}$/.test(value)) {
+    return value.split('.').every((part) => Number(part) <= 255)
+  }
+  if (!/^[0-9a-fA-F:]+$/.test(value)) return false
+  const halves = value.split('::')
+  if (halves.length > 2) return false
+  const groups = halves.flatMap((half) => (half ? half.split(':') : []))
+  if (groups.some((group) => !/^[0-9a-fA-F]{1,4}$/.test(group))) return false
+  return halves.length === 2 ? groups.length <= 7 : groups.length === 8
+}
 
 // No account client, token, profile id, server ids, History or ticket text.
 async function helpRequest(path: string, body?: { id: number; helpful: boolean }): Promise<unknown> {
@@ -392,6 +462,39 @@ export async function initMobileBridge(): Promise<void> {
     },
     deepLinkReady: async () => {},
     onDeepLink: () => () => {}
+  }
+
+  /*
+   * Reachability is attached only where the plugin actually is.
+   *
+   * `useReachability` decides whether the badge can exist at all from
+   * `typeof bldeskApi.probeTcp === 'function'`, so exposing it unconditionally
+   * claims a capability the web build does not have: the call rejects, and a
+   * rejection rendered as a probe result reads as "Port 22 unreachable" on a
+   * server nothing ever tested. `IpcApi` marks both members optional so a
+   * platform can decline them, and declining is what keeps the badge's absence
+   * honest.
+   */
+  if (Capacitor.isPluginAvailable('NetProbe')) {
+    mobileApi.probeTcp = async (host: string, port: number, timeoutMs?: number): Promise<TcpProbeResult> => {
+      if (!isIpLiteral(host)) return { ok: false, error: 'invalid-target', detail: 'not an IP literal' }
+      if (!allowedProbeTargets.has(host)) {
+        return { ok: false, error: 'invalid-target', detail: 'not an address on this account' }
+      }
+      if (!underProbeRateLimit()) {
+        return { ok: false, error: 'invalid-target', detail: 'too many probes - wait a minute' }
+      }
+      try {
+        return await NetProbe.probeTcp({ host, port, timeoutMs })
+      } catch (e) {
+        // The plugin passed the availability check and failed anyway. `other`
+        // means the probe did not run, and must not render as a shut port.
+        return { ok: false, error: 'other', detail: e instanceof Error ? e.message : String(e) }
+      }
+    }
+    mobileApi.setProbeTargets = async (ips: string[]): Promise<void> => {
+      allowedProbeTargets = new Set(ips.filter(isIpLiteral))
+    }
   }
 
   ;(window as any).bldeskApi = mobileApi
