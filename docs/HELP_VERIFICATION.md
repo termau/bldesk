@@ -1,5 +1,24 @@
 # Help verification
 
+## Network & Addressing lists every address (9 September 2026, 1.0.61-beta.8)
+
+Branch: `feat/show-all-public-ipv4`. No new runtime dependencies.
+
+| String | Rendered by | Result |
+| --- | --- | --- |
+| `Secondary IPv4` / `Secondary IPv4s` | `ServerDetails.tsx`, Network & Addressing, one row holding every `type: 'public'` address after the first | New, and pluralised on count. One row per **kind** of address, with every address of that kind stacked in the value column: a row each repeated the label, which read as several different fields that happened to share a name. Matches the language `ChangePlanPanel.tsx` already uses, where `publicIps[0]` is "primary - stays with the server" and the rest are the releasable secondaries. |
+| `Private IPv4` / `Private IPv4s` | `ServerDetails.tsx`, same pane, every `type: 'private'` address | New, pluralised the same way - a VPC server can hold more than one. An address equal to the primary is filtered out, which happens only for a server with no public address, where `primaryV4` falls back to the first address of any kind. |
+| `server-overview.md` - "Network & Addressing below lists every address the server holds..." | the pane itself | New sentence, added because the pane was previously undocumented. Checked against the rows above: primary, secondaries, private, and IPv6 which is rendered only when `server.networks.v6[0]` exists. |
+| `server-overview.md` - "The header shows its name, ID, primary IPv4, region..." | `ServerDetails.tsx` title row and meta row | Unchanged and still true. The header still shows only the primary; this change adds rows to the pane below it, not to the header. |
+| `server-remote-access.md` - "Public address uses the server's primary public IPv4." | `lib/sshKeyAssociations.ts` | Unchanged and still true. This diff touches only the addressing pane's rows: it adds no SSH route, changes no probe target, and does not alter `useReachability`, which still takes `primaryV4`. |
+
+### Checks performed
+
+- `npm run typecheck` and `npm run build`.
+- On a physical Samsung SM-S948B at 411 CSS px, against a real account server holding a primary, a secondary and a private address. **The build was this branch on top of `main` and nothing else**, confirmed in the run by `typeof window.bldeskApi.probeTcp === 'undefined'`. 9 checks, all passing: one row per kind of address with no duplicated label; the label agreeing with its count; every listed address carrying its own copy control; no row overflowing its container; and the page not scrolling sideways. Before this change that server displayed one address of the three, while Change Plan on the same server listed both public addresses by name in order to offer one for release.
+- An earlier draft of the bullet above was measured on a build combining six branches. It is re-measured here on this branch alone, which is the same correction applied to the mobile-overflow entry.
+- Plural and singular both exercised in real Electron against fixture servers, since no account server has more than one secondary: a server with three public and two private addresses renders exactly one `Secondary IPv4s` row holding both secondaries and one `Private IPv4s` row holding both private addresses, each stacked address keeping its own copy control; a server with one of each keeps the singular labels. The primary row is unchanged, and IPv6 keeps its own truncation because a v6 address is long enough to widen the row on a phone.
+
 ## Browse existing SSH key files (7 September 2026, 1.0.61-beta.8)
 
 Checked `help/keys.md`, `help/server-remote-access.md` and `help/terminal.md` against the Browse… button, Key file display and cancellation flow in `ServerDetails.tsx`; the main-process `vault:chooseSshKeyFile` / `vault:getLocalSshKeys` handlers; `existingKeyFiles` in `src/main/sshKeyFiles.ts`; and `availableSshKeys` in `lib/sshKeyAssociations.ts`. Selected files use stat metadata only, with no private-content read, copy or passphrase persistence. Existing automatic discovery still reads public `.pub` files only. Local filenames are not BinaryLane account public keys. All SSH consumers include persisted selected paths when checking availability, so an external file does not become missing merely because discovery cannot find it.
