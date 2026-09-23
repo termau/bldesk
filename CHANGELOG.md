@@ -5,6 +5,26 @@ All notable changes to the **BLDesk** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [1.0.61-beta.11] - 2026-09-23
+
+### Changed
+- **Server List Sorted by Name** (#71):
+  - Servers still building stay at the top, and the rest are now listed by name instead of the API's order. Sorting is numeric-aware, so `web-2` comes before `web-10`.
+
+### Fixed
+- **Help Button Beside Page Actions** (#70):
+  - On VPCs, DNS & Domains, SSH Keys, Load Balancers and History, the help `?` now sits next to the page's action button instead of drifting to the far edge of the header.
+- **Templates on a Phone** (#67):
+  - Below the large breakpoint the template library is capped in height and scrolls, so the selected template is reachable on the first screen. The header's buttons wrap instead of pushing the help `?` off the edge.
+- **Cancel Reported as Failed After Succeeding** (#68):
+  - A "not found" reply to a server cancellation means the server is already gone, so it is now recorded in History as completed rather than failed.
+- **Archived Status Explained** (#69):
+  - "Archived" keeps BinaryLane's own name and now has a tooltip explaining it: powered off due to cancellation or non-payment.
+- **Network Map Zoom Help** (#66):
+  - The map's help page explains that Cmd/Ctrl+scroll, the zoom buttons and pinch zoom the map, while Cmd/Ctrl+plus and minus zoom the whole app.
+- **Android Release Build**:
+  - The Android workflow now installs the SDK packages the build uses, after the obsolete `tools` package it requested by default stopped being served.
+
 ## [1.0.61-beta.10] - 2026-09-23
 
 ### Added
