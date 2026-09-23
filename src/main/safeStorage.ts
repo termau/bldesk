@@ -1,6 +1,6 @@
 import { app, safeStorage } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { chmodSync, existsSync, readFileSync, writeFileSync } from 'fs'
 import { AccountProfile, StoredVaultData } from '../shared/ipc-types'
 
 function getVaultFilePath(): string {
@@ -8,6 +8,17 @@ function getVaultFilePath(): string {
     return join(app.getPath('userData'), 'vault.enc')
   } catch {
     return join(process.env.HOME || '/tmp', '.bldesk_vault.enc')
+  }
+}
+
+// The vault holds API tokens, so it is readable by its owner only. Best effort:
+// a filesystem that ignores modes (FAT, some network shares) must not stop the
+// vault from being read or saved.
+function restrictToOwner(path: string): void {
+  try {
+    chmodSync(path, 0o600)
+  } catch (err) {
+    console.warn('[VaultManager] Could not restrict vault permissions:', err)
   }
 }
 
@@ -32,6 +43,9 @@ export class VaultManager {
       if (!existsSync(vaultPath)) {
         return { activeProfileId: null, profiles: [] }
       }
+      // Earlier builds wrote the vault 0664 under the usual umask. Tighten it
+      // on read so an existing install is fixed without waiting for a write.
+      restrictToOwner(vaultPath)
       const raw = readFileSync(vaultPath, 'utf8')
       return JSON.parse(raw) as EncryptedVaultFile
     } catch (err) {
@@ -43,7 +57,9 @@ export class VaultManager {
   private static writeRawVault(data: EncryptedVaultFile): void {
     try {
       const vaultPath = getVaultFilePath()
-      writeFileSync(vaultPath, JSON.stringify(data, null, 2), 'utf8')
+      // `mode` only applies when the file is created, hence the explicit chmod.
+      writeFileSync(vaultPath, JSON.stringify(data, null, 2), { encoding: 'utf8', mode: 0o600 })
+      restrictToOwner(vaultPath)
     } catch (err) {
       console.error('[VaultManager] Failed to write vault file:', err)
     }
