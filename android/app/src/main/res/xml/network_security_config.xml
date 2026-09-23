@@ -1,9 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  HTTPS only, and only the system's certificate authorities. User-installed CAs
+  (MDM profiles, "VPN" apps, a phishing profile) are not trusted, so they
+  cannot intercept api.binarylane.com.au and read the API token. Nothing in
+  the app uses plain http.
+-->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="true">
+    <base-config cleartextTrafficPermitted="false">
         <trust-anchors>
             <certificates src="system" />
-            <certificates src="user" />
         </trust-anchors>
     </base-config>
 </network-security-config>

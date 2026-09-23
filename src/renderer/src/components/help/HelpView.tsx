@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { BookOpen, Search, ExternalLink, ThumbsUp, ThumbsDown, ArrowLeft } from 'lucide-react'
-import type { HelpAnswer } from '@shared/help-api'
+import { looksLikeSecret, SECRET_NOT_SENT, type HelpAnswer } from '@shared/help-api'
 import { HELP_PAGES, searchHelp } from '../../lib/help'
 import { renderHelpMarkdown, openHelpHref } from '../../lib/helpMarkdown'
 import { openHelp, type HelpLocation } from '../../lib/helpNavigation'
@@ -25,7 +25,7 @@ export function HelpView({ location, contextHint }: { location: HelpLocation; co
   const [focused, setFocused] = useState(false)
   const [suggestionIndex, setSuggestionIndex] = useState(-1)
   const [answer, setAnswer] = useState<HelpAnswer | null>(null)
-  const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
+  const [status, setStatus] = useState<'idle' | 'loading' | 'done' | 'error' | 'secret'>('idle')
   const [feedback, setFeedback] = useState<'idle' | 'sending' | 'thanks' | 'error'>('idle')
   const [showAll, setShowAll] = useState(false)
   const [recent, setRecent] = useState<string[]>(() => {
@@ -61,7 +61,7 @@ export function HelpView({ location, contextHint }: { location: HelpLocation; co
     let current = true
     setSuggestions([])
     setSuggestionIndex(-1)
-    if (question.length < 3 || !navigator.onLine) return
+    if (question.length < 3 || !navigator.onLine || looksLikeSecret(question)) return
     const timer = setTimeout(() => {
       void window.bldeskApi.helpSuggest(question).then(items => { if (current) setSuggestions(items) }).catch(() => {})
     }, 200)
@@ -72,6 +72,7 @@ export function HelpView({ location, contextHint }: { location: HelpLocation; co
     const id = ++requestId.current
     setAnswer(null); setStatus('idle'); setFeedback('idle'); feedbackBusy.current = false
     if (!question || (question.split(/\s+/).length < 3 && submitted !== question)) return
+    if (looksLikeSecret(question)) { setStatus('secret'); return }
     if (!navigator.onLine) { setStatus('error'); return }
     const timer = setTimeout(() => {
       setStatus('loading')
@@ -87,6 +88,7 @@ export function HelpView({ location, contextHint }: { location: HelpLocation; co
   const submit = () => {
     if (!question) return
     setFocused(false); setSubmitted(question); setSubmission(n => n + 1)
+    if (looksLikeSecret(question)) return // never kept in recent searches either
     const next = [question, ...recent.filter(q => q !== question)].slice(0, 5)
     setRecent(next)
     try { localStorage.setItem(RECENTS, JSON.stringify(next)) } catch { /* Local storage unavailable. */ }
@@ -142,6 +144,7 @@ export function HelpView({ location, contextHint }: { location: HelpLocation; co
             <div><h2 className="text-base font-semibold">Ask BinaryLane <span className="text-[10px] font-normal rounded bg-sky-100 dark:bg-sky-900 px-1.5 py-0.5 text-[#017cb6] dark:text-sky-300">beta</span></h2><p className="text-xs text-[#6c757d] dark:text-slate-400 mt-1">Answers are generated from published articles and may be incomplete or out of date; check the linked article.</p></div>
             {status === 'loading' && <div role="status" aria-label="Searching BinaryLane articles" className="space-y-3 animate-pulse motion-reduce:animate-none">{[100, 92, 98, 70].map((w, i) => <div key={i} style={{ width: `${w}%` }} className="h-3 rounded bg-slate-200 dark:bg-slate-600" />)}</div>}
             {status === 'error' && <p role="alert" className="text-sm text-[#6c757d] dark:text-slate-300">{ERROR}</p>}
+            {status === 'secret' && <p role="alert" className="text-sm text-amber-700 dark:text-amber-300">{SECRET_NOT_SENT}</p>}
             {answer && status === 'done' && <>
               <div className="text-sm space-y-3">{renderHelpMarkdown(answer.answer, true)}</div>
               <div aria-label="Source articles" className="border-t border-[#ced4da] dark:border-[#373b3e] pt-3 space-y-1"><h3 className="text-xs font-semibold mb-2">Source articles</h3>{answer.results.map((r, i) => <button key={`${r.url}-${i}`} onClick={() => openHelpHref(r.url, true)} className="w-full text-left flex items-start gap-2 text-xs text-[#017cb6] dark:text-sky-400 p-2 rounded hover:bg-black/5 dark:hover:bg-white/5"><ExternalLink className="w-3.5 h-3.5 shrink-0" />{titleCase(r.title)}</button>)}</div>

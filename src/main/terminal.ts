@@ -243,8 +243,11 @@ export async function launchNativeTerminal(options: TerminalLaunchOptions): Prom
   try {
     if (process.platform === 'win32') {
       // Windows Terminal, default profile. Argv is passed straight through — no shell.
+      // wt.exe itself splits its command line on `;` into separate subcommands,
+      // so a key path such as `C:\k\a ; new-tab powershell` would open a second
+      // command. Its documented escape is `\;`, which reaches ssh as a plain `;`.
       try {
-        await spawnDetached('wt.exe', ['new-tab', ...argv])
+        await spawnDetached('wt.exe', ['new-tab', ...argv.map((arg) => arg.replace(/;/g, '\\;'))])
         return { success: true, terminal: 'Windows Terminal', command }
       } catch {
         // Fall back to a PowerShell window. libuv maps `detached` to DETACHED_PROCESS on

@@ -817,7 +817,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                   <button disabled={capturing || !onSaveAsTemplate} onClick={() => void captureTemplate()} className="px-3 py-1.5 rounded bg-[#017cb6] text-white text-xs disabled:opacity-40">{capturing ? 'Capturing…' : 'Save server as template'}</button>
                 </div>
               </div>
-              <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mb-3">A template captures this server’s plan, image, region, VPC, firewall rules and user data, so the next one is a fill-in-the-blanks. It opens in the Templates tab for you to review and name.</p>
+              <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mb-3">A template captures this server’s plan, image, region, VPC, firewall rules and user data, so the next one is a fill-in-the-blanks. It opens in the Templates tab for you to review and name. User data is copied exactly as it is on the server, including any passwords, keys or tokens in it: remove those before saving or sharing the template.</p>
               {captureError && <p className="text-xs text-rose-600 mb-3">{captureError}</p>}
               {userDataQuery.isLoading ? <p className="text-xs text-[#6c757d]">Loading…</p> : userDataQuery.isError ? <p className="text-xs text-rose-600">Could not read stored user data.</p> : userDataQuery.data ? <textarea readOnly value={userDataQuery.data} rows={20} spellCheck={false} className="w-full px-3 py-2 text-xs font-mono rounded border bg-[#f8f9fa] dark:bg-[#212529] border-[#ced4da] dark:border-[#495057]" /> : <p className="text-xs text-[#6c757d]">This server has no stored user data.</p>}
             </div>

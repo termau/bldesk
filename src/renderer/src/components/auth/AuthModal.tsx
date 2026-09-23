@@ -32,6 +32,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
    * a duplicate instead of fixing the original.
    */
   const [updating, setUpdating] = useState<{ id: string; name: string } | null>(null)
+  /*
+   * Set when the system has no working keyring and the save was refused. Only
+   * then is saving without encryption offered, and only as an explicit choice.
+   */
+  const [encryptionUnavailable, setEncryptionUnavailable] = useState(false)
+  const [allowUnencrypted, setAllowUnencrypted] = useState(false)
 
   if (!isOpen) return null
 
@@ -76,17 +82,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const verifiedEmail = data.account.email
       const name = updating?.name || profileName.trim() || verifiedEmail || 'BinaryLane Account'
 
-      // Save encrypted into SafeStorage Vault
       const result = await window.bldeskApi?.saveProfile?.({
         profileId: updating?.id,
         name,
         token: cleanToken,
-        isDefault
+        isDefault,
+        allowUnencrypted: encryptionUnavailable && allowUnencrypted
       })
 
-      if (result?.error) {
-        throw new Error(result.error)
+      if (result?.errorCode === 'encryption-unavailable') setEncryptionUnavailable(true)
+      if (!result?.success) {
+        throw new Error(result?.error || 'The token could not be saved.')
       }
+      setEncryptionUnavailable(false)
+      setAllowUnencrypted(false)
 
       setSuccessMsg(`Account "${name}" connected successfully!`)
       setProfileName('')
@@ -117,10 +126,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     })
     if (!ok.ok) return
     try {
-      await window.bldeskApi?.deleteProfile?.(id)
+      const result = await window.bldeskApi?.deleteProfile?.(id)
+      if (result && !result.success) throw new Error('the vault could not be written')
+      // The profile's cached server list is account data; nothing reads it once
+      // the profile is gone.
+      try {
+        localStorage.removeItem(`bldesk_cached_servers_${id}`)
+      } catch {
+        /* storage unavailable */
+      }
       onProfileAddedOrUpdated()
     } catch (err: any) {
-      alert(`Delete failed: ${err.message}`)
+      setErrorMsg(`Could not remove the profile: ${err.message}`)
     }
   }
 
@@ -136,7 +153,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div className="flex items-center justify-between px-5 py-4 border-b border-[#ced4da] dark:border-[#373b3e] bg-[#f1f1f1] dark:bg-[#262a2e]">
           <div className="flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-[#017cb6]" />
-            <h3 className="font-bold text-sm text-[#212529] dark:text-white">Hardware Encrypted Vault</h3>
+            <h3 className="font-bold text-sm text-[#212529] dark:text-white">API Token Vault</h3>
           </div>
           <button
             onClick={onClose}
@@ -171,6 +188,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         <div>
                           <div className="font-semibold">{p.name}</div>
                           {p.email && <div className="text-[10px] text-[#6c757d]">{p.email}</div>}
+                          {p.tokenStatus === 'unencrypted' && (
+                            <div className="text-[10px] text-amber-600 dark:text-amber-400" title="Saved without encryption because this system had no working keyring. Replace the token once a keyring is available to encrypt it.">
+                              Token not encrypted
+                            </div>
+                          )}
+                          {p.tokenStatus === 'unreadable' && (
+                            <div className="text-[10px] text-rose-600 dark:text-rose-400" title="The token could not be decrypted, for example because the keyring is locked or was replaced. Use the replace button to enter it again.">
+                              Token needs re-entering
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -270,6 +297,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <span className="text-[11px] text-[#6c757d]">Set as default active profile</span>
             </label>
 
+            {encryptionUnavailable && (
+              <label className="flex items-start gap-2 cursor-pointer p-2 rounded border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30">
+                <input
+                  type="checkbox"
+                  checked={allowUnencrypted}
+                  onChange={(e) => setAllowUnencrypted(e.target.checked)}
+                  className="mt-0.5 rounded border-[#ced4da] text-amber-600 focus:ring-0"
+                />
+                <span className="text-[11px] text-amber-800 dark:text-amber-300">
+                  Save this token without encryption on this device
+                </span>
+              </label>
+            )}
+
             {errorMsg && (
               <div className="p-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded flex items-center gap-2 text-[11px]">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -298,7 +339,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 ) : (
                   <>
                     <Key className="w-3.5 h-3.5" />
-                    <span>Save & Encrypt Token</span>
+                    <span>{encryptionUnavailable && allowUnencrypted ? 'Save Token Without Encryption' : 'Save & Encrypt Token'}</span>
                   </>
                 )}
               </button>
