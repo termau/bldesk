@@ -169,7 +169,9 @@ export class TrayManager {
       return
     }
     try {
-      app.setLoginItemSettings({ openAtLogin: this.settings.launchAtLogin, openAsHidden: true })
+      // `openAsHidden` is gone from Electron's API; it was macOS-only and macOS
+      // 13+ already ignored it, so a login launch there shows the window as before.
+      app.setLoginItemSettings({ openAtLogin: this.settings.launchAtLogin })
     } catch (err) {
       console.warn('[Tray] Failed to set login item:', err)
     }

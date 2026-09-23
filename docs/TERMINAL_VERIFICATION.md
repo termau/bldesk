@@ -58,13 +58,12 @@ output.
 - `scripts/packaged-pty-runtime.cjs`: PASS under the packaged app's Electron
   executable in Node mode; the unpacked native module loaded with Electron's
   ABI and its helper spawned `/usr/bin/ssh -V` successfully.
-- Package override `@electron/rebuild: 3.7.2` in `package.json`:
-  `electron-builder@25.1.8` transitively bundles `@electron/rebuild@3.6.1`,
-  which predates Electron 33 and fails or produces ABI mismatches when compiling
-  `node-pty@1.1.0` native modules (Node 20.18 / ABI 130). Pinning `3.7.2` forces
-  the builder to compile `pty.node` and `spawn-helper` against Electron 33 headers
-  across all matrix targets. Do not remove this override until `electron-builder`
-  updates its internal rebuild dependency.
+- Native rebuild: `electron-builder@26` ships `@electron/rebuild@4`, which
+  compiles `node-pty@1.1.0` for Electron 44 (ABI 149), so the earlier
+  `@electron/rebuild: 3.7.2` override that electron-builder 25 needed for
+  Electron 33 is removed. Checked on Linux: `install-app-deps` rebuilt
+  `pty.node` as `x64--149`, and the packaged AppImage opened a pty session that
+  ran `ssh`. macOS and Windows use node-pty's N-API prebuilds.
 - Packaged app real server session: PASS on macOS arm64. Opened an interactive
   session to BinaryLane's `scratchpad` VPS (`43.224.183.192`, Ubuntu 24.04.4 LTS)
   directly from the packaged `BLDesk.app` using local identity `~/.ssh/binarylane_key`.
