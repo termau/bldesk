@@ -34,20 +34,35 @@
   }
 }
 
-/* Custom scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #6c757d55;
-  border-radius: 3px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #6c757d88;
+/*
+ * Custom scrollbars, for pointing devices.
+ *
+ * Scoped rather than global: styling ::-webkit-scrollbar at all opts the
+ * element out of the platform's own scrollbar and gives it a classic one that
+ * takes layout width - measured at 6px in the Android WebView, which is both a
+ * bar nobody asked for on a phone and 6px of screen the content stops getting.
+ *
+ * Leaving the pseudo-element unstyled is what hands the decision back to the
+ * platform; on Android that is an overlay bar, which costs no layout width and
+ * appears while you scroll. That appearance is also the only cue a table has
+ * that it scrolls sideways, so hiding the bar instead (width: 0) would keep the
+ * opt-out and throw the cue away.
+ */
+@media (pointer: fine) {
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #6c757d55;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #6c757d88;
+  }
 }
 
 /* Frameless Window Draggable Region */
