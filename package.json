@@ -83,7 +83,8 @@
             "universal"
           ]
         }
-      ]
+      ],
+      "x64ArchFiles": "Contents/Resources/app.asar.unpacked/node_modules/node-pty/prebuilds/**"
     },
     "win": {
       "icon": "resources/icon.ico",
