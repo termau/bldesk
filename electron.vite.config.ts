@@ -32,7 +32,11 @@ const CONTENT_SECURITY_POLICY = [
   // No 'self': for a page loaded from file://, 'self' also matches every other
   // file: URL, so fetch('file:///...') could read local files. The renderer
   // never fetches its own files; scripts and styles are covered above.
-  "connect-src https://api.binarylane.com.au https://api.github.com https://uai.adamhomenet.com",
+  // The one localhost path is Capacitor's native HTTP proxy on Android:
+  // CapacitorHttp routes fetch() through https://localhost/_capacitor_http_interceptor_,
+  // so without it every fetch on Android (the update check among them) is
+  // refused. A path, not the origin, so nothing else on localhost is allowed.
+  "connect-src https://api.binarylane.com.au https://api.github.com https://uai.adamhomenet.com https://localhost/_capacitor_http_interceptor_",
   "object-src 'none'",
   "base-uri 'none'",
   "frame-src 'none'",

@@ -43,6 +43,9 @@ if (!main.includes('installApiCorsHeaders(')) failures.push('src/main/index.ts: 
 
 const viteConfig = read('electron.vite.config.ts')
 if (/connect-src[^"]*'self'/.test(viteConfig)) failures.push("electron.vite.config.ts: connect-src must not include 'self'; from file:// it would allow fetching local files")
+// Android: CapacitorHttp sends fetch() through this proxy path. Without it the
+// Android update check fails with "Failed to fetch" (1.0.62-beta.2 and .3).
+if (!/connect-src[^"]*https:\/\/localhost\/_capacitor_http_interceptor_/.test(viteConfig)) failures.push('electron.vite.config.ts: connect-src must allow https://localhost/_capacitor_http_interceptor_, Capacitor\'s fetch proxy on Android')
 if (!/plugins:\s*\[[^\]]*contentSecurityPolicyPlugin\(\)/.test(viteConfig)) {
   failures.push('electron.vite.config.ts: keep contentSecurityPolicyPlugin() in the renderer plugins')
 }
