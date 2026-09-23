@@ -229,14 +229,16 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
           </p>
         </div>
 
-        <button
-          onClick={() => setIsCreating(true)}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Deploy Load Balancer</span>
-        </button>
-        <HelpLink slug="loadbalancers" />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsCreating(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Deploy Load Balancer</span>
+          </button>
+          <HelpLink slug="loadbalancers" />
+        </div>
       </div>
 
       {/* Loading State */}

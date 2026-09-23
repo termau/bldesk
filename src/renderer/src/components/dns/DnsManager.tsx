@@ -317,15 +317,17 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
           </p>
         </div>
 
-        <button
-          onClick={handleFlushCache}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#212529] dark:text-slate-200 bg-white dark:bg-[#2b3035] hover:bg-[#f1f1f1] dark:hover:bg-[#343a40] border border-[#ced4da] dark:border-[#373b3e] rounded transition shadow-sm"
-          title="Force nameserver cache flush"
-        >
-          <RefreshCw className="w-3.5 h-3.5" />
-          <span>Flush DNS Cache</span>
-        </button>
-        <HelpLink slug="dns" />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleFlushCache}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#212529] dark:text-slate-200 bg-white dark:bg-[#2b3035] hover:bg-[#f1f1f1] dark:hover:bg-[#343a40] border border-[#ced4da] dark:border-[#373b3e] rounded transition shadow-sm"
+            title="Force nameserver cache flush"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Flush DNS Cache</span>
+          </button>
+          <HelpLink slug="dns" />
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 flex-1">

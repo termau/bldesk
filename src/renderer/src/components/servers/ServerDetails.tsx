@@ -452,9 +452,9 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                   {server.name}
                 </span>
                 <span
-                  title={(server as any)._power
+                  title={state.hint ?? ((server as any)._power
                         ? `Power state from ${(server as any)._power.source === 'diagnostic' ? 'a hypervisor check' : 'performance samples'}${(server as any)._apiStatus !== server.status ? ` (API says ${(server as any)._apiStatus})` : ''}`
-                        : 'From the API status field, which may not reflect power state'}
+                        : 'From the API status field, which may not reflect power state')}
                   className={`shrink-0 px-2 py-0.5 text-[10px] font-semibold rounded-full inline-flex items-center gap-1 ${state.pill}`}
                 >
                   {state.busy && <Loader2 className="w-2.5 h-2.5 animate-spin" />}

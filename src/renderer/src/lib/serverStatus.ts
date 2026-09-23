@@ -16,7 +16,16 @@ export interface StatusPresentation {
   pill: string
   /** Work is in progress and the UI should show motion rather than a fixed state. */
   busy: boolean
+  /** What the state means, where the label alone does not say. */
+  hint?: string
 }
+
+/**
+ * `archive` keeps BinaryLane's own name, as mPanel and the API do (#69). This is
+ * the API reference's definition of it, so the label is explained rather than
+ * renamed.
+ */
+export const ARCHIVE_HINT = 'Powered off due to cancellation or non-payment'
 
 export function describeStatus(status: ServerStatus | undefined): StatusPresentation {
   switch (status) {
@@ -39,7 +48,8 @@ export function describeStatus(status: ServerStatus | undefined): StatusPresenta
         label: 'Archived',
         dot: 'bg-slate-400',
         pill: 'bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
-        busy: false
+        busy: false,
+        hint: ARCHIVE_HINT
       }
     case 'off':
       return {
@@ -59,13 +69,14 @@ export function describeStatus(status: ServerStatus | undefined): StatusPresenta
 }
 
 /**
- * Order for the server list: anything still building first, then the API's own
- * order.
+ * Order for the server list: anything still building first, then by name.
  *
- * A new server is appended by the API, so the one thing you just created - and
- * are most likely watching - landed at the bottom of a long list.
+ * Building first because a new server is appended by the API, so the one thing
+ * you just created - and are most likely watching - landed at the bottom of a
+ * long list. By name after that because the API's own order read as random
+ * (#71). Numeric-aware, so `web-2` sorts before `web-10`.
  */
-export function compareByBuildingFirst(a: { status?: string }, b: { status?: string }): number {
+export function compareServersForList(a: { status?: string; name?: string }, b: { status?: string; name?: string }): number {
   const rank = (s?: string): number => (s === 'new' ? 0 : 1)
-  return rank(a.status) - rank(b.status)
+  return rank(a.status) - rank(b.status) || (a.name ?? '').localeCompare(b.name ?? '', undefined, { numeric: true, sensitivity: 'base' })
 }

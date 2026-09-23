@@ -5,7 +5,9 @@ keywords: [list, grid, filter, power, signal sent, running, off, samples]
 ---
 
 # Servers
-Browse the active account's servers, filter the list, and switch between grid and list layouts. Select a server for its detailed controls. The context menu gives you Open, SSH, copy actions and power controls.
+Browse the active account's servers, filter the list, and switch between grid and list layouts. Servers that are still building are listed first, then the rest by name. Select a server for its detailed controls. The context menu gives you Open, SSH, copy actions and power controls.
+
+Archived is BinaryLane's status for a server that is powered off due to cancellation or non-payment. The Archive filter shows only those servers.
 
 ## Power is not reachability
 BinaryLane's server status does not reliably report a powered-off VM. BLDesk infers power from performance sample freshness and follows power actions with a hypervisor check. Old samples are evidence, not proof: collection or connectivity problems can also make them stale. See the [API's server diagnostics](https://api.binarylane.com.au/reference/#tag/ServerActions).

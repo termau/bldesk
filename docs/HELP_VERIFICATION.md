@@ -1,5 +1,23 @@
 # Help verification
 
+## Server order, Archived, map zoom keys (23 September 2026, after 1.0.61-beta.10)
+
+Branch: `fix/issues-66-71`. No new runtime dependencies.
+
+| String | Rendered by | Result |
+| --- | --- | --- |
+| `servers.md` - "Servers that are still building are listed first, then the rest by name." | `compareServersForList` in `lib/serverStatus.ts`, used by `ServerList.tsx` | New. The comparator ranks `status === 'new'` first, then compares `name` with `localeCompare`, numeric-aware and case-insensitive. Checked in the dev build against the live account: all 33 servers render in that order. |
+| `servers.md` - "Archived is BinaryLane's status for a server that is powered off due to cancellation or non-payment. The Archive filter shows only those servers." | `describeStatus('archive')`; the `archive` option in `ServerList.tsx` filters on `s.status === statusFilter` | New. The definition is the API reference's, `schema.d.ts` on `ServerStatus`: "The server is powered off due to cancellation or non payment." The label stays `Archived` / `Archive`, BinaryLane's own term (#69). |
+| Tooltip "Powered off due to cancellation or non-payment" | `ARCHIVE_HINT` in `lib/serverStatus.ts`, on the list's status dot, the grid and detail status pills and the Archive filter option | New. Shown only for `archive`; every other state keeps its existing power-source tooltip. |
+| `map.md` - "To zoom the map itself, hold Cmd/Ctrl and scroll, use the zoom buttons, or pinch on a touch screen. Cmd/Ctrl+plus and minus zoom the whole app, not the map." | `NetworkMap.tsx` `onWheel` (`ctrlKey \|\| metaKey`), its zoom buttons and two-finger pinch handler; `src/main/zoom.ts` claims `control \|\| meta` with plus, equals and minus | New (#66). Wording matches the Cmd/Ctrl form `shortcuts.md` already uses. |
+
+### Checks performed
+
+- `npm run typecheck` and `npm run build`.
+- Dev build with isolated `userData` against the live account, read-only views only. Server list is A-Z. The Archive option carries the tooltip. On VPCs, DNS & Domains, SSH Keys, Load Balancers and History the gap between the action button and the `?` is 8px on one row, at 1400px and 411px (#70; VPCs measured 324px before). Templates at 411px: the library is capped at 256px with the detail below it on the first screen; at 1400px it is the 300px sidebar as before (#67).
+- Header layout at the `AGENTS.md` sizes, emulated as their CSS widths (1280, 819 and 683 for 1024x680 at 80%, 125% and 150%; 1600, 1024 and 853 for 1280x840) plus 411px, on the five pages above and Templates: `?` within 12px of its button, on the same row, inside every clipping ancestor, and no horizontal page scroll. 42 checks, all passing. This emulates the zoomed layout; it does not drive `zoom.ts`'s key handler. The first run found the Templates header's `?` 5px past the edge at 411px, because its button row could not wrap; it now wraps.
+- Not exercised live: the cancel 404 path (#68), which would cost a server. The change is one condition: an error whose response status is 404 no longer throws, so History records the cancel as completed.
+
 ## Network & Addressing lists every address (9 September 2026, 1.0.61-beta.8)
 
 Branch: `feat/show-all-public-ipv4`. No new runtime dependencies.

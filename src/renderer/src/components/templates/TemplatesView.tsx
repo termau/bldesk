@@ -271,7 +271,9 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
           <h2 className="text-lg font-bold text-[#212529] dark:text-white flex items-center gap-2"><LayoutTemplate className="w-5 h-5 text-[#017cb6]" />Templates</h2>
           <p className="text-xs text-[#6c757d] dark:text-slate-400">A template is a whole server: plan, image, network, firewall rules, tags and cloud-init with variables. Build one, fill in the blanks, get the same box every time.</p>
         </div>
-        <div className="flex items-center gap-2">
+        {/* Wraps: with the reveal button present the row is wider than a phone
+            and the help `?` was clipped past the edge (#67). */}
+        <div className="flex flex-wrap items-center gap-2">
           <input ref={fileRef} type="file" accept=".yaml,.yml,.json,.txt" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.currentTarget.value = '' }} />
           <button className={btn} onClick={() => fileRef.current?.click()}><Upload className="w-3.5 h-3.5" />Import file</button>
           <button className={btn} onClick={() => setImportOpen(true)}><ClipboardPaste className="w-3.5 h-3.5" />Paste</button>
@@ -304,8 +306,10 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
       )}
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4">
-        {/* Library */}
-        <div className={`${card} flex flex-col min-h-0`}>
+        {/* Library. Below `lg` it stacks above the detail, so its height is
+            capped there and the list scrolls inside it; otherwise it filled a
+            phone screen before any template was reachable (#67). */}
+        <div className={`${card} flex flex-col min-h-0 max-h-64 lg:max-h-none`}>
           <div className="p-2 border-b border-[#ced4da] dark:border-[#373b3e]">
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-[#6c757d]" />

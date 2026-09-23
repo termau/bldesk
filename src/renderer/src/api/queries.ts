@@ -1344,13 +1344,16 @@ export function useCancelServerMutation(client: BinaryLaneClient | null) {
     mutationFn: async ({ serverId, reason }) => {
       if (!client) throw new Error('No client available')
       const trimmed = (reason || '').trim().slice(0, 250)
-      const { error } = await client.DELETE('/v2/servers/{server_id}', {
+      const { error, response } = await client.DELETE('/v2/servers/{server_id}', {
         params: {
           path: { server_id: serverId },
           query: trimmed ? { reason: trimmed } : {}
         } as never
       })
-      if (error) throw new Error(describeApiError(error))
+      // A 404 means the server is already gone, which is what a cancel asks
+      // for. It was seen after a cancel that succeeded (#68), and reporting it
+      // as a failure also wrote `failed` into History.
+      if (error && response?.status !== 404) throw new Error(describeApiError(error))
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['servers'] })

@@ -112,14 +112,16 @@ export const HistoryView: React.FC<{ profileId?: string; profileName?: string }>
             Every change confirmed in BLDesk on {profileName ?? 'this account'}, with what was confirmed and how it ended. Stored locally on this machine.
           </p>
         </div>
-        <button
-          onClick={handleClear}
-          disabled={entries.length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border border-[#ced4da] dark:border-[#373b3e] hover:bg-white dark:hover:bg-[#32383e] disabled:opacity-40"
-        >
-          <Trash2 className="w-3.5 h-3.5" /> Clear
-        </button>
-        <HelpLink slug="history" />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleClear}
+            disabled={entries.length === 0}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border border-[#ced4da] dark:border-[#373b3e] hover:bg-white dark:hover:bg-[#32383e] disabled:opacity-40"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Clear
+          </button>
+          <HelpLink slug="history" />
+        </div>
       </div>
 
       <div className="relative">
