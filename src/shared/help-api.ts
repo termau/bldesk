@@ -12,8 +12,23 @@ export interface HelpApi {
   helpFeedback: (id: string, helpful: boolean) => Promise<void>
 }
 
+/*
+ * The help box sends what is typed to the help service as you type. A token or
+ * key pasted there by mistake would leave the machine within 200ms, so text
+ * that looks like one is never sent: a private-key block, or any single word of
+ * 32+ characters mixing letters and digits (API tokens, keys, hashes). Real
+ * questions do not contain words like that.
+ */
+export function looksLikeSecret(value: string): boolean {
+  if (/-----BEGIN [A-Z ]*(PRIVATE KEY|OPENSSH)/.test(value)) return true
+  return value.split(/\s+/).some((word) => /^[A-Za-z0-9_\-+/=.]{32,}$/.test(word) && /[A-Za-z]/.test(word) && /\d/.test(word))
+}
+
+export const SECRET_NOT_SENT = 'That looks like a token or key, so it was not sent to the help service.'
+
 export function helpQuestion(value: unknown): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 1000) throw new Error('Enter a question of 1–1000 characters.')
+  if (looksLikeSecret(value)) throw new Error(SECRET_NOT_SENT)
   return value.trim()
 }
 
