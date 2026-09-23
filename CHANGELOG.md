@@ -5,6 +5,17 @@ All notable changes to the **BLDesk** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [1.0.62-beta.3] - 2026-09-24
+
+### Fixed
+- **SSH to a server with no public address** (#87): with Default SSH address set to Public address, a VPC-only server failed with "No host given". BLDesk now names the server, says it has no public IPv4, and points to Remote Access → Connect to → Custom… (suggesting its private address over a VPN) or Server name.
+
+### Changed
+- **Releases are published last** (#88): each release is created as a draft, every installer and the Android APK are attached, and only then is it published. Pull requests are checked by a typecheck, guard and build workflow.
+- **Build tooling** (#89, #91): vite 7, electron-vite 5 and @vitejs/plugin-react 5, and js-yaml 4.3.2, clearing the development-tool security alerts. Nothing shipped in the app changed.
+
+Android installs updated to 1.0.62-beta.2 already use the new signing key and update in place.
+
 ## [1.0.62-beta.2] - 2026-09-24
 
 A security release. Two things need action from Android users:
