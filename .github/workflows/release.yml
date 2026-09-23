@@ -4,6 +4,11 @@ name: Build & Release Desktop
 # prerelease on the "beta" update channel (beta.yml). electron-builder derives
 # the channel from the semver prerelease component of package.json "version",
 # so the tag and the version field must agree.
+#
+# Token scope: the build matrix only ever holds a read-only token. It packages
+# with `--publish never` and hands its outputs to the `publish` job as
+# workflow artifacts; `publish` is the only job with `contents: write`, and it
+# runs no repository code (no checkout, no npm).
 
 on:
   push:
@@ -12,7 +17,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -20,7 +25,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build & Publish (${{ matrix.os }})
+    name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     env:
       npm_config_msvs_version: '2022'
@@ -31,17 +36,19 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
 
       - name: Setup MSVC for Windows
         if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
         with:
           vsversion: 2022
 
@@ -72,8 +79,9 @@ jobs:
       - name: Build Application Bundle
         run: npm run build
 
+      # Only one copy is needed; the publish job applies it to the release.
       - name: Extract Release Notes from CHANGELOG.md
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'ubuntu-latest'
         shell: bash
         run: |
           node -e '
@@ -106,40 +114,32 @@ jobs:
             }
           '
 
-      # --- PUBLISH (tags) ---
-      # electron-builder uploads installers, blockmaps and latest.yml / beta.yml
-      # to a GitHub Release named after the tag, creating it if it doesn't exist.
-      - name: Package & Publish to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Upload Release Notes
+        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-notes
+          if-no-files-found: ignore
+          path: |
+            release-notes.md
+            release-title.txt
+
+      # Packages installers, blockmaps and the update manifests into release/.
+      # Nothing is uploaded to GitHub from here; see the publish job.
+      - name: Package
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Unsigned builds: skip macOS code signing / notarisation until a
           # Developer ID certificate is configured.
           CSC_IDENTITY_AUTO_DISCOVERY: false
-        run: npx electron-builder --publish always
-
-      - name: Update GitHub Release title and notes
-        if: startsWith(github.ref, 'refs/tags/') && matrix.os == 'ubuntu-latest'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          if [ -f release-notes.md ]; then
-            TITLE="$(cat release-title.txt 2>/dev/null || echo "$GITHUB_REF_NAME")"
-            gh release edit "$GITHUB_REF_NAME" --title "$TITLE" --notes-file release-notes.md || true
-          fi
-
-      # --- PACKAGE ONLY (manual runs) ---
-      - name: Package (no publish)
-        if: "!startsWith(github.ref, 'refs/tags/')"
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
         run: npx electron-builder --publish never
 
+      # builder-debug.yml is electron-builder's local debug dump, never a
+      # release asset; every other *.yml here is an update manifest.
       - name: Upload Build Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: BLDesk-${{ matrix.os }}
-          if-no-files-found: ignore
+          if-no-files-found: error
           path: |
             release/*.exe
             release/*.dmg
@@ -148,3 +148,76 @@ jobs:
             release/*.deb
             release/*.yml
             release/*.blockmap
+            !release/builder-debug.yml
+
+  # --- PUBLISH (tags) ---
+  # Mirrors what `electron-builder --publish always` did per platform: create
+  # the GitHub Release for the tag if it doesn't exist (named after the
+  # version, not a draft, not a prerelease, as electron-publish's
+  # createRelease does), upload every artifact under its own file name,
+  # replacing an existing asset of the same name, then apply the CHANGELOG
+  # title and notes.
+  publish:
+    name: Publish GitHub Release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ github.ref_name }}
+
+    steps:
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: artifacts
+
+      - name: Upload Assets to GitHub Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          # Every platform must hand over at least one update manifest, or
+          # its installed clients would stop seeing updates.
+          for dir in artifacts/BLDesk-*/; do
+            manifests=("$dir"*.yml)
+            if [ ${#manifests[@]} -eq 0 ]; then
+              echo "::error::No update manifest in $dir"
+              exit 1
+            fi
+          done
+
+          binaries=(artifacts/BLDesk-*/*.{exe,dmg,zip,AppImage,deb,blockmap})
+          manifests=(artifacts/BLDesk-*/*.yml)
+          if [ ${#binaries[@]} -eq 0 ]; then
+            echo "::error::No installers found in the build artifacts"
+            exit 1
+          fi
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Creating GitHub release $TAG"
+            gh api "repos/$GH_REPO/releases" \
+              -f tag_name="$TAG" \
+              -f name="${TAG#v}" \
+              -F draft=false \
+              -F prerelease=false >/dev/null \
+              || gh release view "$TAG" >/dev/null
+          fi
+
+          # Manifests last, so an updater never reads a latest*.yml that
+          # points at an installer or blockmap not uploaded yet.
+          gh release upload "$TAG" "${binaries[@]}" --clobber
+          gh release upload "$TAG" "${manifests[@]}" --clobber
+          printf 'Uploaded:\n'; printf '  %s\n' "${binaries[@]##*/}" "${manifests[@]##*/}"
+
+      - name: Update GitHub Release title and notes
+        shell: bash
+        run: |
+          if [ -f artifacts/release-notes/release-notes.md ]; then
+            TITLE="$(cat artifacts/release-notes/release-title.txt 2>/dev/null || echo "$TAG")"
+            gh release edit "$TAG" --title "$TITLE" --notes-file artifacts/release-notes/release-notes.md || true
+          fi

@@ -1,7 +1,8 @@
 import { app, BrowserWindow, Notification } from 'electron'
 import electronUpdater, { type UpdateInfo, type ProgressInfo } from 'electron-updater'
 import { join } from 'path'
-import { createWriteStream, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
+import { createWriteStream, existsSync, readFileSync, rmSync, statSync, writeFileSync } from 'fs'
+import { ensureOwnerDir, writeOwnerFileAtomic } from './ownerFiles'
 import { execFileSync, spawn } from 'child_process'
 import { UpdateChannel, UpdaterState, UpdaterStatus } from '../shared/ipc-types'
 
@@ -57,7 +58,7 @@ function readSettings(): UpdaterSettings {
 
 function writeSettings(s: UpdaterSettings): void {
   try {
-    writeFileSync(settingsPath(), JSON.stringify(s, null, 2), 'utf8')
+    writeOwnerFileAtomic(settingsPath(), JSON.stringify(s, null, 2))
   } catch (err) {
     console.warn('[Updater] Failed to write settings:', err)
   }
@@ -114,7 +115,7 @@ function installMacUpdate(zipPath: string, forceRunAfter: boolean): void {
   }
 
   const stagingDir = join(app.getPath('temp'), `bldesk-update-${Date.now()}`)
-  mkdirSync(stagingDir, { recursive: true })
+  ensureOwnerDir(stagingDir)
 
   const stagedApp = join(stagingDir, 'BLDesk.app')
   const scriptPath = join(stagingDir, 'install-update.sh')
@@ -205,7 +206,7 @@ export class UpdaterManager {
           const tag = (info as any).tag || `v${info.version}`
           const downloadUrl = `https://github.com/termau/bldesk/releases/download/${tag}/${zipFilename}`
           const destDir = join(app.getPath('userData'), 'updates')
-          mkdirSync(destDir, { recursive: true })
+          ensureOwnerDir(destDir)
           const destPath = join(destDir, zipFilename)
 
           if (existsSync(destPath) && statSync(destPath).size > 1000000) {

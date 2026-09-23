@@ -13,7 +13,7 @@ const config: CapacitorConfig = {
   loggingBehavior: 'none',
   server: {
     androidScheme: 'https',
-    cleartext: true
+    cleartext: false
   },
   plugins: {
     CapacitorHttp: {

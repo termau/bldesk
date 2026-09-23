@@ -36,7 +36,7 @@ Component basenames above are under `src/renderer/src/components/`; `lib/`, `con
 - **Monitoring:** map exposure is inferred from firewall rules, not measured connectivity. CPU utilisation is summed across vCPUs. Power state uses sample freshness and post-action checks rather than a guaranteed live hypervisor feed.
 - **Backup safety:** palette backup uses a free temporary slot first, otherwise replaces the oldest unlocked, unattached temporary backup.
 - **Templates:** tags apply locally immediately; firewall follow-up is an in-memory job, polling for up to 15 minutes. Reloading/quitting abandons it. Unmatched VPC/key names and unsupported cloud-init do not block creation; inspect the final form.
-- **Storage:** desktop safeStorage and Android secure storage have weaker fallbacks on failure/unavailability; do not describe all stored credentials as hardware-encrypted.
+- **Storage:** desktop tokens are encrypted with the OS keyring via safeStorage; with no real keyring (Linux `basic_text`) the save is refused unless the user explicitly chooses to store it unencrypted, and such profiles are labelled. Android stores tokens only in Keystore-backed secure storage, with no fallback. Do not describe credentials as hardware-encrypted.
 - **Platforms:** tray, desktop zoom and native desktop probes are not universal mobile capabilities. Launch at login is offered on macOS/Windows, not Linux. Android external deep-link delivery is not implemented. PR #51's Android probe/map gestures are not counted as shipped here.
 
 ## Original expansion ideas — current status

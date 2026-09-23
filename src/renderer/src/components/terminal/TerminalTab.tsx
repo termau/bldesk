@@ -21,17 +21,18 @@ export function TerminalTab({ session, active, onReconnect, onClose }: {
   useEffect(() => {
     const api = window.bldeskApi.pty
     if (!container.current || !api || session.status === 'connecting') return
+    // Remote text is untrusted: plain URLs and OSC 8 hyperlinks alike open only
+    // as web addresses, never as local or deep links.
+    const openWebLink = (uri: string) => { if (/^https?:\/\//i.test(uri)) void window.bldeskApi.openExternal(uri) }
     const term = new Terminal({ cursorBlink: true, fontSize: 13, scrollback: 5000,
+      linkHandler: { activate: (_event, uri) => openWebLink(uri) },
       fontFamily: 'Consolas, "Courier New", monospace',
       theme: { background: '#212529', foreground: '#f8f9fa', cursor: '#f1ca00', selectionBackground: '#017cb6' } })
     const fitter = new FitAddon()
     const finder = new SearchAddon()
     term.loadAddon(fitter)
     term.loadAddon(finder)
-    term.loadAddon(new WebLinksAddon((_event, uri) => {
-      // Remote text is untrusted. Only web URLs, never arbitrary local/deep links.
-      if (/^https?:\/\//i.test(uri)) void window.bldeskApi.openExternal(uri)
-    }))
+    term.loadAddon(new WebLinksAddon((_event, uri) => openWebLink(uri)))
     term.open(container.current)
     instance.current = term
     search.current = finder

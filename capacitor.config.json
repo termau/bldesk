@@ -4,7 +4,7 @@
   "webDir": "out/renderer",
   "server": {
     "androidScheme": "https",
-    "cleartext": true
+    "cleartext": false
   },
   "plugins": {
     "CapacitorHttp": {

@@ -127,6 +127,16 @@ function MainDashboard() {
   }, [])
   const linuxFrame = window.bldeskApi?.platform === 'linux' && !isMaximized
 
+  /*
+   * Most query keys are not scoped by profile (['server', id], ['account'],
+   * ['vpcs']...), so the previous account's data stayed on screen, and in the
+   * cache, after a switch. Every route that changes the active profile - the
+   * switcher, the vault screen, a deep link, removing the active profile -
+   * comes through refreshProfiles, so the cache is cleared here, before the new
+   * profile is set.
+   */
+  const shownProfileId = React.useRef<string | undefined>(undefined)
+
   const refreshProfiles = async () => {
     if (!window.bldeskApi) {
       // If outside Electron (mobile/web), dynamically load and initialize mobile bridge
@@ -145,10 +155,14 @@ function MainDashboard() {
     try {
       const pList = await window.bldeskApi.getProfiles()
       const active = await window.bldeskApi.getActiveProfile()
+      if (shownProfileId.current !== undefined && active?.id !== shownProfileId.current) queryClient.clear()
+      shownProfileId.current = active?.id
       setProfiles(pList)
       setActiveProfile(active)
 
-      if (pList.length === 0) {
+      // No accounts yet, or the active token could not be decrypted (keyring
+      // locked or replaced): the vault screen is where either is fixed.
+      if (pList.length === 0 || (active && !active.token)) {
         setIsAuthOpen(true)
       }
     } catch (err) {
@@ -219,7 +233,6 @@ function MainDashboard() {
     setAuthErrorBanner(null)
     await window.bldeskApi.setActiveProfile(profileId)
     await refreshProfiles()
-    queryClient.invalidateQueries()
   }
 
   const handleOpenTerminalForIp = (ip: string) => {

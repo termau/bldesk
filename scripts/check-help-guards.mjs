@@ -87,5 +87,106 @@ for (const [slug, body] of docs) for (const m of body.matchAll(/\]\(help:([^\s)]
   if (!docs.has(target)) fail('docs/help/' + slug + '.md', 'unknown help target ' + target)
   else if (heading && !headingIds(docs.get(target)).has(heading)) fail('docs/help/' + slug + '.md', 'unknown heading ' + m[1])
 }
+// Quoted app text must exist (#49). Every “curly-quoted” string in a help page
+// quotes something the app shows - a dialog title, summary, note, button or
+// tooltip - so it must be a whole string in the renderer source. A placeholder
+// (`${…}` in a template, `{…}` in JSX text) matches the page's example value,
+// unless it only chooses between literals (`n === 1 ? '' : 's'`), in which case
+// it must be one of them. Most of a quote must be the app's own fixed words, so
+// a string like `Copy ${ip}` cannot vouch for any quote that starts with "Copy".
+const MIN_FIXED_SHARE = 0.4
+const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const unescape = s => s.replace(/\\u\{?([0-9a-fA-F]{4,5})\}?|\\n|\\(.)/g, (_, hex, ch) => hex ? String.fromCodePoint(parseInt(hex, 16)) : ch ?? ' ')
+const walk = dir => readdirSync(resolve(root, dir), { withFileTypes: true }).flatMap(e =>
+  e.isDirectory() ? walk(dir + '/' + e.name) : /\.tsx?$/.test(e.name) && !e.name.endsWith('.d.ts') ? [dir + '/' + e.name] : [])
+const texts = [] // regex sources, one per string the app can show
+// A choice between two literals is those two branches (the last two literals;
+// any before them are in the condition); anything else is a value.
+const hole = ({ shape, lits }) => /^[^?:]+\?L:L$/.test(shape.replace(/\s+/g, '')) ? '(?:' + lits.slice(-2).join('|') + ')' : '(.*?)'
+// Scan an expression from `at`, collecting every string and template literal
+// (comments and regex literals skipped). Returns where it stopped, plus the
+// top-level literals and the expression's shape with each literal as `L`.
+function scan(code, at, close) {
+  let i = at, prev = '', depth = 0, shape = ''
+  const lits = []
+  const literal = src => { texts.push(src); if (depth === 0) lits.push(src); shape += 'L' }
+  for (; i < code.length; i++) {
+    const c = code[i]
+    if (c === '/' && code[i + 1] === '/') { i = code.indexOf('\n', i); if (i < 0) i = code.length; continue }
+    if (c === '/' && code[i + 1] === '*') { i = code.indexOf('*/', i + 2) + 1; continue }
+    if (c === "'" || c === '"') {
+      let j = i + 1
+      while (j < code.length && code[j] !== c && code[j] !== '\n') j += code[j] === '\\' ? 2 : 1
+      literal(esc(unescape(code.slice(i + 1, j)))); i = j; prev = c; continue
+    }
+    if (c === '`') {
+      let src = ''
+      for (i++; i < code.length && code[i] !== '`'; i++) {
+        if (code[i] === '\\') { src += esc(unescape(code.slice(i, i + 2))); i++ }
+        else if (code[i] === '$' && code[i + 1] === '{') { const inner = scan(code, i + 2, '}'); i = inner.end; src += hole(inner) }
+        else src += esc(code[i])
+      }
+      literal(src); prev = '`'; continue
+    }
+    // A regex literal can hold a quote; skip it where a value is expected.
+    if (c === '/' && /^$|[(,=:[!&|?{};+\-*%<>~^]$/.test(prev)) {
+      let j = i + 1, klass = false
+      while (j < code.length && code[j] !== '\n' && (klass || code[j] !== '/')) {
+        if (code[j] === '\\') j++
+        else if (code[j] === '[') klass = true
+        else if (code[j] === ']') klass = false
+        j++
+      }
+      i = j; prev = '/'; continue
+    }
+    if (c === '{') depth++
+    if (c === '}' && close === '}' && depth-- === 0) break
+    shape += c
+    if (!/\s/.test(c)) prev = c
+  }
+  return { end: i, lits, shape }
+}
+for (const file of walk('src/renderer/src')) {
+  const code = read(file)
+  scan(code, 0, null)
+  // JSX text between tags, with flat `{…}` expressions as holes.
+  if (file.endsWith('.tsx')) for (const m of code.matchAll(/>([^<>]*?)</g)) {
+    const raw = m[1].replace(/\s+/g, ' ').trim()
+    if (!/[A-Za-z]{2}/.test(raw) || /[;=]|=>/.test(raw.replace(/\{[^{}]*\}/g, ''))) continue
+    const parts = raw.split(/(\{[^{}]*\})/)
+    if (parts.some((part, k) => k % 2 === 0 && /[{}]/.test(part))) continue
+    texts.push(parts.map((part, k) => k % 2 ? hole(scan(part.slice(1, -1), 0, null)) : esc(part)).join(''))
+  }
+}
+// Dialog titles for API actions are generated, not written: `describeActionType`
+// in lib/actionLabels.ts title-cases the snake_case type with an acronym map.
+// Apply the same rule to every action-type literal so those titles are checkable.
+const labelsFile = 'src/renderer/src/lib/actionLabels.ts'
+const acronymBlock = read(labelsFile).match(/const ACRONYMS[^{]*\{([^}]*)\}/)
+if (!acronymBlock) fail(labelsFile, 'cannot read ACRONYMS; update the help guard')
+const acronyms = Object.fromEntries([...(acronymBlock?.[1] ?? '').matchAll(/(\w+): '([^']+)'/g)].map(m => [m[1], m[2]]))
+for (const type of new Set(texts.filter(s => /^[a-z0-9]+(_[a-z0-9]+)+$/.test(s))))
+  texts.push(esc(type.split('_').map(w => acronyms[w] ?? w.charAt(0).toUpperCase() + w.slice(1)).join(' ')))
+const squash = s => s.replace(/\s+/g, ' ').trim()
+const patterns = [...new Set(texts)].filter(s => /[A-Za-z]/.test(s)).map(src => {
+  try { return { src, re: new RegExp('^' + src.replace(/\s+/g, ' ').trim() + '$') } } catch { return null }
+}).filter(Boolean)
+// Share of the quote that is the app's fixed wording rather than a filled-in value.
+const fixedShare = (re, quote) => {
+  const m = re.exec(quote)
+  return m ? 1 - m.slice(1).reduce((n, g) => n + (g?.length ?? 0), 0) / quote.length : 0
+}
+const readable = src => src.replace(/\(\.\*\?\)/g, '${…}').replace(/\(\?:/g, '{').replace(/(?<!\\)\)/g, '}').replace(/\\(.)/g, '$1')
+const words = s => new Set(s.toLowerCase().match(/[a-z0-9']+/g) ?? [])
+let quotes = 0
+for (const [slug, body] of docs) for (const m of body.matchAll(/“([^”]+)”/g)) {
+  quotes++
+  const quote = squash(m[1])
+  if (patterns.some(p => fixedShare(p.re, quote) >= MIN_FIXED_SHARE)) continue
+  const want = words(quote)
+  const nearest = patterns.map(p => ({ p, score: [...words(readable(p.src))].filter(w => want.has(w)).length })).sort((a, b) => b.score - a.score)[0]
+  fail('docs/help/' + slug + '.md', `quoted text is not in the app: “${quote}”` +
+    (nearest?.score ? `\n    nearest in source: "${readable(nearest.p.src)}"` : ''))
+}
 if (errors.length) { console.error(errors.join('\n')); process.exitCode = 1 }
-else console.log(`Help guards passed: ${docs.size} pages, ${tabs.length} tabs, ${subtabs.length} server tabs, ${verbs.length} verbs.`)
+else console.log(`Help guards passed: ${docs.size} pages, ${tabs.length} tabs, ${subtabs.length} server tabs, ${verbs.length} verbs, ${quotes} quotes.`)

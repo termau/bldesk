@@ -15,6 +15,40 @@ function removeCrossoriginPlugin() {
   }
 }
 
+/*
+ * Content Security Policy, for builds only: the dev server injects inline
+ * scripts and a websocket that this would block. The renderer holds the API
+ * token, so script may come only from the app itself, and requests may go only
+ * to the services the app talks to. Styles stay 'unsafe-inline' because React
+ * style props and xterm's injected stylesheet need it. The Android build shares
+ * this output; Capacitor's own bridge is injected natively, not as page script.
+ */
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  // No 'self': for a page loaded from file://, 'self' also matches every other
+  // file: URL, so fetch('file:///...') could read local files. The renderer
+  // never fetches its own files; scripts and styles are covered above.
+  "connect-src https://api.binarylane.com.au https://api.github.com https://uai.adamhomenet.com",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "frame-src 'none'",
+  "form-action 'none'"
+].join('; ')
+
+function contentSecurityPolicyPlugin() {
+  return {
+    name: 'content-security-policy',
+    apply: 'build' as const,
+    transformIndexHtml(html: string) {
+      return html.replace('<head>', `<head>\n    <meta http-equiv="Content-Security-Policy" content="${CONTENT_SECURITY_POLICY}" />`)
+    }
+  }
+}
+
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
@@ -26,6 +60,14 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    // CommonJS, as index.cjs: the renderer is sandboxed, and a sandboxed
+    // preload cannot be an ES module (package.json "type": "module" would
+    // otherwise make electron-vite emit index.mjs).
+    build: {
+      rollupOptions: {
+        output: { format: 'cjs', entryFileNames: '[name].cjs' }
+      }
+    },
     resolve: {
       alias: {
         '@shared': resolve('src/shared')
@@ -55,6 +97,6 @@ export default defineConfig({
         '@shared': resolve('src/shared')
       }
     },
-    plugins: [react(), removeCrossoriginPlugin()]
+    plugins: [react(), removeCrossoriginPlugin(), contentSecurityPolicyPlugin()]
   }
 })

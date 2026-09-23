@@ -1,91 +1,60 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDownToLine, CheckCircle2, CloudOff, Loader2, RefreshCw, AlertTriangle, RotateCw, ChevronDown } from 'lucide-react'
 import { UpdateChannel, UpdaterState } from '@shared/ipc-types'
+import { renderHelpMarkdown } from '../../lib/helpMarkdown'
 
-/**
- * Renders release notes safely. GitHub releases feed provides HTML (or markdown from mobile).
- * We sanitize tags and attributes, wire links to open via shell.openExternal, and apply clean prose styling.
+/*
+ * Release notes, rendered without innerHTML. Desktop notes are GitHub-rendered
+ * HTML; Android's are Markdown. The HTML is parsed into an inert document and
+ * rebuilt as React elements from an allowlist, so nothing the notes contain is
+ * ever handed to the page as markup: an unknown element keeps only its text,
+ * and a link keeps only an http(s) address, opened in the system browser.
+ * (The previous blocklist sanitiser re-inserted parsed HTML, which a
+ * <noscript> payload could turn back into live script.)
  */
-function sanitizeAndFormatReleaseNotes(raw: string): string {
-  if (!raw) return ''
+const NOTE_TAGS = new Set(['p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol', 'li', 'strong', 'b', 'em', 'i', 'code', 'pre', 'blockquote', 'a'])
+const DROPPED_TAGS = new Set(['script', 'style', 'noscript', 'template', 'iframe', 'object', 'embed', 'svg', 'math', 'head', 'title'])
 
-  const isHtml = /<(?:h[1-6]|p|div|ul|ol|li|table|blockquote|a|strong|em|code)\b/i.test(raw)
-  let html = raw
+const openNoteLink = (e: React.MouseEvent<HTMLAnchorElement>, href: string) => {
+  e.preventDefault()
+  void window.bldeskApi?.openExternal?.(href)
+}
 
-  if (!isHtml) {
-    // Basic Markdown converter if notes are provided in raw Markdown
-    html = raw
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-      .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-      .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-      .replace(/\*\*\*(.*?)\*\*\*/gim, '<strong><em>$1</em></strong>')
-      .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
-      .replace(/\*(.*?)\*/gim, '<em>$1</em>')
-      .replace(/`([^`]+)`/gim, '<code>$1</code>')
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-      .replace(/^\s*[-*]\s+(.*$)/gim, '<li>$1</li>')
-      .replace(/(<li>.*<\/li>(\n|$)(\s*))+/gim, (match) => `<ul>${match}</ul>`)
+function noteNodes(nodes: NodeListOf<ChildNode> | ChildNode[], key = 'n'): React.ReactNode[] {
+  return Array.from(nodes).flatMap((node, i): React.ReactNode[] => {
+    const k = `${key}-${i}`
+    if (node.nodeType === Node.TEXT_NODE) return [node.textContent ?? '']
+    if (node.nodeType !== Node.ELEMENT_NODE) return []
+    const el = node as Element
+    const tag = el.tagName.toLowerCase()
+    if (DROPPED_TAGS.has(tag)) return []
+    const children = noteNodes(el.childNodes, k)
+    if (!NOTE_TAGS.has(tag)) return children
+    if (tag === 'br' || tag === 'hr') return [React.createElement(tag, { key: k })]
+    if (tag === 'a') {
+      const href = el.getAttribute('href') ?? ''
+      if (!/^https?:\/\//i.test(href)) return children
+      return [<a key={k} href={href} onClick={(e) => openNoteLink(e, href)}>{children}</a>]
+    }
+    return [React.createElement(tag, { key: k }, ...children)]
+  })
+}
 
-    const blocks = html.split(/\n{2,}/)
-    html = blocks
-      .map((block) => {
-        const trimmed = block.trim()
-        if (!trimmed) return ''
-        if (/^<(h[1-6]|ul|ol|li|hr|blockquote)/i.test(trimmed)) return trimmed
-        return `<p>${trimmed.replace(/\n/g, '<br/>')}</p>`
-      })
-      .join('\n')
+export function renderReleaseNotes(raw: string): React.ReactNode[] {
+  if (!raw) return []
+  if (/<(?:h[1-6]|p|div|ul|ol|li|table|blockquote|a|strong|em|code)\b/i.test(raw)) {
+    return noteNodes(new DOMParser().parseFromString(raw, 'text/html').body.childNodes)
   }
-
-  try {
-    const parser = new DOMParser()
-    const doc = parser.parseFromString(html, 'text/html')
-
-    // Strip unsafe elements
-    const dangerous = ['script', 'style', 'iframe', 'object', 'embed', 'form', 'input', 'button', 'link', 'meta']
-    dangerous.forEach((tag) => doc.querySelectorAll(tag).forEach((el) => el.remove()))
-
-    // Sanitize attributes and configure links
-    doc.querySelectorAll('*').forEach((el) => {
-      for (let i = el.attributes.length - 1; i >= 0; i--) {
-        const attr = el.attributes[i]
-        const name = attr.name.toLowerCase()
-        const val = attr.value.trim().toLowerCase()
-        if (name.startsWith('on') || val.startsWith('javascript:') || val.startsWith('data:')) {
-          el.removeAttribute(attr.name)
-        }
-      }
-
-      if (el.tagName.toLowerCase() === 'a') {
-        el.setAttribute('target', '_blank')
-        el.setAttribute('rel', 'noopener noreferrer')
-      }
-    })
-
-    return doc.body.innerHTML
-  } catch {
-    return raw
-  }
+  // Markdown (Android): the help renderer builds React elements too, and in its
+  // remote mode it turns no link into an action.
+  return renderHelpMarkdown(raw, true)
 }
 
 const ReleaseNotesView: React.FC<{ notes: string }> = ({ notes }) => {
-  const html = useMemo(() => sanitizeAndFormatReleaseNotes(notes), [notes])
-
-  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    const link = (e.target as HTMLElement).closest('a')
-    if (link && link.href) {
-      e.preventDefault()
-      window.bldeskApi?.openExternal?.(link.href)
-    }
-  }
+  const content = useMemo(() => renderReleaseNotes(notes), [notes])
 
   return (
     <div
-      onClick={handleClick}
-      dangerouslySetInnerHTML={{ __html: html }}
       className="text-[11px] leading-relaxed text-[#495057] dark:text-[#adb5bd] max-h-36 overflow-y-auto border-l-2 border-[#017cb6]/40 pl-2.5 my-1 space-y-1 select-text
         [&_h2]:text-xs [&_h2]:font-bold [&_h2]:text-[#212529] dark:[&_h2]:text-white [&_h2]:mt-2 [&_h2]:mb-0.5
         [&_h3]:text-[11px] [&_h3]:font-semibold [&_h3]:text-[#212529] dark:[&_h3]:text-gray-200 [&_h3]:mt-1.5 [&_h3]:mb-0.5
@@ -97,7 +66,9 @@ const ReleaseNotesView: React.FC<{ notes: string }> = ({ notes }) => {
         [&_code]:font-mono [&_code]:text-[10px] [&_code]:bg-black/5 dark:[&_code]:bg-white/10 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded
         [&_hr]:my-1.5 [&_hr]:border-black/10 dark:[&_hr]:border-white/10
         [&_strong]:font-semibold [&_strong]:text-[#212529] dark:[&_strong]:text-gray-100"
-    />
+    >
+      {content}
+    </div>
   )
 }
 

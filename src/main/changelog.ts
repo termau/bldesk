@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import { join } from 'path'
-import { existsSync, mkdirSync, readFileSync, writeFileSync, appendFileSync, unlinkSync } from 'fs'
+import { existsSync, readFileSync, appendFileSync, unlinkSync } from 'fs'
+import { ensureOwnerDir, restrictToOwner, writeOwnerFileAtomic } from './ownerFiles'
 
 /**
  * Append-only change log, one JSONL file per profile under
@@ -17,9 +18,17 @@ interface Entry {
   [k: string]: unknown
 }
 
+// History records what was done to which server, including broadcast command
+// text, so its folder and files are readable by their owner only.
+let dirReady = false
+const tightened = new Set<string>()
+
 function dir(): string {
   const d = join(app.getPath('userData'), 'changelog')
-  if (!existsSync(d)) mkdirSync(d, { recursive: true })
+  if (!dirReady) {
+    ensureOwnerDir(d)
+    dirReady = true
+  }
   return d
 }
 
@@ -28,7 +37,13 @@ function safeName(profileId: string): string {
 }
 
 function file(profileId: string): string {
-  return join(dir(), `${safeName(profileId)}.jsonl`)
+  const p = join(dir(), `${safeName(profileId)}.jsonl`)
+  // Files written by earlier builds keep their old mode until tightened once.
+  if (!tightened.has(p) && existsSync(p)) {
+    restrictToOwner(p)
+    tightened.add(p)
+  }
+  return p
 }
 
 function readAll(profileId: string): Entry[] {
@@ -47,13 +62,13 @@ function readAll(profileId: string): Entry[] {
 }
 
 function writeAll(profileId: string, entries: Entry[]): void {
-  writeFileSync(file(profileId), entries.map((e) => JSON.stringify(e)).join('\n') + (entries.length ? '\n' : ''), 'utf8')
+  writeOwnerFileAtomic(file(profileId), entries.map((e) => JSON.stringify(e)).join('\n') + (entries.length ? '\n' : ''))
 }
 
 export class ChangeLogStore {
   static append(entry: Entry & { profileId: string }): void {
     try {
-      appendFileSync(file(entry.profileId), JSON.stringify(entry) + '\n', 'utf8')
+      appendFileSync(file(entry.profileId), JSON.stringify(entry) + '\n', { encoding: 'utf8', mode: 0o600 })
       // Trim occasionally rather than on every write.
       if (Math.random() < 0.02) {
         const all = readAll(entry.profileId)
