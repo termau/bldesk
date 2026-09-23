@@ -1,5 +1,15 @@
 # Help verification
 
+## Honest token storage (security batch 4)
+
+Branch: `security/honest-storage`.
+
+| Text | Rendered by | Result |
+| --- | --- | --- |
+| `getting-started.md` "The local vault" paragraph | `src/main/safeStorage.ts` (`canEncrypt`, `encryptToken`, `decryptRecord`, `saveProfile`), `AuthModal.tsx`, `App.tsx` `refreshProfiles`, `api/mobile-bridge.ts` `saveStoredProfiles` | Rewritten. `canEncrypt` treats Linux `basic_text`/`unknown` as unavailable; `saveProfile` then returns `errorCode: 'encryption-unavailable'` unless `allowUnencrypted` is sent, which AuthModal only sends after the user ticks "Save this token without encryption on this device". AuthModal labels such profiles "Token not encrypted" and undecryptable ones "Token needs re-entering"; `refreshProfiles` opens the vault when the active token is ''. Android's `saveStoredProfiles` throws instead of falling back. |
+| Vault title "API Token Vault" (was "Hardware Encrypted Vault") | `AuthModal.tsx` header | The old title was untrue for the keyring-less and pre-fix fallback cases. |
+| Template capture note: "User data is copied exactly as it is on the server, including any passwords, keys or tokens in it: remove those before saving or sharing the template." | `ServerDetails.tsx` Cloud-init tab, above "Save server as template" | `templateFromServer` copies `userData` verbatim into `spec.cloudInit`; nothing strips secrets from it. |
+
 ## Server order, Archived, map zoom keys (23 September 2026, after 1.0.61-beta.10)
 
 Branch: `fix/issues-66-71`. No new runtime dependencies.

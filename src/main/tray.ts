@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Menu, MenuItemConstructorOptions, Notification, Tray, clipboard, nativeImage, NativeImage } from 'electron'
 import { join } from 'path'
-import { existsSync, readFileSync, writeFileSync } from 'fs'
+import { existsSync, readFileSync } from 'fs'
+import { writeOwnerFileAtomic } from './ownerFiles'
 import { NotificationKind, SystemNotificationOptions, TrayFleetSummary, TraySettings } from '../shared/ipc-types'
 import { DeepLinkManager } from './deeplink'
 import { formatDeepLink } from '../shared/deeplink'
@@ -53,7 +54,7 @@ function readSettings(): TraySettings {
 
 function writeSettings(s: TraySettings): void {
   try {
-    writeFileSync(settingsPath(), JSON.stringify(s, null, 2), 'utf8')
+    writeOwnerFileAtomic(settingsPath(), JSON.stringify(s, null, 2))
   } catch (err) {
     console.warn('[Tray] Failed to write settings:', err)
   }
