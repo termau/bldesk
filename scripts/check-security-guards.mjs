@@ -7,7 +7,8 @@ import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
-const read = path => readFileSync(join(ROOT, path), 'utf8')
+// CRLF normalised: a Windows checkout (core.autocrlf) must pass the same checks.
+const read = path => readFileSync(join(ROOT, path), 'utf8').replace(/\r\n/g, '\n')
 const walk = dir => readdirSync(join(ROOT, dir), { withFileTypes: true }).flatMap(e =>
   e.isDirectory() ? walk(join(dir, e.name)) : /\.(tsx?|mts)$/.test(e.name) && !e.name.endsWith('.d.ts') ? [join(dir, e.name)] : [])
 // Strip comments so prose that names an API does not count as using it.
