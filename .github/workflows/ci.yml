@@ -1,0 +1,45 @@
+name: CI
+
+# Checks every pull request and every push to main: typecheck with all guard
+# scripts, the terminal test and a production build. Runs with a read-only
+# token and no secrets, so it is safe on pull requests from forks.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, guards and build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Dependencies
+        run: npm ci --legacy-peer-deps
+
+      - name: Typecheck and guards
+        run: npm run typecheck
+
+      - name: Terminal test
+        run: npm run test:terminal
+
+      - name: Build
+        run: npm run build

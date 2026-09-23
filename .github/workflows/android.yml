@@ -1,9 +1,19 @@
 name: Build Android APK
 
+# Called by release.yml for every v* tag, so the APK is attached to the draft
+# release before it is published (published releases are immutable). Also runs
+# on its own via workflow_dispatch to build an APK without releasing.
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_call:
+    secrets:
+      ANDROID_KEYSTORE_B64:
+        required: true
+      ANDROID_KEYSTORE_PASSWORD:
+        required: true
+      ANDROID_KEY_ALIAS:
+        required: true
+      ANDROID_KEY_PASSWORD:
+        required: true
   workflow_dispatch:
 
 permissions:
@@ -105,50 +115,3 @@ jobs:
         with:
           name: BLDesk-android-apk
           path: release/BLDesk-android.apk
-
-  # The GitHub Release for a tag belongs to the desktop workflow
-  # (release.yml), which creates it with its version name and then applies the
-  # CHANGELOG title and notes. This workflow runs concurrently on the same tag
-  # and usually finishes first, so it waits for that release to appear and
-  # only attaches the APK. It never creates or edits the release itself, so it
-  # cannot produce a release with a different title or change the desktop
-  # one's name, notes, draft or prerelease state. If the desktop workflow
-  # fails and no release appears, this job fails and the APK stays available
-  # as the BLDesk-android-apk workflow artifact.
-  publish-android:
-    name: Publish APK to GitHub Release
-    needs: build-android
-    if: startsWith(github.ref, 'refs/tags/')
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    permissions:
-      contents: write
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      GH_REPO: ${{ github.repository }}
-      TAG: ${{ github.ref_name }}
-
-    steps:
-      - name: Download APK Artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: BLDesk-android-apk
-          path: release
-
-      - name: Wait for the desktop workflow's GitHub Release
-        shell: bash
-        run: |
-          # Up to 40 minutes; a desktop release run normally takes about 5.
-          for attempt in $(seq 1 120); do
-            if gh release view "$TAG" >/dev/null 2>&1; then
-              echo "Release $TAG exists."
-              exit 0
-            fi
-            echo "Release $TAG not found yet (attempt $attempt/120); waiting 20s for release.yml to create it."
-            sleep 20
-          done
-          echo "::error::GitHub Release $TAG did not appear within 40 minutes. Check the 'Build & Release Desktop' run for this tag; the APK is attached to this run as the BLDesk-android-apk artifact."
-          exit 1
-
-      - name: Upload APK to GitHub Release
-        run: gh release upload "$TAG" release/BLDesk-android.apk --clobber

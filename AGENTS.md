@@ -174,13 +174,13 @@ Auto-update relies on `electron-updater` querying GitHub Releases. Releases **mu
 
 ### What Happens Automatically in GitHub Actions
 1. `.github/workflows/release.yml` triggers on `v*` tag pushes.
-2. Validates that the git tag version strictly matches `package.json`.
-3. Runs `npm run typecheck` and `npm run build`.
-4. Executes `npx electron-builder --publish always` across Windows, macOS, and Ubuntu runners.
-5. Generates and uploads to the GitHub Release:
-   - Installers: `.exe` (NSIS), `.dmg`, `.zip`, `.AppImage`, `.deb`
+2. Each OS build validates that the tag matches `package.json`, runs `npm run typecheck` and `npm run build`, and packages with `electron-builder --publish never` on a read-only token. The Android APK is built in the same run by `android.yml` (called as a reusable workflow), signed from repository secrets.
+3. Only if every build passes, the `publish` job creates the GitHub Release as a **draft**, attaches every file, applies the CHANGELOG title and notes, and then publishes it:
+   - Installers: `.exe` (NSIS and portable), `.dmg`, `.zip`, `.AppImage`, `.deb`, and `BLDesk-android.apk`
    - Manifests & Blockmaps: `latest.yml`, `latest-mac.yml`, `latest-linux.yml`, and `*.blockmap`
-6. Deployed clients automatically detect the update, download deltas in the background, and prompt users to restart.
+4. Deployed clients automatically detect the update, download deltas in the background, and prompt users to restart.
+
+`v*` tags are protected by a ruleset: they cannot be moved or deleted. If a tagged build fails, fix it and release the next version number rather than re-tagging. Pull requests and pushes to `main` run `.github/workflows/ci.yml` (typecheck, guards, terminal test, build).
 
 ### Beta Channel Releases
 For prereleases (e.g. `1.1.0-beta.1`):
