@@ -151,15 +151,25 @@ jobs:
             !release/builder-debug.yml
 
   # --- PUBLISH (tags) ---
-  # Mirrors what `electron-builder --publish always` did per platform: create
-  # the GitHub Release for the tag if it doesn't exist (named after the
-  # version, not a draft, not a prerelease, as electron-publish's
-  # createRelease does), upload every artifact under its own file name,
-  # replacing an existing asset of the same name, then apply the CHANGELOG
-  # title and notes.
+  # Creates the GitHub Release for the tag as a draft (named after the
+  # version, not a prerelease), uploads every artifact under its own file
+  # name, applies the CHANGELOG title and notes, then publishes it.
+  # The APK is built by android.yml as part of this run, so it can be attached
+  # to the draft release before it is published.
+  android:
+    name: Android
+    if: startsWith(github.ref, 'refs/tags/')
+    uses: ./.github/workflows/android.yml
+    secrets: inherit
+
+  # Draft first, publish last. The release is created as a draft, every file
+  # (installers, blockmaps, manifests and the APK) is attached, the CHANGELOG
+  # title and notes are applied, and only then is it published. Updaters never
+  # see a draft, and with immutable releases on, a published release's files
+  # cannot be replaced afterwards.
   publish:
     name: Publish GitHub Release
-    needs: build
+    needs: [build, android]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
@@ -181,9 +191,10 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          # Every platform must hand over at least one update manifest, or
-          # its installed clients would stop seeing updates.
+          # Every desktop platform must hand over at least one update
+          # manifest, or its installed clients would stop seeing updates.
           for dir in artifacts/BLDesk-*/; do
+            [[ "$dir" == *android* ]] && continue
             manifests=("$dir"*.yml)
             if [ ${#manifests[@]} -eq 0 ]; then
               echo "::error::No update manifest in $dir"
@@ -191,19 +202,23 @@ jobs:
             fi
           done
 
-          binaries=(artifacts/BLDesk-*/*.{exe,dmg,zip,AppImage,deb,blockmap})
+          binaries=(artifacts/BLDesk-*/*.{exe,dmg,zip,AppImage,deb,blockmap,apk})
           manifests=(artifacts/BLDesk-*/*.yml)
           if [ ${#binaries[@]} -eq 0 ]; then
             echo "::error::No installers found in the build artifacts"
             exit 1
           fi
+          if [ ! -f artifacts/BLDesk-android-apk/BLDesk-android.apk ]; then
+            echo "::error::The Android APK is missing from the build artifacts"
+            exit 1
+          fi
 
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Creating GitHub release $TAG"
+            echo "Creating draft GitHub release $TAG"
             gh api "repos/$GH_REPO/releases" \
               -f tag_name="$TAG" \
               -f name="${TAG#v}" \
-              -F draft=false \
+              -F draft=true \
               -F prerelease=false >/dev/null \
               || gh release view "$TAG" >/dev/null
           fi
@@ -221,3 +236,8 @@ jobs:
             TITLE="$(cat artifacts/release-notes/release-title.txt 2>/dev/null || echo "$TAG")"
             gh release edit "$TAG" --title "$TITLE" --notes-file artifacts/release-notes/release-notes.md || true
           fi
+
+      # Last: nothing is visible to updaters, or frozen by immutability, until
+      # every file and the notes are in place.
+      - name: Publish the release
+        run: gh release edit "$TAG" --draft=false
