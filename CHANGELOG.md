@@ -5,6 +5,14 @@ All notable changes to the **BLDesk** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [1.0.62-beta.4] - 2026-09-24
+
+- **Android: install this version by hand.** 1.0.62-beta.2 and beta.3 cannot find new releases (fixed below), so download `BLDesk-android.apk` from this release and open it. It is signed with the same key as beta.2 and beta.3, so it installs over them and keeps your account; no uninstall is needed. Updates after this one arrive in the app again.
+
+### Fixed
+- **Android update check** (#93): since 1.0.62-beta.2 the in-app update check failed with "Failed to fetch", because the Content Security Policy blocked the local proxy Android's HTTP layer routes requests through.
+- **Android back button** (#93): back closed the app from any screen. It now steps back through the app: an open dialog, the command palette, the navigation drawer, a server's sub-tab, the server, then any tab back to Servers. On the Servers screen it sends the app to the background instead of closing it.
+
 ## [1.0.62-beta.3] - 2026-09-24
 
 ### Fixed
