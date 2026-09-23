@@ -128,14 +128,16 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
           </p>
         </div>
 
-        <button
-          onClick={() => setIsAdding(true)}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add SSH Key</span>
-        </button>
-        <HelpLink slug="keys" />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsAdding(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add SSH Key</span>
+          </button>
+          <HelpLink slug="keys" />
+        </div>
       </div>
 
       {/* Local Auto-Discovery Card */}

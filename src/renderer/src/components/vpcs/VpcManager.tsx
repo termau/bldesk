@@ -216,14 +216,16 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
           </p>
         </div>
 
-        <button
-          onClick={() => setIsCreating(true)}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Create VPC</span>
-        </button>
-        <HelpLink slug="vpcs" />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsCreating(true)}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Create VPC</span>
+          </button>
+          <HelpLink slug="vpcs" />
+        </div>
       </div>
 
       {/* Loading state */}

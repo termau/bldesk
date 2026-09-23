@@ -304,8 +304,10 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
       )}
 
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4">
-        {/* Library */}
-        <div className={`${card} flex flex-col min-h-0`}>
+        {/* Library. Below `lg` it stacks above the detail, so its height is
+            capped there and the list scrolls inside it; otherwise it filled a
+            phone screen before any template was reachable (#67). */}
+        <div className={`${card} flex flex-col min-h-0 max-h-64 lg:max-h-none`}>
           <div className="p-2 border-b border-[#ced4da] dark:border-[#373b3e]">
             <div className="relative">
               <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-[#6c757d]" />

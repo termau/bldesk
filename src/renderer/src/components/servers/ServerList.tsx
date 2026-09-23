@@ -28,7 +28,7 @@ import { copyDeepLink } from '../../lib/deeplinks'
 import { describeActionType } from '../../lib/actionLabels'
 import { ServerContextMenu, ContextMenuState } from './ServerContextMenu'
 import { VpcBadge } from '../vpcs/VpcBadge'
-import { describeStatus, compareByBuildingFirst } from '../../lib/serverStatus'
+import { describeStatus, compareServersForList, ARCHIVE_HINT } from '../../lib/serverStatus'
 import { useConfirm } from '../../context/ConfirmContext'
 import { updateChange } from '../../lib/changelog'
 import { powerActionSummary } from '../../lib/actionLabels'
@@ -131,7 +131,7 @@ export const ServerList: React.FC<ServerListProps> = ({
     void openServerSsh(server)
   }
 
-  const filteredServers = [...servers].sort(compareByBuildingFirst).filter((s) => {
+  const filteredServers = [...servers].sort(compareServersForList).filter((s) => {
     const matchesSearch =
       s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (s.networks?.v4 || []).some((net) => net.ip_address.includes(searchTerm)) ||
@@ -259,7 +259,7 @@ export const ServerList: React.FC<ServerListProps> = ({
             <option value="all">All Status</option>
             <option value="active">Active / Running</option>
             <option value="off">Off / Stopped</option>
-            <option value="archive">Archive</option>
+            <option value="archive" title={ARCHIVE_HINT}>Archive</option>
           </select>
         </div>
       </div>
@@ -323,7 +323,7 @@ export const ServerList: React.FC<ServerListProps> = ({
                     <td className="py-3 px-4">
                       <div className="font-bold text-sm text-[#017cb6] hover:underline flex items-center gap-1.5">
                         <span
-                          title={state.label}
+                          title={state.hint ? `${state.label}: ${state.hint}` : state.label}
                           className={`w-2 h-2 shrink-0 rounded-full ${state.dot} ${state.busy ? 'animate-pulse' : ''}`}
                         />
                         <span>{server.name}</span>
@@ -495,9 +495,9 @@ export const ServerList: React.FC<ServerListProps> = ({
                       </div>
                     </div>
                     <span
-                      title={(server as any)._power
+                      title={state.hint ?? ((server as any)._power
                         ? `Power state from ${(server as any)._power.source === 'diagnostic' ? 'a hypervisor check' : 'performance samples'}${(server as any)._apiStatus !== server.status ? ` (API says ${(server as any)._apiStatus})` : ''}`
-                        : 'From the API status field, which may not reflect power state'}
+                        : 'From the API status field, which may not reflect power state')}
                       className={`px-2 py-0.5 text-[10px] font-semibold rounded-full inline-flex items-center gap-1 ${state.pill}`}
                     >
                       {state.busy && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
