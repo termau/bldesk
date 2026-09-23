@@ -29,11 +29,14 @@ jobs:
           distribution: 'zulu'
           java-version: '21'
 
+      # setup-android takes a `packages` list only; `api-level` / `build-tools`
+      # were never inputs and were ignored. Its default list includes the
+      # long-obsolete `tools` package, which the SDK repository no longer
+      # serves, so name exactly what the build uses.
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          api-level: 36
-          build-tools: 36.0.0
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
       - name: Install Dependencies
         run: npm install --legacy-peer-deps
