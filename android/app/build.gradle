@@ -1,5 +1,28 @@
 apply plugin: 'com.android.application'
 
+/*
+ * Version from package.json, so the APK always matches the desktop build and
+ * versionCode only ever increases: major*1000000 + minor*10000 + patch*100 +
+ * prerelease number, with 99 for a stable release (so 1.0.61-beta.11 is
+ * 1006111 and 1.0.61 is 1006199). Android refuses an update whose versionCode
+ * is not higher, which blocks installing an older APK over a newer one.
+ */
+def appVersion = new groovy.json.JsonSlurper().parse(rootProject.file('../package.json')).version
+def versionParts = (appVersion =~ /^(\d+)\.(\d+)\.(\d+)(?:-[a-z]+\.(\d+))?$/)
+if (!versionParts.matches()) throw new GradleException("package.json version ${appVersion} is not major.minor.patch[-tag.n]")
+def (vMajor, vMinor, vPatch) = [1, 2, 3].collect { versionParts.group(it) as int }
+def vPre = versionParts.group(4) != null ? (versionParts.group(4) as int) : 99
+if (vMinor > 99 || vPatch > 99 || vPre > 99 || (versionParts.group(4) != null && vPre > 98)) throw new GradleException("package.json version ${appVersion} does not fit the versionCode scheme")
+def appVersionCode = vMajor * 1000000 + vMinor * 10000 + vPatch * 100 + vPre
+
+/*
+ * Release signing comes only from the environment: CI decodes the
+ * ANDROID_KEYSTORE_B64 secret to a temp file. There is no key in the
+ * repository. A release build without it fails rather than producing an APK
+ * signed with anything else. Debug builds use Android's standard debug key.
+ */
+def releaseKeystore = System.getenv('ANDROID_KEYSTORE_PATH')
+
 android {
     namespace = "com.termau.bldesk"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +30,8 @@ android {
         applicationId "com.termau.bldesk"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 60
-        versionName "1.0.60"
+        versionCode appVersionCode
+        versionName appVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
@@ -16,16 +39,15 @@ android {
     }
     signingConfigs {
         release {
-            storeFile file('bldesk.keystore')
-            storePassword 'bldeskapp'
-            keyAlias 'bldesk'
-            keyPassword 'bldeskapp'
+            if (releaseKeystore) {
+                storeFile file(releaseKeystore)
+                storePassword System.getenv('ANDROID_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('ANDROID_KEY_ALIAS')
+                keyPassword System.getenv('ANDROID_KEY_PASSWORD')
+            }
         }
     }
     buildTypes {
-        debug {
-            signingConfig signingConfigs.release
-        }
         release {
             signingConfig signingConfigs.release
             minifyEnabled false
@@ -58,4 +80,10 @@ try {
     }
 } catch(Exception e) {
     logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}
+
+gradle.taskGraph.whenReady { graph ->
+    if (!releaseKeystore && graph.allTasks.any { it.name.toLowerCase().contains('release') }) {
+        throw new GradleException('Release builds need ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS and ANDROID_KEY_PASSWORD. The signing key is not kept in the repository.')
+    }
 }

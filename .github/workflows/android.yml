@@ -55,11 +55,36 @@ jobs:
           mkdir -p android/capacitor-cordova-android-plugins
           touch android/capacitor-cordova-android-plugins/cordova.variables.gradle
 
+      # The signing key exists only as a repository secret. It is written to a
+      # temp file for this step alone and removed straight after, and the
+      # build fails if it is missing (android/app/build.gradle).
       - name: Build Android APK (Release)
+        env:
+          ANDROID_KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/bldesk-release.jks"
+          trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
+          printf '%s' "$ANDROID_KEYSTORE_B64" | base64 -d > "$ANDROID_KEYSTORE_PATH"
+          chmod 600 "$ANDROID_KEYSTORE_PATH"
           cd android
           chmod +x gradlew
           ./gradlew assembleRelease --no-daemon --stacktrace > build.log 2>&1 || (cat build.log && exit 1)
+
+      # The key used until 1.1.0 was committed to this public repository, so
+      # anyone can sign with it. Never ship an APK carrying it.
+      - name: Verify APK signature
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          CERTS=$("$ANDROID_HOME"/build-tools/36.0.0/apksigner verify --print-certs "$APK")
+          echo "$CERTS" | grep -E 'Signer #1 certificate (DN|SHA-256)'
+          SHA=$(echo "$CERTS" | grep -m1 'Signer #1 certificate SHA-256 digest' | awk '{print $NF}')
+          if [ "$SHA" = "d6a6134ab5c661cf2b963dae265b661f9516caa2b3920d637d0ef1cea9cde67a" ]; then
+            echo "::error::The APK is signed with the retired, public key."
+            exit 1
+          fi
 
       - name: Upload Gradle Build Log on Failure
         if: failure()
