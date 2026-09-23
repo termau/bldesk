@@ -29,7 +29,10 @@ const CONTENT_SECURITY_POLICY = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob:",
   "font-src 'self' data:",
-  "connect-src 'self' https://api.binarylane.com.au https://api.github.com https://uai.adamhomenet.com",
+  // No 'self': for a page loaded from file://, 'self' also matches every other
+  // file: URL, so fetch('file:///...') could read local files. The renderer
+  // never fetches its own files; scripts and styles are covered above.
+  "connect-src https://api.binarylane.com.au https://api.github.com https://uai.adamhomenet.com",
   "object-src 'none'",
   "base-uri 'none'",
   "frame-src 'none'",
@@ -57,6 +60,14 @@ export default defineConfig({
   },
   preload: {
     plugins: [externalizeDepsPlugin()],
+    // CommonJS, as index.cjs: the renderer is sandboxed, and a sandboxed
+    // preload cannot be an ES module (package.json "type": "module" would
+    // otherwise make electron-vite emit index.mjs).
+    build: {
+      rollupOptions: {
+        output: { format: 'cjs', entryFileNames: '[name].cjs' }
+      }
+    },
     resolve: {
       alias: {
         '@shared': resolve('src/shared')
