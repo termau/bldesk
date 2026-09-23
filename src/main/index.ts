@@ -1,6 +1,7 @@
-import { app, shell, BrowserWindow, ipcMain, nativeImage, NativeImage, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, NativeImage, dialog } from 'electron'
 import { existingKeyFiles } from './sshKeyFiles'
 import { join } from 'path'
+import { pathToFileURL } from 'url'
 import { existsSync, readdirSync, readFileSync } from 'fs'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { VaultManager } from './safeStorage'
@@ -14,6 +15,7 @@ import { ChangeLogStore } from './changelog'
 import { TemplateStore } from './templates'
 import { registerHelpHandlers } from './help'
 import { installWindowZoom, installZoomMenu } from './zoom'
+import { installIpcSenderGuard, installNavigationGuards, lockRescueConsoleSession, openExternalSafe, rescueConsoleUrl, RESCUE_CONSOLE_PARTITION, setAppEntry } from './security'
 import { ConsoleWindowOptions, SystemNotificationOptions, TerminalLaunchOptions, TrayFleetSummary, UpdateChannel } from '../shared/ipc-types'
 
 // Linux sandbox note: Chromium decides how to sandbox before this file runs,
@@ -194,18 +196,17 @@ function createWindow(): void {
   mainWindow.on('maximize', pushMaximized)
   mainWindow.on('unmaximize', pushMaximized)
 
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
+  // New-window and navigation rules for this window live in security.ts.
 
   // HMR for renderer base on electron-vite cli.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     console.log('[Main] Loading dev URL:', process.env['ELECTRON_RENDERER_URL'])
+    setAppEntry(process.env['ELECTRON_RENDERER_URL'])
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     const rendererPath = getRendererPath()
     console.log('[Main] Loading production file from:', rendererPath)
+    setAppEntry(pathToFileURL(rendererPath).href)
     mainWindow.loadFile(rendererPath).catch((err) => {
       console.error('[Main] Failed to loadFile:', err)
     })
@@ -251,14 +252,18 @@ function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('console:openRescue', async (_, options: ConsoleWindowOptions) => {
+    // A remote page: https only, sandboxed, no preload, and its own session so
+    // it shares no cookies or storage with the app (see security.ts).
+    const url = rescueConsoleUrl(options.url)
     const consoleWindow = new BrowserWindow({
       width: options.width || 1024,
       height: options.height || 768,
       title: `Rescue Console - ${options.serverName} (#${options.serverId})`,
       backgroundColor: '#000000',
-      autoHideMenuBar: true
+      autoHideMenuBar: true,
+      webPreferences: { partition: RESCUE_CONSOLE_PARTITION, sandbox: true, contextIsolation: true, nodeIntegration: false }
     })
-    consoleWindow.loadURL(options.url)
+    consoleWindow.loadURL(url)
     return { success: true }
   })
 
@@ -346,9 +351,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() ?? false)
 
   // External Links
-  ipcMain.handle('shell:openExternal', async (_, url: string) => {
-    await shell.openExternal(url)
-  })
+  ipcMain.handle('shell:openExternal', async (_, url: string) => openExternalSafe(url))
 
   // Deep links (bldesk://)
   ipcMain.handle('deeplink:getPending', () => DeepLinkManager.takePending())
@@ -389,6 +392,10 @@ if (!gotTheLock) {
     })
 
     installZoomMenu()
+    // Before any handler is registered: every IPC channel then checks its caller.
+    installIpcSenderGuard(() => mainWindow)
+    installNavigationGuards()
+    lockRescueConsoleSession()
     registerIpcHandlers()
     createWindow()
     createTray()

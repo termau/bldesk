@@ -14,7 +14,7 @@
     "format": "prettier --write .",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
-    "lint:guards": "node scripts/check-mutation-guards.mjs && node scripts/check-ui-guards.mjs && node scripts/check-help-guards.mjs && node scripts/check-pty-guards.mjs && node scripts/check-updater-guards.mjs",
+    "lint:guards": "node scripts/check-mutation-guards.mjs && node scripts/check-ui-guards.mjs && node scripts/check-help-guards.mjs && node scripts/check-pty-guards.mjs && node scripts/check-updater-guards.mjs && node scripts/check-security-guards.mjs",
     "test:terminal": "node scripts/test-terminal.cjs",
     "typecheck": "npm run typecheck:node && npm run typecheck:web && npm run lint:guards",
     "generate-api": "openapi-typescript ./openapi.json -o ./src/shared/api/schema.d.ts",
