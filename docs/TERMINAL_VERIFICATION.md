@@ -57,7 +57,10 @@ output.
   the required platform binary/helper is absent or non-executable.
 - `scripts/packaged-pty-runtime.cjs`: PASS under the packaged app's Electron
   executable in Node mode; the unpacked native module loaded with Electron's
-  ABI and its helper spawned `/usr/bin/ssh -V` successfully.
+  ABI and its helper spawned `/usr/bin/ssh -V` successfully. Packaged builds
+  now flip the `RunAsNode` fuse off (scripts/after-pack.cjs), so this script
+  only runs against an unfused build, such as `node_modules/electron/dist`;
+  check a packaged build by opening a pty session in the app instead.
 - Native rebuild: `electron-builder@26` ships `@electron/rebuild@4`, which
   compiles `node-pty@1.1.0` for Electron 44 (ABI 149), so the earlier
   `@electron/rebuild: 3.7.2` override that electron-builder 25 needed for
