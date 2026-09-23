@@ -5,7 +5,7 @@ All notable changes to the **BLDesk** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
-## [1.0.62-beta.1] - 2026-09-24
+## [1.0.62-beta.2] - 2026-09-24
 
 A security release. Two things need action from Android users:
 
@@ -20,7 +20,7 @@ A security release. Two things need action from Android users:
 - **Hardened packaged binary** (#83): BLDesk's executable can no longer be used to run other JavaScript.
 - **Android** (#85): new signing key kept out of the repository, HTTPS only with system certificate authorities, and no cloud backup or device transfer of app data. The in-app updater opens only BLDesk's own release downloads.
 - **Help** (#81): text that looks like a token or key is never sent to the help service.
-- **Release pipeline** (#78): builds run with read-only tokens, actions are pinned to exact versions, and only a separate final step can publish.
+- **Release pipeline** (#78, #86): builds run with read-only tokens, actions are pinned to exact versions, and only a separate final step can publish, once every build has passed.
 
 ### Changed
 - The token vault is now titled "API Token Vault".
