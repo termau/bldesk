@@ -13,6 +13,48 @@
  */
 const { chmodSync, existsSync, renameSync, writeFileSync } = require('fs')
 const { join } = require('path')
+const { execFileSync } = require('child_process')
+const { FuseVersion, FuseV1Options } = require('@electron/fuses')
+
+/*
+ * Electron fuses, flipped in the packaged binary so another program cannot
+ * use BLDesk's trusted executable as a general-purpose Node or debugger host
+ * (ELECTRON_RUN_AS_NODE, NODE_OPTIONS, --inspect), and so the app code is only
+ * ever loaded from app.asar.
+ *
+ * Left alone on purpose:
+ * - GrantFileProtocolExtraPrivileges stays on. The UI is an ES-module page
+ *   loaded from file://, which needs it; turning it off first needs the app
+ *   served from its own protocol.
+ * - EnableEmbeddedAsarIntegrityValidation stays off until the macOS and
+ *   Windows builds are signed, since a missing or stale integrity hash stops
+ *   the app starting.
+ *
+ * Flipped here rather than through electron-builder's `electronFuses` option:
+ * that runs after this hook, and on Linux the executable is by then the
+ * launcher script below, not Electron. On macOS only the final universal app
+ * is flipped (the per-arch temp builds are merged into it), and flipping
+ * breaks the ad-hoc signature, so it is reset and then verified - an
+ * unverifiable app will not launch on Apple Silicon.
+ */
+const FUSES = {
+  version: FuseVersion.V1,
+  [FuseV1Options.RunAsNode]: false,
+  [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
+  [FuseV1Options.EnableNodeCliInspectArguments]: false,
+  [FuseV1Options.OnlyLoadAppFromAsar]: true
+}
+
+async function applyFuses(context) {
+  const platform = context.electronPlatformName
+  if (platform === 'darwin' && context.appOutDir.endsWith('-temp')) return
+  await context.packager.addElectronFuses(context, { ...FUSES, resetAdHocDarwinSignature: platform === 'darwin' })
+  if (platform === 'darwin') {
+    const app = join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`)
+    execFileSync('codesign', ['--verify', '--deep', '--strict', app], { stdio: 'inherit' })
+    console.log('  • fuses flipped and ad-hoc signature verified:', app)
+  }
+}
 
 const LAUNCHER = `#!/bin/bash
 # BLDesk launcher — see scripts/after-pack.cjs for why this exists.
@@ -38,6 +80,9 @@ exports.default = async function afterPack(context) {
       writeFileSync(updateYml, 'owner: termau\nrepo: bldesk\nprovider: github\nupdaterCacheDirName: bldesk-updater\n')
     }
   }
+
+  // Before the Linux launcher swap below: fuses live in the Electron binary.
+  await applyFuses(context)
 
   if (context.electronPlatformName !== 'linux') return
   const dir = context.appOutDir
