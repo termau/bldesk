@@ -106,6 +106,15 @@ export function resolveConnection(profileId: string | undefined, server: Pick<co
     host = publicHost; origin = 'public'
     warning = 'Server name is not a valid SSH address; using the public address.'
   }
+  // A VPC-only server has no public IPv4, so Public address resolves to nothing
+  // and SSH used to fail with a bare "No host given". Say which server, why, and
+  // where to set an address that works.
+  if (!host) {
+    const privateIp = server.networks?.v4?.find((n) => n.type === 'private')?.ip_address
+    warning = mode === 'custom'
+      ? `${server.name} has no Custom SSH host set. Enter one in its Remote Access tab under Connect to.`
+      : `${server.name} has no public IPv4 address, so there is no public address to connect to. In its Remote Access tab, set Connect to → Custom… to an address you can reach${privateIp ? `, such as its private address ${privateIp} over a VPN` : ''}, or choose Server name.`
+  }
   const privateKeyPath = resolveKeyFor(profileId, server.id, localKeys)
   const key: 'associated' | 'last used' | 'ssh default' = privateKeyPath ? loadKeyAssociations(profileId)[server.id] === privateKeyPath ? 'associated' : 'last used' : 'ssh default'
   return { host, username: 'root' as const, privateKeyPath, origin: { host: origin, key }, warning }
