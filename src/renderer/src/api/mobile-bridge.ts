@@ -6,6 +6,7 @@ import { AccountProfile, IpcApi, UpdateChannel, UpdaterState } from '@shared/ipc
 import { formatSshCommand, sshUriHost, validateSshTarget } from '@shared/ssh'
 
 const PROFILES_KEY = 'bldesk_profiles_v1'
+const APK_URL = /^https:\/\/github\.com\/termau\/bldesk\/releases\/(?:download\/v[0-9][0-9A-Za-z.+-]*|latest\/download)\/[A-Za-z0-9._-]+\.apk$/
 const ACTIVE_PROFILE_KEY = 'bldesk_active_profile_id_v1'
 
 // No account client, token, profile id, server ids, History or ticket text.
@@ -370,6 +371,10 @@ export async function initMobileBridge(): Promise<void> {
       const url =
         currentMobileUpdaterState.apkUrl ||
         'https://github.com/termau/bldesk/releases/latest/download/BLDesk-android.apk'
+      // The URL comes from the GitHub API response. Only this repository's own
+      // release downloads are opened, so an altered response cannot point the
+      // installer somewhere else.
+      if (!APK_URL.test(url)) throw new Error('The update download is not a BLDesk release asset, so it was not opened.')
       window.open(url, '_system')
     },
     setUpdateChannel: async (channel: UpdateChannel) => {
