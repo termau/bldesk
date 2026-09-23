@@ -15,7 +15,7 @@ import { ChangeLogStore } from './changelog'
 import { TemplateStore } from './templates'
 import { registerHelpHandlers } from './help'
 import { installWindowZoom, installZoomMenu } from './zoom'
-import { installIpcSenderGuard, installNavigationGuards, lockRescueConsoleSession, openExternalSafe, rescueConsoleUrl, RESCUE_CONSOLE_PARTITION, setAppEntry } from './security'
+import { installApiCorsHeaders, installIpcSenderGuard, installNavigationGuards, lockRescueConsoleSession, openExternalSafe, rescueConsoleUrl, RESCUE_CONSOLE_PARTITION, setAppEntry } from './security'
 import { ConsoleWindowOptions, SystemNotificationOptions, TerminalLaunchOptions, TrayFleetSummary, UpdateChannel } from '../shared/ipc-types'
 
 // Linux sandbox note: Chromium decides how to sandbox before this file runs,
@@ -39,14 +39,8 @@ function showMainWindow(): void {
 
 function getPreloadPath(): string {
   const appPath = app.getAppPath()
-  const candidatePaths = [
-    join(appPath, 'out/preload/index.mjs'),
-    join(appPath, 'out/preload/index.js'),
-    join(appPath, 'out/preload/index.cjs'),
-    join(__dirname, '../preload/index.mjs'),
-    join(__dirname, '../preload/index.js'),
-    join(__dirname, '../preload/index.cjs')
-  ]
+  // CommonJS: a sandboxed renderer cannot load an ES-module preload.
+  const candidatePaths = [join(appPath, 'out/preload/index.cjs'), join(__dirname, '../preload/index.cjs')]
   for (const p of candidatePaths) {
     if (existsSync(p)) return p
   }
@@ -144,10 +138,13 @@ function createWindow(): void {
     autoHideMenuBar: true,
     webPreferences: {
       preload,
-      sandbox: false,
+      // The renderer runs in Chromium's sandbox with same-origin rules on. The
+      // API's missing CORS headers are supplied in security.ts, for that one
+      // origin, rather than by switching web security off for everything.
+      sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
-      webSecurity: false
+      webSecurity: true
     }
   })
 
@@ -395,6 +392,7 @@ if (!gotTheLock) {
     // Before any handler is registered: every IPC channel then checks its caller.
     installIpcSenderGuard(() => mainWindow)
     installNavigationGuards()
+    installApiCorsHeaders()
     lockRescueConsoleSession()
     registerIpcHandlers()
     createWindow()

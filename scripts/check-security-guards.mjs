@@ -35,7 +35,14 @@ if (guard < 0 || handlers < 0 || guard > handlers) failures.push('src/main/index
 if (!main.includes('installNavigationGuards(')) failures.push('src/main/index.ts: keep installNavigationGuards() wired into startup')
 if (!/partition:\s*RESCUE_CONSOLE_PARTITION/.test(main)) failures.push('src/main/index.ts: the rescue console window must use its own session (RESCUE_CONSOLE_PARTITION)')
 
-if (!/plugins:\s*\[[^\]]*contentSecurityPolicyPlugin\(\)/.test(read('electron.vite.config.ts'))) {
+if (!/sandbox:\s*true/.test(main) || !/webSecurity:\s*true/.test(main) || /sandbox:\s*false|webSecurity:\s*false/.test(main)) {
+  failures.push('src/main/index.ts: the main window keeps sandbox: true and webSecurity: true (API CORS is handled by installApiCorsHeaders in security.ts)')
+}
+if (!main.includes('installApiCorsHeaders(')) failures.push('src/main/index.ts: keep installApiCorsHeaders() wired into startup, or every API request fails with web security on')
+
+const viteConfig = read('electron.vite.config.ts')
+if (/connect-src[^"]*'self'/.test(viteConfig)) failures.push("electron.vite.config.ts: connect-src must not include 'self'; from file:// it would allow fetching local files")
+if (!/plugins:\s*\[[^\]]*contentSecurityPolicyPlugin\(\)/.test(viteConfig)) {
   failures.push('electron.vite.config.ts: keep contentSecurityPolicyPlugin() in the renderer plugins')
 }
 

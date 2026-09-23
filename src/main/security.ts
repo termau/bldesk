@@ -126,3 +126,32 @@ export function lockRescueConsoleSession(): void {
   s.setPermissionRequestHandler((_c, _p, callback) => callback(false))
   s.setPermissionCheckHandler(() => false)
 }
+
+/*
+ * CORS for the BinaryLane API, and nothing else.
+ *
+ * The renderer calls https://api.binarylane.com.au directly. Its preflight
+ * answers allow only the `Authorization` header, not the `Content-Type` every
+ * request carries, and error responses (401, 404...) carry no
+ * Access-Control-Allow-Origin at all - so with same-origin rules on, every
+ * request would fail and an expired token would look like a network error.
+ * This used to be solved with `webSecurity: false` for the whole window.
+ * Instead, the missing headers are added to that one origin's responses. The
+ * app sends no cookies to it (openapi-fetch uses the default same-origin
+ * credentials mode), so `*` is enough.
+ */
+const API_ORIGIN = 'https://api.binarylane.com.au'
+
+export function installApiCorsHeaders(): void {
+  session.defaultSession.webRequest.onHeadersReceived({ urls: [`${API_ORIGIN}/*`] }, (details, callback) => {
+    const headers: Record<string, string[]> = {}
+    for (const [name, value] of Object.entries(details.responseHeaders ?? {})) {
+      if (!name.toLowerCase().startsWith('access-control-')) headers[name] = value
+    }
+    headers['Access-Control-Allow-Origin'] = ['*']
+    headers['Access-Control-Allow-Headers'] = ['Authorization, Content-Type, Accept']
+    headers['Access-Control-Allow-Methods'] = ['GET, POST, PUT, PATCH, DELETE, OPTIONS']
+    headers['Access-Control-Expose-Headers'] = ['Link, Retry-After']
+    callback({ responseHeaders: headers })
+  })
+}
