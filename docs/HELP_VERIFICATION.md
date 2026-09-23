@@ -1,5 +1,72 @@
 # Help verification
 
+## Mobile overflow and the server header (9 September 2026, 1.0.61-beta.8)
+
+Branch: `fix/mobile-overflow`. No new runtime dependencies. Responsive fixes
+only: every change is either inside a scroll container that did not exist, or
+gated on a breakpoint so the desktop renders as it did.
+
+User-facing text this change touches, and the line that renders each:
+
+| String | Rendered by | Result |
+| --- | --- | --- |
+| `Server:` | `ServerDetails.tsx` title row | Wording unchanged; now `hidden sm:inline`, so it reads exactly as before from `sm` up and is dropped only where the row must also fit a hostname and the power pill. |
+| `All servers` | `ServerDetails.tsx`, `aria-label` and `title` on the back control | Replaces the visible word "Servers" below `md` only. The desktop sidebar keeps its own "All Servers" control, which is unchanged. |
+| `SSH` / `Launch SSH` | `ServerDetails.tsx` action cluster | The same button. `SSH` below `sm`, `Launch SSH` from `sm` up; the terminal icon carries the meaning at the narrow end. |
+| Help pages that mention the wording | grep of `docs/help/*.md` for "Server:" and "Launch SSH" | One hit: `server-remote-access.md` front matter, "Launch SSH or the out-of-band console without uploading private keys." That is the verb phrase, not a quotation of the button's label, and the button still reads `Launch SSH` at every width the desktop uses. No page mentions the `Server:` prefix. Nothing is falsified. |
+
+Deliberately **not** in this change, having been split out as discretionary
+desktop work: moving the reachability chip out of the action cluster, grouping
+the reboot and shutdown buttons, and changing the meta row's gap. This diff
+touches `ServerDetails.tsx` but not the chip's call site, so its position is
+unchanged from `main`.
+
+### Checks performed
+
+- `npm run typecheck` and `npm run build`.
+- The full `AGENTS.md` zoom matrix in real Electron, isolated `userData` and
+  synthetic fixtures, 0 cloud writes attempted and no renderer errors: **53
+  checks, all passing**, at 1024x680 and 1280x840, each at 80%, 125% and 150%.
+  Zoom is applied by `sendInputEvent` with Control, so `src/main/zoom.ts`'s
+  `before-input-event` handler is what is under test rather than a direct
+  `setZoomFactor`.
+  - CSS width equals window width over factor at every combination: 1280 / 819
+    / 683 at 1024, and 1600 / 1024 / 853 at 1280.
+  - Last navigation item (`Embedded SSH`, 15th of 15) reachable at every
+    combination, with the sidebar's own scroller confirmed to scroll.
+  - At 1024x680 / 150% the CSS width is 683, below the 768 breakpoint, so the
+    desktop sidebar is hidden by design and navigation is the mobile drawer.
+    Checked through the drawer there: 17 items, last one reachable.
+  - Both dense tables reach their last column inside their own `overflow-x:
+    auto` scroller, while the page itself never scrolls sideways. Disk images
+    813px in a 450px box at the tightest combination; SSH keys 776px in 546px.
+  - Dialog: the close control stays pinned in the header and the confirm
+    (`Add Server`) is reachable by scrolling the body, at every combination.
+- Range limits: reset returns to 100%, zoom in clamps at 150%, zoom out clamps
+  at 80%.
+
+- Physical device, Samsung SM-S948B (Galaxy S26 Ultra), Android 16 / API 36, 411 CSS px, over CDP. **The build was this branch on top of `main` and nothing else** - confirmed in the run by `typeof window.bldeskApi.probeTcp === 'undefined'` and by the reachability chip being absent from the server detail, neither of which would hold on a build that also carried the Android probe work. 17 checks, all passing:
+  - No horizontal page scroll on the servers list, firewall, SSH keys, backups, or a server detail. The network map is not listed: this diff does not touch it.
+  - Both dense tables reach their last column inside their own `overflow-x: auto` wrapper while the page itself stays put - SSH keys 718px of table in a 362px box, disk images 676px in 362px.
+  - Server detail header: the configuration summary is one line with `white-space: nowrap`, `Server:` is hidden at this width, the hostname truncates, the title row does not overflow, and the back control measures 24px.
+  - A probe of the scrollbar gutter returns 0px with `(pointer: coarse)` matching and `(pointer: fine)` not, so the platform's overlay bar is back and costs no layout width.
+
+An earlier draft of this entry took its numbers from a build combining six
+branches, which is how results reached the wrong diff elsewhere in this file.
+They are re-measured here on this branch alone.
+
+Noted while verifying, pre-existing and **not** changed here: the create-server
+dialog's submit sits inside the Modal's scrolling body rather than its `footer`
+slot, so at 1280x840 it starts 338px below the fold and is reached by scrolling.
+Confirmed identical on `origin/main` with this branch stashed, so it is not a
+regression from this work. Every other checked dialog behaviour matches the
+`Modal` contract.
+
+The harness is out of tree and is not an app dependency: a copy of
+`scripts/showcase/launcher.cjs` with an env-driven probe stub and synthetic
+`ssh_keys`, plus the check scripts. Playwright comes from
+`BLDESK_PLAYWRIGHT_MODULE`.
+
 ## Browse existing SSH key files (7 September 2026, 1.0.61-beta.8)
 
 Checked `help/keys.md`, `help/server-remote-access.md` and `help/terminal.md` against the Browse… button, Key file display and cancellation flow in `ServerDetails.tsx`; the main-process `vault:chooseSshKeyFile` / `vault:getLocalSshKeys` handlers; `existingKeyFiles` in `src/main/sshKeyFiles.ts`; and `availableSshKeys` in `lib/sshKeyAssociations.ts`. Selected files use stat metadata only, with no private-content read, copy or passphrase persistence. Existing automatic discovery still reads public `.pub` files only. Local filenames are not BinaryLane account public keys. All SSH consumers include persisted selected paths when checking availability, so an external file does not become missing merely because discovery cannot find it.

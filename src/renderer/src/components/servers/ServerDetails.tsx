@@ -393,21 +393,36 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
           {/* Header Info */}
           <div>
             <div className="flex items-center gap-2">
+              {/* An arrow below `md`, where the word cost a line of its own
+                  above the title. The desktop sidebar has its own Back control. */}
               <button
                 onClick={onBack}
-                className="md:hidden text-xs text-[#017cb6] hover:underline flex items-center gap-1"
+                aria-label="All servers"
+                title="All servers"
+                className="md:hidden shrink-0 -ml-1 p-1 text-[#017cb6] hover:text-[#016594]"
               >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Servers</span>
+                <ArrowLeft className="w-4 h-4" />
               </button>
-              <h1 className="text-lg font-bold text-[#212529] dark:text-white flex items-center gap-2">
-                <img src={distroIcon} alt="" className="w-5 h-5 object-contain" />
-                <span><span className="text-[#6c757d] dark:text-slate-400 font-normal">Server:</span> {server.name}</span>
+              <h1 className="text-base sm:text-lg font-bold text-[#212529] dark:text-white flex items-center gap-2 min-w-0">
+                <img src={distroIcon} alt="" className="w-5 h-5 object-contain shrink-0" />
+                {/*
+                  * The label is hidden on a phone only. Those seven characters
+                  * come out of a hostname that has to share the row with the
+                  * power pill; from `sm` up there is room and it reads exactly
+                  * as it did. The name truncates with the full value on hover
+                  * rather than pushing the pill off the row.
+                  */}
+                <span className="hidden shrink-0 font-normal text-[#6c757d] dark:text-slate-400 sm:inline">
+                  Server:
+                </span>
+                <span className="min-w-0 truncate" title={server.name}>
+                  {server.name}
+                </span>
                 <span
                   title={(server as any)._power
                         ? `Power state from ${(server as any)._power.source === 'diagnostic' ? 'a hypervisor check' : 'performance samples'}${(server as any)._apiStatus !== server.status ? ` (API says ${(server as any)._apiStatus})` : ''}`
                         : 'From the API status field, which may not reflect power state'}
-                  className={`px-2 py-0.5 text-[10px] font-semibold rounded-full inline-flex items-center gap-1 ${state.pill}`}
+                  className={`shrink-0 px-2 py-0.5 text-[10px] font-semibold rounded-full inline-flex items-center gap-1 ${state.pill}`}
                 >
                   {state.busy && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
                   {state.label}
@@ -431,7 +446,10 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
               <span>•</span>
               <span>{server.region?.name || server.region?.slug?.toUpperCase()}</span>
               <span>•</span>
-              <span>{server.vcpus} vCPUs / {ramGB} GB RAM / {server.disk} GB Disk</span>
+              {/* One phrase: split across a line break it read as two facts. */}
+              <span className="whitespace-nowrap">
+                {server.vcpus} vCPUs / {ramGB} GB RAM / {server.disk} GB Disk
+              </span>
               <span>•</span>
               <span>{server.image?.full_name || server.image?.name}</span>
             </div>
@@ -449,7 +467,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                 value={selectedKeyPath}
                 aria-label="Server SSH key"
                 onChange={(e) => chooseKey(e.target.value)}
-                className="bg-transparent text-xs text-[#212529] dark:text-slate-200 focus:outline-none cursor-pointer max-w-[120px]"
+                className="bg-transparent text-xs text-[#212529] dark:text-slate-200 focus:outline-none cursor-pointer max-w-[84px] sm:max-w-[120px]"
               >
                 <option value="">Use default</option>
                 {selectedKeyPath && !localKeys.some((k) => k.privateKeyPath === selectedKeyPath) && <option value={selectedKeyPath}>Key missing</option>}
@@ -468,7 +486,8 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition shadow-sm"
             >
               <Terminal className="w-3.5 h-3.5" />
-              <span>Launch SSH</span>
+              <span className="sm:hidden">SSH</span>
+              <span className="hidden sm:inline">Launch SSH</span>
             </button>
 
             <button
