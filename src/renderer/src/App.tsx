@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { installAndroidBackButton } from './lib/androidBack'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TitleBar } from './components/layout/TitleBar'
 import { Sidebar, ActiveTab, ServerSubTab } from './components/layout/Sidebar'
@@ -113,6 +114,32 @@ function MainDashboard() {
   const [isPaletteOpen, setIsPaletteOpen] = useState(false)
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false)
   const [profiles, setProfiles] = useState<Omit<AccountProfile, 'token'>[]>([])
+
+  /*
+   * Android back: undo the most recent step in the app's own navigation, in
+   * this order - an open dialog (closed the way Escape closes it), the command
+   * palette, the navigation drawer, the vault (once an account exists), a
+   * server's sub-tab, the server itself, then any tab back to Servers. Only
+   * with nothing left does the app go to the background. See androidBack.ts.
+   */
+  const backRef = React.useRef<() => boolean>(() => false)
+  backRef.current = () => {
+    if (isPaletteOpen) { setIsPaletteOpen(false); return true }
+    if (document.querySelector('[role="dialog"]')) {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      return true
+    }
+    if (isMobileDrawerOpen) { setIsMobileDrawerOpen(false); return true }
+    if (isAuthOpen && profiles.length > 0) { setIsAuthOpen(false); return true }
+    if (selectedServer) {
+      if (activeServerSubTab !== 'overview') setActiveServerSubTab('overview')
+      else setSelectedServer(null)
+      return true
+    }
+    if (activeTab !== 'servers') { setActiveTab('servers'); return true }
+    return false
+  }
+  useEffect(() => installAndroidBackButton(() => backRef.current()), [])
   const [activeProfile, setActiveProfile] = useState<AccountProfile | null>(null)
   const [authErrorBanner, setAuthErrorBanner] = useState<string | null>(null)
   const [isInitializing, setIsInitializing] = useState(true)
