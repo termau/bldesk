@@ -5,6 +5,26 @@ All notable changes to the **BLDesk** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [1.0.61-beta.10] - 2026-09-23
+
+### Added
+- **Every Address in Network & Addressing** (#64, #74):
+  - The server overview now lists the primary public IPv4, every secondary public IPv4, every private address and IPv6, each with its own copy control. Previously only the first public address was shown, so a second IPv4 bought through Change Plan appeared nowhere else in the app.
+  - One row per kind of address, with the label pluralised when a server holds more than one.
+
+### Fixed
+- **In-App Help Crash on Windows** (#65, #72):
+  - Every `?` control crashed with "Cannot read properties of undefined (reading 'id')" in Windows builds, whose help pages are bundled with CRLF line endings.
+  - The help outline and renderer now split lines through one helper and assign heading anchors as they go, so they can no longer disagree.
+- **VPC-Only Servers Labelled as Public** (#74):
+  - A server with no public address showed its private VPC address under "Public IPv4". It now appears under "Private IPv4", and the public row is shown only when a public address exists.
+- **Screens Unusable on a Phone** (#63):
+  - The disk images and SSH keys tables scroll sideways instead of clipping their actions, firewall rule cards wrap, and the Network tab's VPC row stacks on narrow screens.
+  - The server header truncates long hostnames, drops the "Server:" label below the small breakpoint, and shortens "Launch SSH" to "SSH" on a phone. The desktop layout is unchanged.
+  - Custom thin scrollbars now apply to mouse and trackpad devices only, giving touch screens their native overlay scrollbar back.
+- **Credential Vault Permissions** (#73):
+  - The token vault file is now written readable by its owner only (`0600`), and an existing vault is tightened on the next launch.
+
 ## [1.0.61-beta.9] - 2026-09-09
 
 ### Added
