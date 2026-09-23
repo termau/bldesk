@@ -5,6 +5,28 @@ All notable changes to the **BLDesk** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [1.0.62-beta.1] - 2026-09-24
+
+A security release. Two things need action from Android users:
+
+- **Android: uninstall, then install this APK.** The app is now signed with a new key, and Android will not update an app signed with a different one. Your token is removed with the old app; add it again after installing.
+- **Android: rotate your API token if you ever ran a build older than 1.0.44.** Those builds kept the token in plain storage that Android could back up to the cloud. Create a new token in mPanel and delete the old one.
+
+### Security
+- **Main window locked to the app** (#77): it can no longer be navigated to another page, every privileged request checks that it comes from the app's own page, external links open only for http, https and mailto, web permission requests are denied, and a Content Security Policy limits scripts to the app and network requests to the services it uses. Release notes are rendered without raw HTML. The rescue console runs sandboxed in its own session and accepts only https.
+- **Sandbox and web security on** (#80): the renderer now runs in Chromium's sandbox with same-origin rules enforced; the page can no longer read local files.
+- **Token storage** (#79): on a system with no working keyring, BLDesk refuses to save a token unencrypted unless you explicitly choose to, and labels such profiles. A token that can no longer be decrypted asks to be re-entered. Android stores tokens only in Keystore-backed secure storage. Switching accounts clears the previous account's cached data, and History and settings files are private to your user.
+- **Electron 44 and electron-builder 26** (#82): moves off an unsupported Electron release, and fixes an AppImage library-loading issue.
+- **Hardened packaged binary** (#83): BLDesk's executable can no longer be used to run other JavaScript.
+- **Android** (#85): new signing key kept out of the repository, HTTPS only with system certificate authorities, and no cloud backup or device transfer of app data. The in-app updater opens only BLDesk's own release downloads.
+- **Help** (#81): text that looks like a token or key is never sent to the help service.
+- **Release pipeline** (#78): builds run with read-only tokens, actions are pinned to exact versions, and only a separate final step can publish.
+
+### Changed
+- The token vault is now titled "API Token Vault".
+- "Save server as template" warns that captured user data may contain secrets.
+- In-app help: quoted dialog text is checked against the app at build time (#76).
+
 ## [1.0.61-beta.11] - 2026-09-23
 
 ### Changed
