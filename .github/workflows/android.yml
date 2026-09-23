@@ -40,8 +40,10 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
+      # --legacy-peer-deps as in release.yml: package-lock.json is generated
+      # that way, and plain `npm ci` resolves peers differently and rejects it.
       - name: Install Dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
 
       - name: Generate Typed API Schema
         run: npm run generate-api
