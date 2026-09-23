@@ -38,7 +38,9 @@ export function TerminalView({ servers, profileId, active, onActivate }: {
   const [reopen, setReopen] = useState(recallOpenSessions)
   const connection = { username: username || 'root', port: Number(port), privateKeyPath: key || undefined }
   async function connect(options: OpenSshOptions) {
-    setError(''); setFailedOptions(undefined); setConnecting(true)
+    setError(''); setFailedOptions(undefined)
+    if (!options.host?.trim()) { setError(options.warning || 'There is no SSH address to connect to.'); return }
+    setConnecting(true)
     try {
       const server = servers.find((s) => s.id === options.serverId || primaryIpv4(s) === options.host)
       const account = options.profileId ?? profileId

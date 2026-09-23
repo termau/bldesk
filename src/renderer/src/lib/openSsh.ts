@@ -2,7 +2,8 @@ import type { TerminalLaunchOptions, TerminalLaunchResult } from '@shared/ipc-ty
 import { launchSsh } from './launchSsh'
 
 export const OPEN_SSH_EVENT = 'bldesk:open-ssh'
-export type OpenSshOptions = TerminalLaunchOptions & { serverId?: number; serverName?: string; profileId?: string }
+/** `warning` explains an unusable resolved address (see resolveConnection). */
+export type OpenSshOptions = TerminalLaunchOptions & { serverId?: number; serverName?: string; profileId?: string; warning?: string }
 const PREFERENCE = 'bldesk_prefer_native_terminal'
 const pending: OpenSshOptions[] = []
 export function prefersNativeTerminal(): boolean {

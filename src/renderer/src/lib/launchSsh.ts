@@ -18,7 +18,7 @@ export async function launchSsh(options: TerminalLaunchOptions): Promise<Termina
   if (inFlight) return { success: false, error: 'A terminal launch is already in progress.' }
   inFlight = true
   try {
-    const invalid = validateSshTarget(options)
+    const invalid = !options.host?.trim() && (options as { warning?: string }).warning || validateSshTarget(options)
     const fallbackCommand = invalid ? undefined : formatSshCommand(options, shellFlavour())
 
     let result: TerminalLaunchResult
