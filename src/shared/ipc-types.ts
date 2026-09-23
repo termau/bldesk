@@ -1,12 +1,30 @@
 import type { HelpApi } from './help-api'
 
+/**
+ * How a saved token is held. `unencrypted` only after the user chose it on a
+ * system with no working keyring; `unreadable` when it can no longer be
+ * decrypted (keyring locked or replaced) and has to be entered again.
+ */
+export type TokenStatus = 'encrypted' | 'unencrypted' | 'unreadable'
+
 export interface AccountProfile {
   id: string
   name: string
-  token: string // stored encrypted in safeStorage
+  /** Encrypted at rest with the OS keyring (desktop) or Android Keystore. '' when unreadable. */
+  token: string
+  tokenStatus?: TokenStatus
   email?: string
   isDefault?: boolean
   createdAt: string
+}
+
+export interface SaveProfileResult {
+  success: boolean
+  profileId: string
+  updated?: boolean
+  error?: string
+  /** The keyring could not encrypt; the user may retry with `allowUnencrypted`. */
+  errorCode?: 'encryption-unavailable'
 }
 
 export interface StoredVaultData {
@@ -192,7 +210,7 @@ export interface IpcApi extends HelpApi {
   // Vault & Auth
   getProfiles: () => Promise<Omit<AccountProfile, 'token'>[]>
   getActiveProfile: () => Promise<AccountProfile | null>
-  saveProfile: (profile: { name: string; token: string; isDefault?: boolean; profileId?: string }) => Promise<{ success: boolean; profileId: string; updated?: boolean; error?: string }>
+  saveProfile: (profile: { name: string; token: string; isDefault?: boolean; profileId?: string; allowUnencrypted?: boolean }) => Promise<SaveProfileResult>
   deleteProfile: (profileId: string) => Promise<{ success: boolean }>
   setActiveProfile: (profileId: string) => Promise<{ success: boolean }>
   

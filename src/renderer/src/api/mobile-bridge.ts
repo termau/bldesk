@@ -2,7 +2,7 @@ import { Preferences } from '@capacitor/preferences'
 import { Capacitor, CapacitorHttp } from '@capacitor/core'
 import { HELP_API_ORIGIN, HELP_TIMEOUT_MS, helpQuestion, helpFeedbackBody, readHelpAnswer, readHelpSuggestions } from '@shared/help-api'
 import { SecureStorage } from '@aparajita/capacitor-secure-storage'
-import { AccountProfile, IpcApi, UpdateChannel, UpdaterState } from '@shared/ipc-types'
+import { AccountProfile, IpcApi, SaveProfileResult, UpdateChannel, UpdaterState } from '@shared/ipc-types'
 import { formatSshCommand, sshUriHost, validateSshTarget } from '@shared/ssh'
 
 const PROFILES_KEY = 'bldesk_profiles_v1'
@@ -230,21 +230,22 @@ export async function initMobileBridge(): Promise<void> {
     return []
   }
 
+  /*
+   * Tokens are written to the Keystore-backed secure store or not at all. A
+   * failed secure write used to fall back to Preferences (plain
+   * SharedPreferences) and then localStorage without telling anyone; now it
+   * throws, and the vault screen shows the error.
+   */
   const saveStoredProfiles = async (profiles: AccountProfile[]): Promise<void> => {
     try {
       await SecureStorage.set(PROFILES_KEY, JSON.stringify(profiles), false, false)
-      // Make sure no cleartext copy survives a save.
-      await Preferences.remove({ key: PROFILES_KEY }).catch(() => undefined)
-      localStorage.removeItem(PROFILES_KEY)
-      return
     } catch (err) {
-      console.warn('[MobileBridge] secure store write failed, falling back:', err)
+      console.warn('[MobileBridge] secure store write failed:', err)
+      throw new Error('The token could not be saved to secure storage on this device, so it was not saved.')
     }
-    try {
-      await Preferences.set({ key: PROFILES_KEY, value: JSON.stringify(profiles) })
-    } catch {
-      localStorage.setItem(PROFILES_KEY, JSON.stringify(profiles))
-    }
+    // Make sure no cleartext copy from an older build survives a save.
+    await Preferences.remove({ key: PROFILES_KEY }).catch(() => undefined)
+    localStorage.removeItem(PROFILES_KEY)
   }
 
   const mobileApi: IpcApi = {
@@ -273,9 +274,36 @@ export async function initMobileBridge(): Promise<void> {
       }
       return profiles[0]
     },
-    saveProfile: async (input: { name: string; token: string; isDefault?: boolean }): Promise<{ success: boolean; profileId: string; error?: string }> => {
+    /*
+     * Same rules as the desktop vault (VaultManager.saveProfile): a profileId
+     * replaces that profile's token in place, and adding under a name that is
+     * already taken is refused. This used to ignore profileId, so "Replace API
+     * token" added a second profile and left the old token stored.
+     */
+    saveProfile: async (input): Promise<SaveProfileResult> => {
       try {
         const profiles = await getStoredProfiles()
+        const existing = input.profileId ? profiles.find((p) => p.id === input.profileId) : undefined
+        const wanted = input.name.trim().toLowerCase()
+        const byName = profiles.find((p) => (p.name || '').trim().toLowerCase() === wanted)
+        if (!existing && byName) {
+          return {
+            success: false,
+            profileId: '',
+            error: `A profile named "${byName.name}" already exists. Use the update action on that profile to replace its API key.`
+          }
+        }
+        if (existing) {
+          const next = profiles.map((p) =>
+            p.id === existing.id
+              ? { ...p, token: input.token, name: input.name.trim() || p.name, isDefault: input.isDefault ? true : p.isDefault }
+              : { ...p, isDefault: input.isDefault ? false : p.isDefault }
+          )
+          await saveStoredProfiles(next)
+          if (input.isDefault) await mobileApi.setActiveProfile(existing.id)
+          return { success: true, profileId: existing.id, updated: true }
+        }
+
         const newProfile: AccountProfile = {
           id: `profile_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
           name: input.name,
@@ -284,23 +312,33 @@ export async function initMobileBridge(): Promise<void> {
           createdAt: new Date().toISOString()
         }
 
-        const updated = [...profiles, newProfile]
+        const updated = [...profiles.map((p) => (input.isDefault ? { ...p, isDefault: false } : p)), newProfile]
         await saveStoredProfiles(updated)
 
         if (input.isDefault || profiles.length === 0) {
           await mobileApi.setActiveProfile(newProfile.id)
         }
 
-        return { success: true, profileId: newProfile.id }
+        return { success: true, profileId: newProfile.id, updated: false }
       } catch (err: any) {
         return { success: false, profileId: '', error: err.message }
       }
     },
     deleteProfile: async (profileId: string): Promise<{ success: boolean }> => {
-      const profiles = await getStoredProfiles()
-      const updated = profiles.filter((p) => p.id !== profileId)
-      await saveStoredProfiles(updated)
-      return { success: true }
+      try {
+        const profiles = await getStoredProfiles()
+        const updated = profiles.filter((p) => p.id !== profileId)
+        await saveStoredProfiles(updated)
+        const active = await mobileApi.getActiveProfile()
+        if (!active || active.id === profileId) {
+          if (updated[0]) await mobileApi.setActiveProfile(updated[0].id)
+          else await Preferences.remove({ key: ACTIVE_PROFILE_KEY }).catch(() => undefined)
+        }
+        return { success: true }
+      } catch (err) {
+        console.warn('[MobileBridge] delete failed:', err)
+        return { success: false }
+      }
     },
     setActiveProfile: async (profileId: string): Promise<{ success: boolean }> => {
       try {
