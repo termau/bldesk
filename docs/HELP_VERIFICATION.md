@@ -1,5 +1,25 @@
 # Help verification
 
+## Network & Addressing lists every address (9 September 2026, 1.0.61-beta.8)
+
+Branch: `feat/show-all-public-ipv4`. No new runtime dependencies.
+
+| String | Rendered by | Result |
+| --- | --- | --- |
+| `Secondary IPv4` / `Secondary IPv4s` | `ServerDetails.tsx`, Network & Addressing, one row holding every `type: 'public'` address after the first | New, and pluralised on count. One row per **kind** of address, with every address of that kind stacked in the value column: a row each repeated the label, which read as several different fields that happened to share a name. Matches the language `ChangePlanPanel.tsx` already uses, where `publicIps[0]` is "primary - stays with the server" and the rest are the releasable secondaries. |
+| `Private IPv4` / `Private IPv4s` | `ServerDetails.tsx`, same pane, every `type: 'private'` address | New, pluralised the same way - a VPC server can hold more than one. Every private address is listed. |
+| `Public IPv4` | `ServerDetails.tsx`, same pane, the first `type: 'public'` address | Now rendered only when the server has a public address. It used to show `primaryV4`, which falls back to the first address of any kind, so a VPC-only server listed its private address as `Public IPv4`. Checked on a real VPC-only account server: before, its `10.241.x` VPC address was labelled `Public IPv4`; after, there is no public row and the address is under `Private IPv4`. |
+| `server-overview.md` - "Network & Addressing below lists every address the server holds..." | the pane itself | New sentence, added because the pane was previously undocumented. Checked against the rows above: primary, secondaries, private, and IPv6 which is rendered only when `server.networks.v6[0]` exists. |
+| `server-overview.md` - "The header shows its name, ID, primary IPv4, region..." | `ServerDetails.tsx` title row and meta row | Unchanged and still true. The header still shows only the primary; this change adds rows to the pane below it, not to the header. |
+| `server-remote-access.md` - "Public address uses the server's primary public IPv4." | `lib/sshKeyAssociations.ts` | Unchanged and still true. This diff touches only the addressing pane's rows: it adds no SSH route, changes no probe target, and does not alter `useReachability`, which still takes `primaryV4`. |
+
+### Checks performed
+
+- `npm run typecheck` and `npm run build`.
+- On a physical Samsung SM-S948B at 411 CSS px, against a real account server holding a primary, a secondary and a private address. **The build was this branch on top of `main` and nothing else**, confirmed in the run by `typeof window.bldeskApi.probeTcp === 'undefined'`. 9 checks, all passing: one row per kind of address with no duplicated label; the label agreeing with its count; every listed address carrying its own copy control; no row overflowing its container; and the page not scrolling sideways. Before this change that server displayed one address of the three, while Change Plan on the same server listed both public addresses by name in order to offer one for release.
+- An earlier draft of the bullet above was measured on a build combining six branches. It is re-measured here on this branch alone, which is the same correction applied to the mobile-overflow entry.
+- Plural and singular both exercised in real Electron against fixture servers, since no account server has more than one secondary: a server with three public and two private addresses renders exactly one `Secondary IPv4s` row holding both secondaries and one `Private IPv4s` row holding both private addresses, each stacked address keeping its own copy control; a server with one of each keeps the singular labels. The primary row is unchanged, and IPv6 keeps its own truncation because a v6 address is long enough to widen the row on a phone.
+
 ## Mobile overflow and the server header (9 September 2026, 1.0.61-beta.8)
 
 Branch: `fix/mobile-overflow`. No new runtime dependencies. Responsive fixes

@@ -55,6 +55,20 @@ import { loadKeyAssociations, keyAssociationSource, setKeyAssociation, available
 
 type ServerResponse = components['schemas']['Server']
 
+/** One address and its copy control, shared by every row in Network & Addressing. */
+const AddressValue: React.FC<{ ip: string; copied: boolean; onCopy: (v: string) => void }> = ({
+  ip,
+  copied,
+  onCopy
+}) => (
+  <div className="flex items-center gap-2">
+    <span className="font-mono text-[#212529] dark:text-white font-medium">{ip}</span>
+    <button onClick={() => onCopy(ip)} aria-label={`Copy ${ip}`} className="text-[#6c757d] hover:text-[#017cb6]">
+      {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
+    </button>
+  </div>
+)
+
 interface ServerDetailsProps {
   profileId?: string
   server: ServerResponse
@@ -233,6 +247,25 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
     server.networks?.v4?.find((v) => v.type === 'public')?.ip_address ||
     server.networks?.v4?.[0]?.ip_address ||
     '127.0.0.1'
+
+  /*
+   * Every address the server has, not only the first one.
+   *
+   * The pane is called Network & Addressing and was showing one of them: a
+   * server with a second public IPv4 - which Change Plan will happily sell you,
+   * and lists by name when you go to release one - had no screen anywhere in
+   * BLDesk that admitted it existed. `publicV4[0]` is the primary that stays
+   * with the server; the rest are the secondaries Change Plan can release.
+   */
+  const publicV4 = (server.networks?.v4 ?? [])
+    .filter((n) => n.type === 'public')
+    .map((n) => n.ip_address)
+    .filter((ip): ip is string => !!ip)
+  const secondaryV4 = publicV4.slice(1)
+  const privateV4 = (server.networks?.v4 ?? [])
+    .filter((n) => n.type === 'private')
+    .map((n) => n.ip_address)
+    .filter((ip): ip is string => !!ip)
 
   const primaryV6 = server.networks?.v6?.[0]?.ip_address
   const isRunning = server.status === 'active'
@@ -680,29 +713,64 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                   Network & Addressing
                 </div>
                 <div className="divide-y divide-[#ced4da]/60 dark:divide-[#373b3e] text-xs">
-                  <div className="flex items-center justify-between py-2.5 px-4">
-                    <span className="w-32 text-[#6c757d] dark:text-slate-400">Public IPv4</span>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[#212529] dark:text-white font-medium">{primaryV4}</span>
-                      <button
-                        onClick={() => handleCopy(primaryV4)}
-                        className="text-[#6c757d] hover:text-[#017cb6]"
-                      >
-                        {copiedText === primaryV4 ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  {primaryV6 && (
+                  {/*
+                    * From `publicV4`, not `primaryV4`: that falls back to the
+                    * first address of any kind, so a VPC-only server showed its
+                    * private address here, labelled public. Such a server has
+                    * no public row, and its address appears under Private.
+                    */}
+                  {publicV4.length > 0 && (
                     <div className="flex items-center justify-between py-2.5 px-4">
-                      <span className="w-32 text-[#6c757d] dark:text-slate-400">Public IPv6</span>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-[#212529] dark:text-white truncate max-w-[200px]">
+                      <span className="w-32 text-[#6c757d] dark:text-slate-400">Public IPv4</span>
+                      <AddressValue ip={publicV4[0]} copied={copiedText === publicV4[0]} onCopy={handleCopy} />
+                    </div>
+                  )}
+
+                  {/*
+                    * One row per kind of address, with every address of that
+                    * kind stacked in the value column. A row each would repeat
+                    * the label, reading as several different fields that happen
+                    * to share a name.
+                    */}
+                  {secondaryV4.length > 0 && (
+                    <div className="flex items-start justify-between gap-3 py-2.5 px-4">
+                      <span className="w-32 shrink-0 text-[#6c757d] dark:text-slate-400">
+                        {secondaryV4.length > 1 ? 'Secondary IPv4s' : 'Secondary IPv4'}
+                      </span>
+                      <div className="flex min-w-0 flex-col items-end gap-1.5">
+                        {secondaryV4.map((ip) => (
+                          <AddressValue key={ip} ip={ip} copied={copiedText === ip} onCopy={handleCopy} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {privateV4.length > 0 && (
+                    <div className="flex items-start justify-between gap-3 py-2.5 px-4">
+                      <span className="w-32 shrink-0 text-[#6c757d] dark:text-slate-400">
+                        {privateV4.length > 1 ? 'Private IPv4s' : 'Private IPv4'}
+                      </span>
+                      <div className="flex min-w-0 flex-col items-end gap-1.5">
+                        {privateV4.map((ip) => (
+                          <AddressValue key={ip} ip={ip} copied={copiedText === ip} onCopy={handleCopy} />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* IPv6 keeps its own truncation: a v6 address is long enough
+                      to push the row wide on a phone. */}
+                  {primaryV6 && (
+                    <div className="flex items-center justify-between gap-3 py-2.5 px-4">
+                      <span className="w-32 shrink-0 text-[#6c757d] dark:text-slate-400">Public IPv6</span>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="font-mono text-xs text-[#212529] dark:text-white truncate" title={primaryV6}>
                           {primaryV6}
                         </span>
                         <button
                           onClick={() => handleCopy(primaryV6)}
-                          className="text-[#6c757d] hover:text-[#017cb6]"
+                          aria-label={`Copy ${primaryV6}`}
+                          className="shrink-0 text-[#6c757d] hover:text-[#017cb6]"
                         >
                           {copiedText === primaryV6 ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
