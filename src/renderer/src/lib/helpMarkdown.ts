@@ -5,16 +5,33 @@ import { openHelp, LOCAL_DEEP_LINK_EVENT } from './helpNavigation'
 
 const h = React.createElement
 export const helpHeadingId = (text: string): string => text.toLowerCase().replace(/[`*]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+const HEADING = /^(#{1,3})\s+(.+)$/
+
+// Help pages reach the bundle with whatever line endings the build checkout
+// had, which is CRLF on Windows. `.` and `$` stop at `\r`, so every parse of
+// a body splits here and nowhere else.
+const helpLines = (body: string): string[] => body.split(/\r?\n/)
+
+// Anchor ids for one body, in order: a repeated heading gets `-2`, `-3`.
+// The outline and the renderer each walk the body with their own allocator,
+// so an id is decided where the heading is, never matched up by position.
+function headingIdAllocator(): (text: string) => string {
+  const seen = new Map<string, number>()
+  return text => {
+    const base = helpHeadingId(text), count = seen.get(base) ?? 0
+    seen.set(base, count + 1)
+    return count ? `${base}-${count + 1}` : base
+  }
+}
+
 export function helpHeadings(body: string): Array<{ id: string; text: string; level: number }> {
   let fenced = false
-  const seen = new Map<string, number>()
-  return body.split('\n').flatMap(line => {
+  const nextId = headingIdAllocator()
+  return helpLines(body).flatMap(line => {
     if (/^```/.test(line)) { fenced = !fenced; return [] }
-    const m = !fenced && /^(#{1,3})\s+(.+)$/.exec(line)
+    const m = !fenced && HEADING.exec(line)
     if (!m) return []
-    const base = helpHeadingId(m[2]), count = seen.get(base) ?? 0
-    seen.set(base, count + 1)
-    return [{ id: count ? `${base}-${count + 1}` : base, text: m[2], level: m[1].length }]
+    return [{ id: nextId(m[2]), text: m[2], level: m[1].length }]
   })
 }
 
@@ -60,10 +77,10 @@ function inline(text: string, remote: boolean, depth = 0): ReactNode[] {
 // Deliberately small Markdown subset. React escapes all text, including raw
 // HTML. Service answers cannot contain actionable local/deep links.
 export function renderHelpMarkdown(body: string, remote = false): ReactNode[] {
-  const lines = body.replace(/\r\n/g, '\n').split('\n')
-  const headings = helpHeadings(body)
+  const lines = helpLines(body)
+  const nextId = headingIdAllocator()
   const nodes: ReactNode[] = []
-  let i = 0, heading = 0
+  let i = 0
   const list = (line: string) => /^\s*(?:([-*])\s+|(\d+)\.\s+)(.+)$/.exec(line)
   while (i < lines.length) {
     const line = lines[i]
@@ -75,10 +92,9 @@ export function renderHelpMarkdown(body: string, remote = false): ReactNode[] {
       nodes.push(h('pre', { key: i, className: 'overflow-x-auto rounded-lg border border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529] p-3 text-xs' }, h('code', null, code.join('\n'))))
       continue
     }
-    const title = /^(#{1,3})\s+(.+)$/.exec(line)
+    const title = HEADING.exec(line)
     if (title) {
-      const info = headings[heading++]
-      nodes.push(h(`h${title[1].length}`, { key: i++, id: info.id, className: 'font-semibold text-[#212529] dark:text-[#f8f9fa] scroll-mt-4 ' + (title[1].length === 1 ? 'text-2xl' : title[1].length === 2 ? 'text-lg pt-3' : 'text-base pt-2') }, inline(title[2], remote)))
+      nodes.push(h(`h${title[1].length}`, { key: i++, id: nextId(title[2]), className: 'font-semibold text-[#212529] dark:text-[#f8f9fa] scroll-mt-4 ' + (title[1].length === 1 ? 'text-2xl' : title[1].length === 2 ? 'text-lg pt-3' : 'text-base pt-2') }, inline(title[2], remote)))
       continue
     }
     const first = list(line)
@@ -93,7 +109,7 @@ export function renderHelpMarkdown(body: string, remote = false): ReactNode[] {
       continue
     }
     const paragraph: string[] = []
-    while (i < lines.length && lines[i].trim() && !/^(#{1,3})\s+.+$|^```/.test(lines[i]) && !list(lines[i])) paragraph.push(lines[i++])
+    while (i < lines.length && lines[i].trim() && !HEADING.test(lines[i]) && !/^```/.test(lines[i]) && !list(lines[i])) paragraph.push(lines[i++])
     nodes.push(h('p', { key: i, className: 'whitespace-pre-line break-words leading-relaxed' }, inline(paragraph.join('\n'), remote)))
   }
   return nodes
