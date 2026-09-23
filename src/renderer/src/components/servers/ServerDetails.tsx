@@ -265,7 +265,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
   const privateV4 = (server.networks?.v4 ?? [])
     .filter((n) => n.type === 'private')
     .map((n) => n.ip_address)
-    .filter((ip): ip is string => !!ip && ip !== primaryV4)
+    .filter((ip): ip is string => !!ip)
 
   const primaryV6 = server.networks?.v6?.[0]?.ip_address
   const isRunning = server.status === 'active'
@@ -713,10 +713,18 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                   Network & Addressing
                 </div>
                 <div className="divide-y divide-[#ced4da]/60 dark:divide-[#373b3e] text-xs">
-                  <div className="flex items-center justify-between py-2.5 px-4">
-                    <span className="w-32 text-[#6c757d] dark:text-slate-400">Public IPv4</span>
-                    <AddressValue ip={primaryV4} copied={copiedText === primaryV4} onCopy={handleCopy} />
-                  </div>
+                  {/*
+                    * From `publicV4`, not `primaryV4`: that falls back to the
+                    * first address of any kind, so a VPC-only server showed its
+                    * private address here, labelled public. Such a server has
+                    * no public row, and its address appears under Private.
+                    */}
+                  {publicV4.length > 0 && (
+                    <div className="flex items-center justify-between py-2.5 px-4">
+                      <span className="w-32 text-[#6c757d] dark:text-slate-400">Public IPv4</span>
+                      <AddressValue ip={publicV4[0]} copied={copiedText === publicV4[0]} onCopy={handleCopy} />
+                    </div>
+                  )}
 
                   {/*
                     * One row per kind of address, with every address of that
