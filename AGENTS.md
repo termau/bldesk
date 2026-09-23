@@ -131,7 +131,7 @@ script **with a reason** — not by working around the check.
 
 ## User-facing text must be true
 
-Anything a user reads inside the app — help pages, worked examples, tooltips, confirm summaries, README — is checked against the code before it ships, sentence by sentence. The test for each sentence is: point at the line of TSX that renders it. Quoted dialog text is copied from the `confirmAction({ title, summary, notes })` call, never written from memory. Where BinaryLane's API or mPanel can do something BLDesk does not expose, say so and point at mPanel; do not describe a control BLDesk lacks. Guards prove that a page exists and links resolve; they cannot prove a page is true, so a PR that adds or changes user-facing text records which component each page was checked against (see `docs/HELP_VERIFICATION.md`).
+Anything a user reads inside the app — help pages, worked examples, tooltips, confirm summaries, README — is checked against the code before it ships, sentence by sentence. The test for each sentence is: point at the line of TSX that renders it. Quoted dialog text is copied from the `confirmAction({ title, summary, notes })` call, never written from memory. Where BinaryLane's API or mPanel can do something BLDesk does not expose, say so and point at mPanel; do not describe a control BLDesk lacks. Guards prove that a page exists, its links resolve, and every “curly-quoted” string in it is a whole string the app shows, with placeholders standing in for example values; so quote app text in curly quotes, and only app text. They cannot prove the prose around a quote is true, so a PR that adds or changes user-facing text records which component each page was checked against (see `docs/HELP_VERIFICATION.md`).
 
 ---
 
