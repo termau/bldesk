@@ -149,8 +149,8 @@ function createWindow(): void {
   })
 
   // Log renderer console messages to terminal
-  mainWindow.webContents.on('console-message', (_, level, message, line, sourceId) => {
-    console.log(`[Renderer] [${level}] ${message} (${sourceId}:${line})`)
+  mainWindow.webContents.on('console-message', ({ level, message, lineNumber, sourceId }) => {
+    console.log(`[Renderer] [${level}] ${message} (${sourceId}:${lineNumber})`)
   })
 
   mainWindow.once('ready-to-show', () => {

@@ -21,7 +21,7 @@ A PR that reworks the app's architecture to deliver a feature is a different pro
 
 ## 🏗️ Tech Stack & Structure
 
-- **Desktop Framework**: Electron 33 + Vite (`electron-vite`)
+- **Desktop Framework**: Electron 44 + Vite (`electron-vite`), packaged with electron-builder 26 (Node 22 in CI)
 - **Frontend**: React 18, TypeScript, Tailwind CSS, Lucide Icons
 - **State & Networking**: TanStack Query v5 with custom anti-spam and request deduplication client
 - **Auto-Update**: `electron-updater` + GitHub Releases (`latest.yml`, `latest-mac.yml`, `latest-linux.yml`)
