@@ -15,6 +15,7 @@ Branch: `fix/issues-66-71`. No new runtime dependencies.
 
 - `npm run typecheck` and `npm run build`.
 - Dev build with isolated `userData` against the live account, read-only views only. Server list is A-Z. The Archive option carries the tooltip. On VPCs, DNS & Domains, SSH Keys, Load Balancers and History the gap between the action button and the `?` is 8px on one row, at 1400px and 411px (#70; VPCs measured 324px before). Templates at 411px: the library is capped at 256px with the detail below it on the first screen; at 1400px it is the 300px sidebar as before (#67).
+- Header layout at the `AGENTS.md` sizes, emulated as their CSS widths (1280, 819 and 683 for 1024x680 at 80%, 125% and 150%; 1600, 1024 and 853 for 1280x840) plus 411px, on the five pages above and Templates: `?` within 12px of its button, on the same row, inside every clipping ancestor, and no horizontal page scroll. 42 checks, all passing. This emulates the zoomed layout; it does not drive `zoom.ts`'s key handler. The first run found the Templates header's `?` 5px past the edge at 411px, because its button row could not wrap; it now wraps.
 - Not exercised live: the cancel 404 path (#68), which would cost a server. The change is one condition: an error whose response status is 404 no longer throws, so History records the cancel as completed.
 
 ## Network & Addressing lists every address (9 September 2026, 1.0.61-beta.8)

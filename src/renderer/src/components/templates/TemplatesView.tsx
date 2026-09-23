@@ -271,7 +271,9 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
           <h2 className="text-lg font-bold text-[#212529] dark:text-white flex items-center gap-2"><LayoutTemplate className="w-5 h-5 text-[#017cb6]" />Templates</h2>
           <p className="text-xs text-[#6c757d] dark:text-slate-400">A template is a whole server: plan, image, network, firewall rules, tags and cloud-init with variables. Build one, fill in the blanks, get the same box every time.</p>
         </div>
-        <div className="flex items-center gap-2">
+        {/* Wraps: with the reveal button present the row is wider than a phone
+            and the help `?` was clipped past the edge (#67). */}
+        <div className="flex flex-wrap items-center gap-2">
           <input ref={fileRef} type="file" accept=".yaml,.yml,.json,.txt" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); e.currentTarget.value = '' }} />
           <button className={btn} onClick={() => fileRef.current?.click()}><Upload className="w-3.5 h-3.5" />Import file</button>
           <button className={btn} onClick={() => setImportOpen(true)}><ClipboardPaste className="w-3.5 h-3.5" />Paste</button>
