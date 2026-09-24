@@ -1,6 +1,6 @@
 # Help verification
 
-## VPC list paging (24 September 2026, after 1.0.62-beta.4)
+## List paging: VPCs, SSH keys, DNS records, load balancers (24 September 2026, after 1.0.62-beta.4)
 
 Branch: `fix/vpc-list-paging`. No new runtime dependencies.
 
@@ -12,7 +12,9 @@ Branch: `fix/vpc-list-paging`. No new runtime dependencies.
 
 - `npm run typecheck`, `npm run test:terminal` and `npm run build`.
 - Dev build against a live account with 51 VPCs (50 disposable, since deleted). Before: the VPCs page showed 20, the API's default page. After: 51, as 1–20, 21–40 and 41–51, with Previous disabled on page 1 and Next on page 3. With one VPC, no pager renders.
+- The same fix for SSH keys, DNS records, load balancers and current data usage, all of which also read only the first 20. SSH keys, with 25 disposable keys added (since deleted): the page read "Account SSH Keys (20)" before and "Account SSH Keys (28)" after. DNS records on a live zone with 25 records: 20 rows and "20 records" before, 25 and "25 records" after. The Load Balancers page renders as before.
 - Not exercised live: more than 200 VPCs, which would take `fetchAllPages` past its first 200-item request. That path is the one `useImages` already uses.
+- Not exercised live: more than 20 load balancers, which cost money, or more than 20 servers for data usage. Both go through the same `fetchAllPages` call as the lists above.
 
 ## Honest token storage (security batch 4)
 
