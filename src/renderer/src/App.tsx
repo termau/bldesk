@@ -230,7 +230,7 @@ function MainDashboard() {
   // Queries with local cache rehydration
   const { data: apiServers = [], isLoading: isLoadingServers, isFetchedAfterMount } = useServers(client, activeProfile?.id)
 
-  // The API's `status` does not track power (vps/vps #161). Every view below
+  // The API's `status` does not track power. Every view below
   // gets servers whose `status` reflects the inferred power state instead, with
   // the API's own value kept on `_apiStatus`. See lib/powerState.ts.
   const { observations: powerObservations, confirmPowerState } = usePowerState(client, apiServers, activeProfile?.id)

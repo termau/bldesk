@@ -413,7 +413,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
 
   return (
     <div className="h-full flex flex-col bg-[#f8f9fa] dark:bg-[#212529] text-[#212529] dark:text-[#f8f9fa] overflow-y-auto select-text pb-bottom-nav">
-      {/* 1. Authentic PanelSite ServerHeader */}
+      {/* 1. Server header, laid out like mPanel's */}
       <div className="p-4 bg-white dark:bg-[#2b3035] border-b border-[#ced4da] dark:border-[#373b3e] shadow-sm sticky top-0 z-20">
         {/*
           * Top-aligned, not centred: the reachability message under the action

@@ -134,7 +134,7 @@ function createWindow(): void {
     ...(process.platform === 'darwin'
       ? { frame: true, titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 14, y: 14 } }
       : { frame: false }),
-    backgroundColor: '#212529', // PanelSite dark
+    backgroundColor: '#212529', // mPanel dark
     autoHideMenuBar: true,
     webPreferences: {
       preload,
