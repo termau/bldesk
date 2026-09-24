@@ -1,5 +1,19 @@
 # Help verification
 
+## VPC list paging (24 September 2026, after 1.0.62-beta.4)
+
+Branch: `fix/vpc-list-paging`. No new runtime dependencies.
+
+| String | Rendered by | Result |
+| --- | --- | --- |
+| Pager range "1–20 of 51" and "1 / 3" | `VpcManager.tsx`, below the VPC cards | New. Rendered only when the account has more than `VPCS_PER_PAGE` (20) VPCs, matching the DNS list's pager. No help page describes the VPC list's length, so no help text changes. |
+
+### Checks performed
+
+- `npm run typecheck`, `npm run test:terminal` and `npm run build`.
+- Dev build against a live account with 51 VPCs (50 disposable, since deleted). Before: the VPCs page showed 20, the API's default page. After: 51, as 1–20, 21–40 and 41–51, with Previous disabled on page 1 and Next on page 3. With one VPC, no pager renders.
+- Not exercised live: more than 200 VPCs, which would take `fetchAllPages` past its first 200-item request. That path is the one `useImages` already uses.
+
 ## Honest token storage (security batch 4)
 
 Branch: `security/honest-storage`.
