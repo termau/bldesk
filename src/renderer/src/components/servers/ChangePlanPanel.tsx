@@ -590,14 +590,6 @@ export const ChangePlanPanel: React.FC<{
     'w-full px-2 py-1.5 text-xs rounded border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#212529] text-[#212529] dark:text-white'
   const labelClass = 'block text-[11px] font-semibold text-[#495057] dark:text-slate-300 mb-1'
 
-  /*
-   * The server's own size is read from the server object, not looked up in the
-   * plans list. A retired plan - GS1 runs `a-3040`, which /v2/sizes no longer
-   * returns - would otherwise leave the panel with nothing marked current and no
-   * indication of what the server is on today, which is the one thing you need
-   * before choosing what to move to.
-   */
-  const currentInList = plans.some((p) => p.slug === server.size_slug)
   const windowsish = /windows/i.test(effectiveImage?.distribution || server.image?.distribution || '')
 
   /*
@@ -622,21 +614,6 @@ export const ChangePlanPanel: React.FC<{
 
   return (
     <div className="space-y-4">
-      <div className="text-xs text-[#495057] dark:text-slate-300 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded p-2.5">
-        <span className="font-semibold">Current plan:</span>{' '}
-        <span className="font-mono">{server.size_slug}</span>
-        {' - '}
-        {(server.memory ?? 0) / 1024} GB memory, {server.disk} GB storage, {server.vcpus}{' '}
-        {server.size?.vcpu_units || 'VCPU'}
-        {server.vcpus === 1 ? '' : 's'}
-        {typeof server.size?.price_monthly === 'number' && ` - $${server.size.price_monthly.toFixed(2)}/mo base`}
-        {!currentInList && (
-          <span className="block mt-1 text-[11px] text-amber-700 dark:text-amber-400">
-            This plan is no longer offered, so it is not listed below. Moving off it cannot be undone.
-          </span>
-        )}
-      </div>
-
       {/*
         * "Continue using <OS>" sits at the top, as the web panel has it: the
         * answer changes which plans are eligible, what the image surcharge is
