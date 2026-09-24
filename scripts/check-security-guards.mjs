@@ -51,12 +51,40 @@ if (!/plugins:\s*\[[^\]]*contentSecurityPolicyPlugin\(\)/.test(viteConfig)) {
   failures.push('electron.vite.config.ts: keep contentSecurityPolicyPlugin() in the renderer plugins')
 }
 
+// The public API reference is the contract (AGENTS.md, "Public API only").
+// Code must not build on BinaryLane API features kept only for existing
+// customers, or on fields and endpoints the reference does not document.
+// `allow` lists uses that predate this check; they are to be fixed, not added
+// to, and the check fails once a listed file no longer needs its exception.
+const API_RULES = [
+  { pattern: /change_offsite_backup_location|change_manage_offsite_backup_copies/, why: 'custom offsite backup locations are kept only for existing customers; do not offer them' },
+  { pattern: /nested-virt/, why: 'nested virtualisation is kept only for existing customers; offer only what available_advanced_features returns' },
+  { pattern: /\/failover_ips/, why: 'IP failover management is not in the public API reference (showing a server\'s failover_ips is fine)' },
+  { pattern: /ip_failover_enabled|offsite_backup_location_enabled|primary_disk_used_megabytes|x-csrf-token/i, why: 'not in the public API reference' },
+  { pattern: /\berror_message\b/, why: 'documented only on Image, not on actions', allow: ['src/renderer/src/api/queries.ts'] },
+  { pattern: /\bdownload_url\b/, why: 'not an Invoice field; the reference has invoice_download_url', allow: ['src/renderer/src/components/billing/BillingOverview.tsx'] },
+  { pattern: /\b(entry_port|target_port|target_protocol)\b/, why: 'ForwardingRule documents only entry_protocol', allow: ['src/renderer/src/components/loadbalancers/LoadBalancerManager.tsx'] }
+]
+const sources = ['src/renderer/src', 'src/main', 'src/shared'].flatMap(walk).map((path) => ({ rel: relative(ROOT, path).replace(/\\/g, '/'), source: code(read(path)) }))
+for (const { pattern, why, allow = [] } of API_RULES) {
+  for (const { rel, source } of sources) {
+    if (pattern.test(source) && !allow.includes(rel)) failures.push(`${rel}: ${why} (AGENTS.md, "Public API only")`)
+  }
+  for (const rel of allow) {
+    const entry = sources.find((s) => s.rel === rel)
+    if (!entry || !pattern.test(entry.source)) failures.push(`scripts/check-security-guards.mjs: ${rel} no longer matches ${pattern}; remove it from that rule's allow list`)
+  }
+}
+
 // Internal BinaryLane references (see AGENTS.md, "Public API only"). The
 // patterns are base64-encoded so this public file does not itself name them.
 const INTERNAL_MARKERS = [
   'dnBzXC92cHM=', 'XGJ2cHMgI1xkKw==', 'cHJvZHVjdFwvd2Vic2l0ZQ==', 'UGFuZWxTaXRl', 'SG9zdERhZW1vbg==',
   'V2ViQXBpXC9TZXJ2aWNlcw==', 'W0EtWmEtel0rQXBpU2VydmljZVwuY3M=', 'aW1wbGVtZW50YXRpb24gc291cmNl', 'c291cmNlIGNoZWNrb3V0',
-  'U2l6ZUhlbHBlcg==', 'Q29uZmlnU3RvcmVcLg==', 'W0EtWmEtel1BcGlTZXJ2aWNl', 'bnVtYmVyT2ZCYWNrdXBz', 'OWZjNDllZA==', 'cGFuZWwucyAob3duICk/c291cmNl', 'V2ViQVBJ', 'QmFja3VwSGVscGVy'
+  'U2l6ZUhlbHBlcg==', 'Q29uZmlnU3RvcmVcLg==', 'W0EtWmEtel1BcGlTZXJ2aWNl', 'bnVtYmVyT2ZCYWNrdXBz', 'OWZjNDllZA==', 'cGFuZWwucyAob3duICk/c291cmNl', 'V2ViQVBJ', 'QmFja3VwSGVscGVy',
+  'SGlkZUZyb21BUElEb2Nz', 'UmVxdWlyZXNGZWF0dXJl', 'QnJhbmRGZWF0dXJl', 'V2Vic2l0ZU9ubHk=',
+  'Q3VzdG9tZXJEZXByZWNhdGVkRmVhdHVyZXM=', 'U2l0ZVNlcnZpY2Vz', 'c2l0ZS1zZXJ2aWNlcw==', 'T3BlbkFwaUNsaWVudFwudHM=',
+  'QXBpTW9kZWxcLnRz', 'Q2xpZW50QXBw', 'WC1QYW5lbC1BdXRo', 'TU0tQ29ubmVjdGluZy1JUA==', 'dnBzIG1vbm9yZXBv'
 ].map((b64) => new RegExp(Buffer.from(b64, 'base64').toString('utf8'), 'i'))
 const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0').filter(Boolean)
   .filter((f) => !/(^|\/)(package-lock\.json|openapi\.json|schema\.d\.ts)$/.test(f) && !/\.(png|jpe?g|gif|ico|icns|webp|woff2?|ttf|jar|keystore|jks|apk|zip)$/i.test(f))

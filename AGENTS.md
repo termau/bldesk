@@ -21,6 +21,14 @@ A PR that reworks the app's architecture to deliver a feature is a different pro
 
 BLDesk uses the BinaryLane API as its public reference documents it (https://api.binarylane.com.au, vendored here as `openapi.json`). Some endpoints and fields exist for BinaryLane's own website rather than for customers: if a call, parameter or behaviour is not in the public reference, don't build on it. Ask a maintainer, who will check with BinaryLane first.
 
+- **Documented means in the reference, not in a response.** Some responses carry fields the reference doesn't list. Don't read them, however useful they look, and don't send request parameters it doesn't list. The same goes for behaviour that isn't documented: result ordering, validation rules, error message text.
+- **Some documented features are kept only for existing customers.** BLDesk doesn't offer them, and customers who have them manage them in mPanel. Today these are custom offsite backup locations (`change_offsite_backup_location` with a bucket, and `change_manage_offsite_backup_copies`), nested virtualisation (`nested-virt`) and IP failover management. Showing a server's `failover_ips` is fine.
+- **Advanced features:** offer only what `GET /v2/servers/{server_id}/available_advanced_features` returns. `change_advanced_features` replaces the whole list, so start from the server's `enabled_advanced_features` and keep what isn't shown (see `mergeHiddenFeatures`).
+- **Retired sizes and software:** a size with `available: false`, or software with `enabled: false`, can stay on a server that has it. Show it as that server's current size or software, and never offer it for a new server, a resize or a new licence.
+- **API token only.** Never reproduce mPanel's own sign-in: its session cookies, CSRF token or its headers.
+
+`scripts/check-security-guards.mjs` enforces what can be checked mechanically. A few uses predate these rules and are listed in its `allow` lists until they're fixed; don't add to them.
+
 Internal BinaryLane material is never the basis for a feature and is never cited in this repository, which is public: no internal source code, file paths, project or system names, issue-tracker numbers or internal URLs, in code, comments, docs, commit messages, pull requests, issues or release notes. Explain behaviour from the public API reference or from what mPanel shows customers. `scripts/check-security-guards.mjs` fails the build on known internal markers.
 
 ---
