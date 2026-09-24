@@ -246,9 +246,9 @@ export function configuredCost(i: ConfiguredCostInput): ConfiguredCost {
      * weekly, else monthly - and not by `Math.max`.
      *
      * The API documents it as "only the highest value of the daily, weekly and
-     * monthly is applied", and this originally implemented that literally. The
-     * web panel does not: `SizeHelper.getOffsiteBackupsCost` picks the first
-     * enabled frequency in that fixed order. The two agree only while
+     * monthly is applied", and this originally implemented that literally.
+     * mPanel instead charges the first enabled frequency in that fixed order.
+     * The two agree only while
      * daily >= weekly >= monthly, which is how the rates are published today,
      * so they cannot be told apart from the live API - every offered size
      * publishes 0.0 for all three. Matching the panel is what matters: a
@@ -263,8 +263,8 @@ export function configuredCost(i: ConfiguredCostInput): ConfiguredCost {
     /*
      * The per-GB storage term multiplies the *raw* retention total, including
      * what the plan bundles - deliberately unlike the on-site term above, which
-     * subtracts inclusions. Confirmed in the panel: `numberOfBackups` sums the
-     * selected counts with no subtraction.
+     * subtracts inclusions. This matches mPanel, which charges for the selected
+     * counts with no subtraction.
      */
     offsite = selectedBackups * i.diskGb * (o.offsite_backups_cost_per_gigabyte || 0) + frequencyRate * i.diskGb
   }
@@ -293,14 +293,11 @@ export function configuredCost(i: ConfiguredCostInput): ConfiguredCost {
  * `resize` resets any resource option the payload omits to the target plan's
  * default, so this has to be sent explicitly to be meaningful at all.
  *
- * The rule is the web panel's, not a clamp. `ServerSizeConfigStore.selectSize`
- * clears the previous value (`selectedExtras.transfer = undefined`) whenever a
- * different base size is chosen, and `SizeHelper.applySizeDefaultsToOptions`
- * then resolves `transfer: selectedOptions.transfer ?? size.transfer` - so
- * changing plan hands the customer the *target plan's* included transfer, while
- * keeping the same plan keeps whatever they had. The server agrees:
- * `GuestPlanApiService.GetGuestExtras` resets additional transfer to zero on a
- * plan change and accepts the target plan's base.
+ * The rule is mPanel's, not a clamp: changing to a different base plan hands
+ * the customer the *target plan's* included transfer, while keeping the same
+ * plan keeps whatever they had. The API behaves the same way, resetting
+ * additional transfer to zero on a plan change and accepting the target plan's
+ * base.
  *
  * An earlier version clamped the existing value into the target's range
  * instead. That happens to give the same answer today - no offered size has

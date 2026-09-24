@@ -55,7 +55,8 @@ if (!/plugins:\s*\[[^\]]*contentSecurityPolicyPlugin\(\)/.test(viteConfig)) {
 // patterns are base64-encoded so this public file does not itself name them.
 const INTERNAL_MARKERS = [
   'dnBzXC92cHM=', 'XGJ2cHMgI1xkKw==', 'cHJvZHVjdFwvd2Vic2l0ZQ==', 'UGFuZWxTaXRl', 'SG9zdERhZW1vbg==',
-  'V2ViQXBpXC9TZXJ2aWNlcw==', 'W0EtWmEtel0rQXBpU2VydmljZVwuY3M=', 'aW1wbGVtZW50YXRpb24gc291cmNl', 'c291cmNlIGNoZWNrb3V0'
+  'V2ViQXBpXC9TZXJ2aWNlcw==', 'W0EtWmEtel0rQXBpU2VydmljZVwuY3M=', 'aW1wbGVtZW50YXRpb24gc291cmNl', 'c291cmNlIGNoZWNrb3V0',
+  'U2l6ZUhlbHBlcg==', 'Q29uZmlnU3RvcmVcLg==', 'W0EtWmEtel1BcGlTZXJ2aWNl', 'bnVtYmVyT2ZCYWNrdXBz', 'OWZjNDllZA==', 'cGFuZWwucyAob3duICk/c291cmNl', 'V2ViQVBJ'
 ].map((b64) => new RegExp(Buffer.from(b64, 'base64').toString('utf8'), 'i'))
 const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0').filter(Boolean)
   .filter((f) => !/(^|\/)(package-lock\.json|openapi\.json|schema\.d\.ts)$/.test(f) && !/\.(png|jpe?g|gif|ico|icns|webp|woff2?|ttf|jar|keystore|jks|apk|zip)$/i.test(f))
