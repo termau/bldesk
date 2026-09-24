@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ArrowRightLeft, Info } from 'lucide-react'
+import { BlockedMark, CurrentMark, PlanBlockNotes } from './PlanBlocks'
 import { components } from '@shared/api/schema'
 import { BinaryLaneClient } from '../../api/client'
 import {
@@ -18,13 +19,17 @@ import {
 } from '../../lib/backupSlots'
 import {
   planUnavailableReason,
-  isCapacityBlock,
+  belowImageMinimum,
+  type PlanBlock,
+  type SizeLike,
   planMonthlyPrice,
   configuredCost,
   transferForResize,
   retentionOptionLabel,
   memoryChoices,
   diskChoices,
+  diskFloor,
+  defaultDisk,
   billingTotal,
   compareVersionNames
 } from '../../lib/serverPricing'
@@ -61,6 +66,10 @@ type PreBackup = 'off' | 'free' | 'specified'
 /** A stable empty list, so "no data yet" does not invalidate every memo each render. */
 const EMPTY: any[] = []
 
+/** Shown on the page and in the confirmation whenever storage changes. */
+const STORAGE_CHANGE_NOTE =
+  "If the disk can't be resized, for example because the data doesn't fit in the new size or the disk has been changed inside the server, the change fails after the server has shut down, and the server restarts with its storage unchanged."
+
 /**
  * Change the server's plan - the `resize` action.
  *
@@ -89,7 +98,16 @@ export const ChangePlanPanel: React.FC<{
     confirm?: { severity?: 'normal' | 'destructive' | 'irreversible'; notes?: string[]; typeToConfirm?: string }
   ) => void
 }> = ({ client, server, busy, onApply }) => {
-  const sizesQuery = useSizes(client)
+  const [keepImage, setKeepImage] = useState(true)
+  const [newImageSlug, setNewImageSlug] = useState<string>('')
+  /*
+   * Plans are fetched for this server (the sizes it can be resized to) and for
+   * the image it will run afterwards, because stock is per operating system:
+   * without the image, a Windows server in Brisbane was offered 6 and 8 vCPU
+   * plans the web panel shows as out of stock there.
+   */
+  const targetImage = keepImage ? (server.image?.slug ?? server.image?.id ?? null) : newImageSlug || null
+  const sizesQuery = useSizes(client, { serverId: server.id, image: targetImage })
   /*
    * The reinstall picker asks the API for distributions rather than filtering
    * `useImages`, because `type` is only ever custom/snapshot/backup - a
@@ -113,6 +131,14 @@ export const ChangePlanPanel: React.FC<{
   const currentImage = (server.image ?? undefined) as any
 
   const allSizes = sizesQuery.data ?? EMPTY
+  /*
+   * The resize list includes the server's own plan even when it is retired
+   * (`available: false`). It is listed as the web panel lists it: ticked but
+   * greyed while it is still the selection, and crossed out once another plan
+   * is picked, because a retired plan cannot be chosen again.
+   */
+  const isRetiredCurrent = (s: { slug: string; available?: boolean }): boolean =>
+    s.slug === server.size_slug && s.available === false
   const typeSlugs = useMemo(
     () => Array.from(new Set(allSizes.map((s) => s.size_type?.slug).filter(Boolean))) as string[],
     [allSizes]
@@ -120,7 +146,7 @@ export const ChangePlanPanel: React.FC<{
   const [planType, setPlanType] = useState<string>(server.size?.size_type?.slug || 'vps')
 
   const plans = useMemo(
-    () => allSizes.filter((s) => (s.size_type?.slug || 'vps') === planType),
+    () => allSizes.filter((s) => (s.size_type?.slug || 'vps') === planType && !isRetiredCurrent(s)),
     [allSizes, planType]
   )
 
@@ -147,8 +173,6 @@ export const ChangePlanPanel: React.FC<{
   const [weeklyBackups, setWeeklyBackups] = useState<number>((current.weekly_backups as number) ?? 0)
   const [monthlyBackups, setMonthlyBackups] = useState<number>((current.monthly_backups as number) ?? 0)
   const [offsiteBackups, setOffsiteBackups] = useState<boolean>(!!current.offsite_backups)
-  const [keepImage, setKeepImage] = useState(true)
-  const [newImageSlug, setNewImageSlug] = useState<string>('')
   const [preBackup, setPreBackup] = useState<PreBackup>('off')
   const [replaceBackupId, setReplaceBackupId] = useState<number | null>(null)
   const [preBackupSlot, setPreBackupSlot] = useState<BackupSlot>('temporary')
@@ -341,23 +365,56 @@ export const ChangePlanPanel: React.FC<{
     }
   }, [existingBackups, replaceBackupId])
 
+  /*
+   * What memory and storage start at for a plan: the server's own figures on its
+   * current plan, the plan's defaults on any other. The resize sends each only
+   * when the customer moves it off this, because the reference says to leave
+   * them null to keep the current value on the same plan, or to take the new
+   * plan's default on a different one.
+   */
+  const startingFigures = (p: SizeLike): { memory: number; disk: number } =>
+    p.slug === server.size_slug
+      ? { memory: server.memory ?? p.memory, disk: server.disk ?? defaultDisk(p) }
+      : { memory: p.memory, disk: defaultDisk(p) }
+
   const pick = (slug: string): void => {
     const p = plans.find((x) => x.slug === slug)
     if (!p) return
     setSizeSlug(slug)
-    setMemory(p.memory)
-    setDisk(p.disk)
+    const start = startingFigures(p)
+    setMemory(start.memory)
+    setDisk(start.disk)
   }
+
+  const isCurrentPlan = (p: { slug: string }): boolean => p.slug === server.size_slug
+
+  // Reinstalling onto an image with a larger minimum raises the storage floor.
+  useEffect(() => {
+    if (!selected) return
+    const floor = diskFloor(selected, effectiveImage)
+    if (disk < floor) setDisk(floor)
+  }, [selected?.slug, effectiveImage?.slug, disk])
+
+  // Plans too small for the target image are not listed, as in the web panel.
+  // A retired current plan is not in `plans`; the table adds it back as its own
+  // row, in price order.
+  const shownPlans = useMemo(() => {
+    const listed = plans.filter((p) => p.slug === server.size_slug || !belowImageMinimum(p, effectiveImage))
+    const retired = allSizes.find((s) => isRetiredCurrent(s) && (s.size_type?.slug || 'vps') === planType)
+    if (!retired) return listed
+    const at = listed.findIndex((p) => p.price_monthly > retired.price_monthly)
+    return at < 0 ? [...listed, retired] : [...listed.slice(0, at), retired, ...listed.slice(at)]
+  }, [plans, allSizes, planType, server.size_slug, effectiveImage?.slug])
 
   const blocks = useMemo(() => {
     const seen = new Map<string, { kind: string; message: string }>()
-    for (const p of plans) {
+    for (const p of shownPlans) {
+      if (isRetiredCurrent(p)) continue
       const b = planUnavailableReason(p, region, effectiveImage)
       if (b) seen.set(b.message, b)
     }
     return [...seen.values()]
-  }, [plans, region, effectiveImage?.slug])
-  const capacityOnly = blocks.length > 0 && blocks.every((b) => isCapacityBlock(b as never))
+  }, [shownPlans, region, effectiveImage?.slug])
 
   /** Distribution images, newest first within each OS, for the reinstall picker. */
   const imageChoices = useMemo(() => {
@@ -530,7 +587,14 @@ export const ChangePlanPanel: React.FC<{
   const monthly = newCost?.total ?? 0
   const { total, gst } = billingTotal(monthly)
   const delta = total - billingTotal(oldCost?.total ?? 0).total
-  const isShrink = !!selected && (memory < (server.memory ?? 0) || disk < (server.disk ?? 0))
+  const reinstalling = !keepImage && !!newImageSlug
+  /*
+   * A storage change can fail after the server has shut down, and on a disk
+   * changed inside the server a larger size fails as well as a smaller one.
+   * Tested on both: the action errors and the server restarts with its storage
+   * and data unchanged. A reinstall rebuilds the disks instead, so it does not apply.
+   */
+  const storageChanging = !!selected && !reinstalling && disk !== (server.disk ?? 0)
   const imageMissing = !keepImage && !newImageSlug
   const unchanged = changes.length === 0
   /*
@@ -559,7 +623,6 @@ export const ChangePlanPanel: React.FC<{
    * may be reassigned, and anything pointing at it breaks. Reinstalling is the
    * worse one this change adds, because it destroys the disks outright.
    */
-  const reinstalling = !keepImage && !!newImageSlug
   const confirmExtra =
     reinstalling || ipsToRemove.length
       ? {
@@ -580,10 +643,13 @@ export const ChangePlanPanel: React.FC<{
                 ? [
                     `Replacing ${ipsToRemove.join(', ')} with ${replacing === 1 ? 'a new address' : 'new addresses'}. The old ${replacing === 1 ? 'one goes' : 'ones go'} back to the pool; update DNS and any allow-lists first.`
                   ]
-                : [])
+                : []),
+            ...(storageChanging ? [STORAGE_CHANGE_NOTE] : [])
           ]
         }
-      : undefined
+      : storageChanging
+        ? { notes: [STORAGE_CHANGE_NOTE] }
+        : undefined
 
   const cellClass = 'py-1.5 px-1 sm:py-2 sm:px-3'
   const selectClass =
@@ -727,10 +793,42 @@ export const ChangePlanPanel: React.FC<{
             </tr>
           </thead>
           <tbody className="divide-y divide-[#ced4da]/60 dark:divide-[#373b3e]">
-            {plans.map((p) => {
-              const blocked = planUnavailableReason(p, region, effectiveImage)
-              const isSel = selected?.slug === p.slug
-              const isCurrent = p.slug === server.size_slug
+            {shownPlans.map((p) => {
+              const retiredCurrent = isRetiredCurrent(p)
+              const blocked = retiredCurrent ? null : planUnavailableReason(p, region, effectiveImage)
+              const isSel = retiredCurrent ? sizeSlug === server.size_slug : selected?.slug === p.slug
+              if (retiredCurrent) {
+                // Its own figures, not the plan's defaults: the server may carry more.
+                const mem = server.memory ?? p.memory
+                const dsk = server.disk ?? p.disk
+                const fixed = (value: string) =>
+                  isSel ? (
+                    <select disabled value={value} className="px-1 py-0.5 text-[10px] sm:text-xs rounded border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035]">
+                      <option value={value}>{value}</option>
+                    </select>
+                  ) : (
+                    value
+                  )
+                return (
+                  <tr key={p.slug} className={`opacity-45 cursor-not-allowed ${isSel ? 'bg-[#017cb6]/10' : ''}`}>
+                    <td className={cellClass}>
+                      <span className="flex items-center gap-1 sm:gap-2">
+                        {isSel ? <CurrentMark /> : <BlockedMark />}
+                        <span className="text-[#212529] dark:text-white">
+                          {p.vcpus} {p.vcpu_units || 'VCPU'}
+                          {p.vcpus === 1 ? '' : 's'}
+                        </span>
+                      </span>
+                    </td>
+                    <td className={`${cellClass} text-center`}>{fixed(`${mem / 1024} GB`)}</td>
+                    <td className={`${cellClass} text-center`}>{fixed(`${dsk} GB`)}</td>
+                    <td className={`${cellClass} text-center`}>{p.transfer * 1000} GB</td>
+                    <td className={`${cellClass} text-center font-medium`}>
+                      ${planMonthlyPrice(p, effectiveImage, mem, dsk).toFixed(2)}
+                    </td>
+                  </tr>
+                )
+              }
               return (
                 <tr
                   key={p.slug}
@@ -742,29 +840,32 @@ export const ChangePlanPanel: React.FC<{
                 >
                   <td className={cellClass}>
                     <span className="flex items-center gap-1 sm:gap-2">
-                      <span
-                        className={`w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full border flex items-center justify-center shrink-0 ${
-                          isSel ? 'border-[#017cb6]' : 'border-[#ced4da] dark:border-[#6c757d]'
-                        }`}
-                      >
-                        {isSel && <span className="w-2 h-2 rounded-full bg-[#017cb6]" />}
-                      </span>
+                      {blocked ? (
+                        <BlockedMark />
+                      ) : (
+                        <span
+                          className={`w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full border flex items-center justify-center shrink-0 ${
+                            isSel ? 'border-[#017cb6]' : 'border-[#ced4da] dark:border-[#6c757d]'
+                          }`}
+                        >
+                          {isSel && <span className="w-2 h-2 rounded-full bg-[#017cb6]" />}
+                        </span>
+                      )}
                       <span className="text-[#212529] dark:text-white">
                         {p.vcpus} {p.vcpu_units || 'VCPU'}
                         {p.vcpus === 1 ? '' : 's'}
                       </span>
-                      {isCurrent && <span className="text-[#6c757d] dark:text-slate-400">(current)</span>}
                     </span>
                   </td>
                   <td className={`${cellClass} text-center`}>
-                    {isSel && memoryChoices(p).length > 1 ? (
+                    {isSel && memoryChoices(p, isCurrentPlan(p) ? server.memory : undefined).length > 1 ? (
                       <select
                         value={memory}
                         onClick={(e) => e.stopPropagation()}
                         onChange={(e) => setMemory(Number(e.target.value))}
                         className="px-1 py-0.5 text-[10px] sm:text-xs rounded border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035]"
                       >
-                        {memoryChoices(p).map((m) => (
+                        {memoryChoices(p, isCurrentPlan(p) ? server.memory : undefined).map((m) => (
                           <option key={m} value={m}>
                             {m / 1024} GB
                           </option>
@@ -775,26 +876,26 @@ export const ChangePlanPanel: React.FC<{
                     )}
                   </td>
                   <td className={`${cellClass} text-center`}>
-                    {isSel && diskChoices(p).length > 1 ? (
+                    {isSel && diskChoices(p, effectiveImage, isCurrentPlan(p) ? server.disk : undefined).length > 1 ? (
                       <select
                         value={disk}
                         onClick={(e) => e.stopPropagation()}
                         onChange={(e) => setDisk(Number(e.target.value))}
                         className="px-1 py-0.5 text-[10px] sm:text-xs rounded border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035]"
                       >
-                        {diskChoices(p).map((d) => (
+                        {diskChoices(p, effectiveImage, isCurrentPlan(p) ? server.disk : undefined).map((d) => (
                           <option key={d} value={d}>
                             {d} GB
                           </option>
                         ))}
                       </select>
                     ) : (
-                      `${p.disk} GB`
+                      `${defaultDisk(p)} GB`
                     )}
                   </td>
                   <td className={`${cellClass} text-center`}>{p.transfer * 1000} GB</td>
                   <td className={`${cellClass} text-center font-medium`}>
-                    ${planMonthlyPrice(p, effectiveImage, p.memory, p.disk).toFixed(2)}
+                    ${planMonthlyPrice(p, effectiveImage, p.memory, defaultDisk(p)).toFixed(2)}
                   </td>
                 </tr>
               )
@@ -802,32 +903,13 @@ export const ChangePlanPanel: React.FC<{
           </tbody>
         </table>
 
-        {blocks.length > 0 && (
-          <div className="px-3 py-2 border-t border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529] text-[11px] text-[#6c757d] dark:text-[#adb5bd] space-y-1">
-            {capacityOnly ? (
-              <div className="flex items-start gap-2">
-                <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-500 mt-px" />
-                <span>We currently do not have resources available to provision a server on these plans.</span>
-              </div>
-            ) : (
-              blocks.map((b) => (
-                <div key={b.message} className="flex items-start gap-2">
-                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-500 mt-px" />
-                  <span>{b.message}</span>
-                </div>
-              ))
-            )}
-          </div>
-        )}
+        <PlanBlockNotes blocks={blocks as PlanBlock[]} />
       </div>
 
-      {isShrink && (
+      {storageChanging && (
         <div className="flex items-start gap-2 text-[11px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-900 rounded p-2.5">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
-          <span>
-            Reducing memory or storage shrinks the disk. The guest has to fit inside the smaller volume, and resizing
-            back up afterwards does not restore anything lost.
-          </span>
+          <span>{STORAGE_CHANGE_NOTE}</span>
         </div>
       )}
 
@@ -1252,8 +1334,9 @@ export const ChangePlanPanel: React.FC<{
                 type: 'resize',
                 size: selected.slug,
                 options: {
-                  memory,
-                  disk,
+                  // Sent only when changed; see startingFigures.
+                  ...(memory !== startingFigures(selected).memory ? { memory } : {}),
+                  ...(disk !== startingFigures(selected).disk ? { disk } : {}),
                   ipv4_addresses: ipCount,
                   daily_backups: dailyBackups,
                   weekly_backups: weeklyBackups,
