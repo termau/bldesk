@@ -10,6 +10,8 @@ import {
   Unlink,
   Trash2,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
 import { components } from '@shared/api/schema'
@@ -21,6 +23,9 @@ import { useTrackedActions } from '../../context/ActionTrackerContext'
 import { describeApiError } from '../../api/queries'
 
 type ServerResponse = components['schemas']['Server']
+
+/** Every VPC is fetched; this only caps how many cards render at once. */
+const VPCS_PER_PAGE = 20
 
 interface VpcManagerProps {
   /** The app's server list — see AGENTS.md rule 8; tabs do not call useServers. */
@@ -45,6 +50,13 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
   const vpcsQuery = useVpcs(client)
 
   const vpcs = vpcsQuery.data || []
+
+  // Clamped on read, so deleting the last VPC on the final page falls back a
+  // page instead of leaving an empty grid.
+  const [vpcPage, setVpcPage] = useState(1)
+  const pageCount = Math.max(1, Math.ceil(vpcs.length / VPCS_PER_PAGE))
+  const currentPage = Math.min(vpcPage, pageCount)
+  const pagedVpcs = vpcs.slice((currentPage - 1) * VPCS_PER_PAGE, currentPage * VPCS_PER_PAGE)
 
   // Create new VPC
   const handleCreateVpc = async (e: React.FormEvent) => {
@@ -255,7 +267,7 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
 
       {/* VPC Cards Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {vpcs.map((vpc) => {
+        {pagedVpcs.map((vpc) => {
           const vpcServers = servers.filter((s) => s.vpc_id === vpc.id)
           const attachableServers = getAttachableServers(vpc.id)
 
@@ -355,6 +367,36 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
           )
         })}
       </div>
+
+      {vpcs.length > VPCS_PER_PAGE && (
+        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035] text-[11px] text-[#6c757d] dark:text-[#adb5bd]">
+          <span>
+            {(currentPage - 1) * VPCS_PER_PAGE + 1}&ndash;
+            {Math.min(currentPage * VPCS_PER_PAGE, vpcs.length)} of {vpcs.length}
+          </span>
+          <span className="flex items-center gap-1">
+            <button
+              onClick={() => setVpcPage(Math.max(1, currentPage - 1))}
+              disabled={currentPage <= 1}
+              aria-label="Previous page"
+              className="p-1 rounded border border-[#ced4da] dark:border-[#373b3e] hover:border-[#017cb6] transition disabled:opacity-40"
+            >
+              <ChevronLeft className="w-3 h-3" />
+            </button>
+            <span className="font-mono px-1">
+              {currentPage} / {pageCount}
+            </span>
+            <button
+              onClick={() => setVpcPage(Math.min(pageCount, currentPage + 1))}
+              disabled={currentPage >= pageCount}
+              aria-label="Next page"
+              className="p-1 rounded border border-[#ced4da] dark:border-[#373b3e] hover:border-[#017cb6] transition disabled:opacity-40"
+            >
+              <ChevronRight className="w-3 h-3" />
+            </button>
+          </span>
+        </div>
+      )}
 
       {/* Create VPC Modal */}
       {isCreating && (

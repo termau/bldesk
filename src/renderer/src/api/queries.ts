@@ -249,9 +249,16 @@ export function useDataUsage(client: BinaryLaneClient | null) {
     queryKey: ['dataUsageCurrent'],
     queryFn: async () => {
       if (!client) return []
-      const { data, error } = await client.GET('/v2/data_usages/current')
-      if (error) return []
-      return data?.data_usages || []
+      // One entry per server, so past 20 servers the rest had no usage shown.
+      try {
+        return await fetchAllPages<any>(
+          (page, per_page) => client.GET('/v2/data_usages/current', { params: { query: { page, per_page } as any } }),
+          'data_usages',
+          'useDataUsage'
+        )
+      } catch {
+        return []
+      }
     },
     enabled: !!client
   })
@@ -259,14 +266,20 @@ export function useDataUsage(client: BinaryLaneClient | null) {
 
 // --- VPCS ---
 
+/**
+ * Every VPC. The unpaged call returned the first 20 of however many the account
+ * has, so VPC 21 onwards was missing from the manager, the map and every picker.
+ */
 export function useVpcs(client: BinaryLaneClient | null) {
   return useQuery({
     queryKey: ['vpcs'],
     queryFn: async () => {
       if (!client) return []
-      const { data, error } = await client.GET('/v2/vpcs')
-      if (error) throw new Error(JSON.stringify(error))
-      return data?.vpcs || []
+      return fetchAllPages<any>(
+        (page, per_page) => client.GET('/v2/vpcs', { params: { query: { page, per_page } as any } }),
+        'vpcs',
+        'useVpcs'
+      )
     },
     enabled: !!client
   })
@@ -463,9 +476,12 @@ export function useLoadBalancers(client: BinaryLaneClient | null) {
     queryKey: ['loadBalancers'],
     queryFn: async () => {
       if (!client) return []
-      const { data, error } = await client.GET('/v2/load_balancers')
-      if (error) throw new Error(JSON.stringify(error))
-      const lbs = data?.load_balancers || []
+      // Unpaged, this was the first 20 load balancers only.
+      const lbs = await fetchAllPages<any>(
+        (page, per_page) => client.GET('/v2/load_balancers', { params: { query: { page, per_page } as any } }),
+        'load_balancers',
+        'useLoadBalancers'
+      )
 
       // Concurrently fetch full details for each load balancer to ensure server_ids and live status are fully loaded
       const detailedLbs = await Promise.all(
@@ -656,11 +672,15 @@ export function useDomainRecords(client: BinaryLaneClient | null, domainName: st
     queryKey: ['domainRecords', domainName],
     queryFn: async () => {
       if (!client || !domainName) return []
-      const { data, error } = await client.GET('/v2/domains/{domain_name}/records', {
-        params: { path: { domain_name: domainName } }
-      })
-      if (error) throw new Error(JSON.stringify(error))
-      return data?.domain_records || []
+      // Unpaged, a zone with more than 20 records lost the rest from the table.
+      return fetchAllPages<any>(
+        (page, per_page) =>
+          client.GET('/v2/domains/{domain_name}/records', {
+            params: { path: { domain_name: domainName }, query: { page, per_page } as any }
+          }),
+        'domain_records',
+        'useDomainRecords'
+      )
     },
     enabled: !!client && !!domainName
   })
@@ -841,9 +861,12 @@ export function useSshKeys(client: BinaryLaneClient | null) {
     queryKey: ['sshKeys'],
     queryFn: async () => {
       if (!client) return []
-      const { data, error } = await client.GET('/v2/account/keys')
-      if (error) throw new Error(JSON.stringify(error))
-      return data?.ssh_keys || []
+      // Unpaged, this was the first 20 keys only, here and in every key picker.
+      return fetchAllPages<any>(
+        (page, per_page) => client.GET('/v2/account/keys', { params: { query: { page, per_page } as any } }),
+        'ssh_keys',
+        'useSshKeys'
+      )
     },
     enabled: !!client
   })
