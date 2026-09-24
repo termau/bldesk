@@ -259,14 +259,20 @@ export function useDataUsage(client: BinaryLaneClient | null) {
 
 // --- VPCS ---
 
+/**
+ * Every VPC. The unpaged call returned the first 20 of however many the account
+ * has, so VPC 21 onwards was missing from the manager, the map and every picker.
+ */
 export function useVpcs(client: BinaryLaneClient | null) {
   return useQuery({
     queryKey: ['vpcs'],
     queryFn: async () => {
       if (!client) return []
-      const { data, error } = await client.GET('/v2/vpcs')
-      if (error) throw new Error(JSON.stringify(error))
-      return data?.vpcs || []
+      return fetchAllPages<any>(
+        (page, per_page) => client.GET('/v2/vpcs', { params: { query: { page, per_page } as any } }),
+        'vpcs',
+        'useVpcs'
+      )
     },
     enabled: !!client
   })
