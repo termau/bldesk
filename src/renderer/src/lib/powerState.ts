@@ -10,8 +10,7 @@ type ServerResponse = components['schemas']['Server']
  *
  * `Server.status` on the BinaryLane API does not track power: a server that
  * has been powered off — by `power_off`, or far more commonly by `sudo
- * poweroff` inside the guest — keeps reporting `active` (vps/vps #161, open
- * since 2022; a real fix needs new xm → HostDaemon → WebAPI plumbing).
+ * poweroff` inside the guest — keeps reporting `active`.
  *
  * What the API does publish is a five-minute performance sample per server,
  * produced host-side only while the VM runs. A running server's latest

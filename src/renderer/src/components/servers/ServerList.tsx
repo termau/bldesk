@@ -291,7 +291,7 @@ export const ServerList: React.FC<ServerListProps> = ({
         </div>
       )}
 
-      {/* View 1: Authentic PanelSite Table View */}
+      {/* View 1: table view, laid out like mPanel's */}
       {!isLoading && filteredServers.length > 0 && viewMode === 'table' && (
         <div className="bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm overflow-x-auto flex-shrink-0">
           <table className="w-full min-w-[580px] text-left text-xs border-collapse">

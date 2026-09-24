@@ -3,6 +3,7 @@
 // renderer holds the API token, so these are the checks that stop a later
 // change from quietly reopening a path to it.
 import { readdirSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -48,6 +49,21 @@ if (/connect-src[^"]*'self'/.test(viteConfig)) failures.push("electron.vite.conf
 if (!/connect-src[^"]*https:\/\/localhost\/_capacitor_http_interceptor_/.test(viteConfig)) failures.push('electron.vite.config.ts: connect-src must allow https://localhost/_capacitor_http_interceptor_, Capacitor\'s fetch proxy on Android')
 if (!/plugins:\s*\[[^\]]*contentSecurityPolicyPlugin\(\)/.test(viteConfig)) {
   failures.push('electron.vite.config.ts: keep contentSecurityPolicyPlugin() in the renderer plugins')
+}
+
+// Internal BinaryLane references (see AGENTS.md, "Public API only"). The
+// patterns are base64-encoded so this public file does not itself name them.
+const INTERNAL_MARKERS = [
+  'dnBzXC92cHM=', 'XGJ2cHMgI1xkKw==', 'cHJvZHVjdFwvd2Vic2l0ZQ==', 'UGFuZWxTaXRl', 'SG9zdERhZW1vbg==',
+  'V2ViQXBpXC9TZXJ2aWNlcw==', 'W0EtWmEtel0rQXBpU2VydmljZVwuY3M=', 'aW1wbGVtZW50YXRpb24gc291cmNl', 'c291cmNlIGNoZWNrb3V0'
+].map((b64) => new RegExp(Buffer.from(b64, 'base64').toString('utf8'), 'i'))
+const tracked = execFileSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).split('\0').filter(Boolean)
+  .filter((f) => !/(^|\/)(package-lock\.json|openapi\.json|schema\.d\.ts)$/.test(f) && !/\.(png|jpe?g|gif|ico|icns|webp|woff2?|ttf|jar|keystore|jks|apk|zip)$/i.test(f))
+for (const file of tracked) {
+  let text
+  try { text = readFileSync(join(ROOT, file), 'utf8') } catch { continue }
+  const hit = INTERNAL_MARKERS.find((re) => re.test(text))
+  if (hit) failures.push(`${file}: references internal BinaryLane material; explain it from the public API reference instead (AGENTS.md, "Public API only")`)
 }
 
 if (failures.length) {

@@ -17,6 +17,12 @@ Out of scope, and will be closed rather than reviewed:
 
 A PR that reworks the app's architecture to deliver a feature is a different product, however well built.
 
+### Public API only
+
+BLDesk uses the BinaryLane API as its public reference documents it (https://api.binarylane.com.au, vendored here as `openapi.json`). Some endpoints and fields exist for BinaryLane's own website rather than for customers: if a call, parameter or behaviour is not in the public reference, don't build on it. Ask a maintainer, who will check with BinaryLane first.
+
+Internal BinaryLane material is never the basis for a feature and is never cited in this repository, which is public: no internal source code, file paths, project or system names, issue-tracker numbers or internal URLs, in code, comments, docs, commit messages, pull requests, issues or release notes. Explain behaviour from the public API reference or from what mPanel shows customers. `scripts/check-security-guards.mjs` fails the build on known internal markers.
+
 ---
 
 ## 🏗️ Tech Stack & Structure
@@ -147,7 +153,7 @@ Anything a user reads inside the app — help pages, worked examples, tooltips, 
 
 Every new tab, sub-tab or verb ships with its help page; `scripts/check-help-guards.mjs` enforces coverage, front matter, contextual links and palette examples. Help source is `docs/help/*.md`, bundled through Vite's `@help` raw-import alias; update worked examples when confirmation text changes. Ask BinaryLane accepts only visible search text, never account context.
 
-For bundled BLDesk documentation, verify screen instructions against the component and quoted examples against the actual handler (including shared helpers). Verify service semantics against `openapi.json` and, when available, BinaryLane implementation source. Distinguish API/mPanel capabilities from controls BLDesk exposes. Record the checked sources in `docs/HELP_VERIFICATION.md`; coverage/build checks cannot establish content accuracy. This applies to the internal client docs, not the separate Ask BinaryLane answer-generation controls.
+For bundled BLDesk documentation, verify screen instructions against the component and quoted examples against the actual handler (including shared helpers). Verify service semantics against `openapi.json` only. Distinguish API/mPanel capabilities from controls BLDesk exposes. Record the checked sources in `docs/HELP_VERIFICATION.md`; coverage/build checks cannot establish content accuracy. This applies to the internal client docs, not the separate Ask BinaryLane answer-generation controls.
 
 ---
 

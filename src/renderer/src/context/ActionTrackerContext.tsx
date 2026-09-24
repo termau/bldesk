@@ -71,7 +71,7 @@ export function ActionTrackerProvider({
   client: BinaryLaneClient | null
   /**
    * Ask the hypervisor whether a server is up, once, after a power action
-   * settles. The API's `status` field will not tell us (vps/vps #161).
+   * settles. The API's `status` field will not tell us.
    */
   confirmPowerState?: (serverId: number) => Promise<'on' | 'off' | 'unknown'>
   children: React.ReactNode
