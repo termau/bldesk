@@ -5,6 +5,20 @@ All notable changes to the **BLDesk** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [1.0.62-beta.7] - 2026-09-25
+
+### Fixed
+- **Plan availability matches your operating system** (#107): the create form and Change Plan now ask BinaryLane which plans are in stock for the chosen image (and, in Change Plan, for that server), as mPanel does. Before, they showed a general figure that matched no operating system, so plans mPanel shows as unavailable could be picked. Unavailable plans show a crossed-out circle and mPanel's wording, and plans too small for the image are no longer listed.
+- **Memory and storage choices** (#107): storage runs from the plan's minimum (or the image's, if larger) to its maximum in the steps BinaryLane accepts. Memory and storage are sent only when you change them, so an untouched plan gets its included amounts at no extra cost. In Change Plan, a server on a retired plan sees it listed as its current plan; once another plan is picked, the retired one can't be chosen again.
+- **Storage changes can fail safely** (#107): Change Plan now says, on the page and in the confirmation, that if the disk can't be resized (for example, the data doesn't fit), the change fails after the server has shut down, and the server restarts with its storage and data unchanged.
+- **Change Plan** (#108) no longer shows a current plan summary or a "no longer offered" notice above the plans, matching mPanel.
+- **Linux updates** (#103): after installing an update, BLDesk restarted in a way that stopped the next update from installing ("Command pkexec exited with code 127"). It now restarts normally, and a window that was restarted the old way says what to do instead of showing the error.
+
+**Linux (.deb): if this update fails to install,** close BLDesk completely, open it again from your app menu and install again. This is needed once, only if BLDesk restarted itself after its last update; later updates install normally.
+
+### Changed
+- **Help search** (#104) finds the SSH Keys page for "generate key pair", "ed25519", "ssh-keygen", "default key" and "rename key".
+
 ## [1.0.62-beta.6] - 2026-09-24
 
 ### Added
