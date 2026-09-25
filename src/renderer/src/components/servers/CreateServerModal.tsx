@@ -17,15 +17,19 @@ import {
 import { logoForDistribution } from '../../lib/distroHelper'
 import { setKeyAssociation } from '../../lib/sshKeyAssociations'
 import { GenerateKeyPairDialog, canGenerateKeyPair } from '../keys/GenerateKeyPairDialog'
+import { BlockedMark, PlanBlockNotes } from './PlanBlocks'
 import { listServerTemplates, imageSupportsUserData, TEMPLATES_EVENT, TEMPLATE_KIND, type ServerTemplate, type CreateServerPrefill } from '../../lib/serverTemplates'
 import {
   planMonthlyPrice,
   configuredCost,
   retentionOptionLabel,
   planUnavailableReason,
-  isCapacityBlock,
+  belowImageMinimum,
+  type PlanBlock,
   memoryChoices,
   diskChoices,
+  diskFloor,
+  defaultDisk,
   billingTotal,
   compareVersionNames,
   type SizeLike
@@ -65,7 +69,6 @@ interface CreateServerModalProps {
 }
 
 export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, onClose, client, onCreated, initial, onSaveAsTemplate, profileId }) => {
-  const sizesQuery = useSizes(client)
   const regionsQuery = useRegions(client)
   const imagesQuery = useDistributionImages(client)
   const sshKeysQuery = useSshKeys(client)
@@ -73,7 +76,6 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
   const createServer = useCreateServerMutation(client)
   const addSshKey = useAddSshKeyMutation(client)
 
-  const sizes = (sizesQuery.data || []) as SizeLike[]
   const regions = (regionsQuery.data || []) as any[]
   const images = (imagesQuery.data || []) as components['schemas']['Image'][]
   const sshKeys = (sshKeysQuery.data || []) as any[]
@@ -191,6 +193,10 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
   )
   const acceptsUserData = imageSupportsUserData(image)
 
+  // Stock is per operating system, so plans are fetched for the chosen image.
+  const sizesQuery = useSizes(client, { image: image?.slug ?? image?.id })
+  const sizes = (sizesQuery.data || []) as SizeLike[]
+
   useEffect(() => {
     if (!isOpen) return
     const refresh = () => {
@@ -250,9 +256,10 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
     )
   }, [sizes])
 
+  // Plans too small for the chosen image are not listed, as in the web panel.
   const plans = useMemo(
-    () => sizes.filter((s) => (s.size_type?.slug || 'vps') === planType),
-    [sizes, planType]
+    () => sizes.filter((s) => (s.size_type?.slug || 'vps') === planType && !belowImageMinimum(s, image)),
+    [sizes, planType, image?.slug]
   )
 
   const selectedSize = useMemo(() => plans.find((p) => p.slug === sizeSlug), [plans, sizeSlug])
@@ -273,8 +280,6 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
     return [...seen.values()]
   }, [plans, region, image?.slug])
 
-  // Capacity gets the web panel's wording; an image minimum has to say so itself.
-  const capacityOnly = planBlocks.length > 0 && planBlocks.every((b) => isCapacityBlock(b as any))
 
   // Keep the version choice valid when the distribution or region changes.
   useEffect(() => {
@@ -297,7 +302,7 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
     if (!selectedSize) return
     const p = prefillRef.current
     setMemoryMb(p?.memory ?? selectedSize.memory)
-    setDiskGb(p?.disk ?? selectedSize.disk)
+    setDiskGb(p?.disk ?? defaultDisk(selectedSize))
     if (p) {
       p.memory = undefined
       p.disk = undefined
@@ -313,7 +318,15 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
   }, [sshKeys])
 
   const memory = memoryMb ?? selectedSize?.memory ?? 0
-  const disk = diskGb ?? selectedSize?.disk ?? 0
+  const disk = diskGb ?? (selectedSize ? defaultDisk(selectedSize) : 0)
+
+  // An image with a larger minimum (Windows Server with SQL needs 30 GB) raises
+  // the storage floor; a value below it would be rejected at create.
+  useEffect(() => {
+    if (!selectedSize) return
+    const floor = diskFloor(selectedSize, image)
+    if (disk < floor) setDiskGb(floor)
+  }, [selectedSize?.slug, image?.slug, disk])
 
   const monthly = useMemo(() => {
     if (!selectedSize) return 0
@@ -371,8 +384,10 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
         ssh_keys: selectedKeys.length ? selectedKeys : undefined,
         vpc_id: vpcId,
         options: {
-          memory,
-          disk,
+          // Sent only when changed: left null, the plan's default applies, which
+          // for std-8vcpu is the included 340 GB rather than a paid 400.
+          ...(memory !== selectedSize.memory ? { memory } : {}),
+          ...(disk !== defaultDisk(selectedSize) ? { disk } : {}),
           ipv4_addresses: ipCount,
           daily_backups: daily,
           weekly_backups: showAll ? weeklyBackups : 0,
@@ -521,17 +536,17 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                             )}
                           </td>
                           <td className="py-1.5 px-1 sm:py-2 sm:px-3 text-center">
-                            {isSel && diskChoices(p).length > 1 ? (
-                              <Select value={disk} onChange={(v) => setDiskGb(v)} options={diskChoices(p).map((d) => ({ value: d, label: `${d} GB` }))} />
+                            {isSel && diskChoices(p, image).length > 1 ? (
+                              <Select value={disk} onChange={(v) => setDiskGb(v)} options={diskChoices(p, image).map((d) => ({ value: d, label: `${d} GB` }))} />
                             ) : (
                               <span className="text-[#212529] dark:text-white">
-                                {p.disk} GB{p.storage_description ? ` ${p.storage_description.trim()}` : ''}
+                                {defaultDisk(p)} GB{p.storage_description ? ` ${p.storage_description.trim()}` : ''}
                               </span>
                             )}
                           </td>
                           <td className="py-2 px-3 text-[#212529] dark:text-white">{p.transfer * 1000} GB</td>
                           <td className="py-1.5 px-1 sm:py-2 sm:px-3 text-right font-medium text-[#212529] dark:text-white">
-                            ${planMonthlyPrice(p, image, isSel ? memory : p.memory, isSel ? disk : p.disk).toFixed(2)}
+                            ${planMonthlyPrice(p, image, isSel ? memory : p.memory, isSel ? disk : defaultDisk(p)).toFixed(2)}
                           </td>
                         </tr>
                       )
@@ -539,23 +554,7 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                   </tbody>
                 </table>
 
-                {planBlocks.length > 0 && (
-                  <div className="px-3 py-2 border-t border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529] text-[11px] text-[#6c757d] dark:text-[#adb5bd] space-y-1">
-                    {capacityOnly ? (
-                      <div className="flex items-start gap-2">
-                        <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 text-amber-500 mt-px" />
-                        <span>We currently do not have resources available to provision a server on these plans.</span>
-                      </div>
-                    ) : (
-                      planBlocks.map((b) => (
-                        <div key={b.message} className="flex items-start gap-2">
-                          <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 text-amber-500 mt-px" />
-                          <span>{b.message}</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                )}
+                <PlanBlockNotes blocks={planBlocks as PlanBlock[]} />
               </div>
             </Section>
 
@@ -886,7 +885,7 @@ const Tile: React.FC<{
   </button>
 )
 
-const Radio: React.FC<{ selected: boolean; blocked: boolean }> = ({ selected, blocked }) => (
+const Radio: React.FC<{ selected: boolean; blocked: boolean }> = ({ selected, blocked }) => blocked ? <BlockedMark /> : (
   <span
     className={`w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full border flex items-center justify-center flex-shrink-0 ${
       blocked ? 'border-[#adb5bd]' : selected ? 'border-[#017cb6]' : 'border-[#ced4da] dark:border-[#6c757d]'

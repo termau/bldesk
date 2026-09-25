@@ -688,20 +688,34 @@ export function useDomainRecords(client: BinaryLaneClient | null, domainName: st
 
 // --- SIZES, REGIONS & IMAGES ---
 
-/** Every plan, including the one past the default 20-item page. */
-export function useSizes(client: BinaryLaneClient | null) {
+/**
+ * Every plan, including the one past the default 20-item page.
+ *
+ * Stock depends on the operating system, so a picker passes the image it is
+ * choosing for. Without `image`, `regions_out_of_stock` is a generic figure
+ * that matches no OS: Windows Server 2022 had 6 and 8 vCPU out of stock in
+ * Brisbane, and Ubuntu 24.04 had 4-8 vCPU out of stock in Melbourne, while the
+ * unfiltered list showed both in stock. `serverId` narrows the list to the
+ * sizes that server can be resized to, which is what Change Plan offers.
+ */
+export function useSizes(client: BinaryLaneClient | null, opts: { image?: string | number | null; serverId?: number } = {}) {
+  const image = opts.image ?? null
+  const serverId = opts.serverId ?? null
   return useQuery({
-    queryKey: ['sizes'],
+    queryKey: ['sizes', image, serverId],
     queryFn: async () => {
       if (!client) return []
+      const filter = { ...(image !== null ? { image: String(image) } : {}), ...(serverId !== null ? { server_id: serverId } : {}) }
       return fetchAllPages<any>(
-        (page, per_page) => client.GET('/v2/sizes', { params: { query: { page, per_page } as any } }),
+        (page, per_page) => client.GET('/v2/sizes', { params: { query: { page, per_page, ...filter } as any } }),
         'sizes',
         'useSizes'
       )
     },
     enabled: !!client,
-    staleTime: 300000
+    staleTime: 300000,
+    // Switching image keeps the table on screen while its stock reloads.
+    placeholderData: (prev) => prev
   })
 }
 

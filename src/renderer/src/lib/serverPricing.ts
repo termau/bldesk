@@ -128,45 +128,87 @@ export function planUnavailableReason(
   return null
 }
 
+/**
+ * True when a plan is too small for the image at all. The web panel does not
+ * list these (Windows needs 2 GB, so the 1 GB plan is simply absent), rather
+ * than greying them out.
+ */
+export function belowImageMinimum(size: SizeLike, image: ImageLike | undefined): boolean {
+  if (image?.min_memory_megabytes && size.memory < image.min_memory_megabytes) return true
+  if (image?.min_disk_size && (size.options?.disk_max ?? size.disk) < image.min_disk_size) return true
+  return false
+}
+
 /** True when a block is about capacity rather than the chosen image. */
 export const isCapacityBlock = (b: PlanBlock): boolean =>
   b.kind === 'stock' || b.kind === 'region' || b.kind === 'retired'
 
-/** Selectable memory steps for a plan: doubling from the included amount to the cap. */
-export function memoryChoices(size: SizeLike): number[] {
+/**
+ * Selectable memory steps for a plan: doubling from the included amount to the
+ * cap, which every Standard plan sets at 32 GB (64 GB for 8 vCPU). `keep` adds a
+ * value the server already has, so a current configuration off the ladder is
+ * still shown rather than silently replaced.
+ */
+export function memoryChoices(size: SizeLike, keep?: number): number[] {
   const max = size.options?.memory_max ?? size.memory
   const out: number[] = []
   for (let m = size.memory; m <= max; m *= 2) out.push(m)
   if (!out.includes(max)) out.push(max)
+  if (keep && !out.includes(keep)) out.push(keep)
+  return out.sort((x, y) => x - y)
+}
+
+/**
+ * Every storage size the API accepts, per SizeOptionsRequest.disk in the public
+ * reference: a multiple of 5 GB, of 10 GB above 60 GB, and of 100 GB above
+ * 200 GB. It is also the web panel's list (20, 25 ... 60, 70 ... 200, 300 ...).
+ */
+function diskSteps(max: number): number[] {
+  const out: number[] = []
+  for (let d = 5; d <= max; d += d < 60 ? 5 : d < 200 ? 10 : 100) out.push(d)
   return out
 }
 
 /**
- * The web panel's storage ladder: 5 GB steps to 60, then 10 GB to 200, then
- * 100 GB to 2000. Taken from mPanel's own <option> list rather than derived, so
- * the two agree exactly - a generated step produced values mPanel never offers.
+ * A plan's default storage: the amount it includes, which is what the storage
+ * select starts at. It is not always one of the steps - std-8vcpu includes
+ * 340 GB, and above 200 GB a sent value must be a multiple of 100 - which is
+ * fine because an untouched value is never sent. Leaving `disk` null takes the
+ * plan's default, so the customer gets the included 340 GB at no extra cost.
  */
-function diskLadder(): number[] {
-  const out: number[] = []
-  for (let d = 20; d < 60; d += 5) out.push(d)
-  for (let d = 60; d < 200; d += 10) out.push(d)
-  for (let d = 200; d <= 2000; d += 100) out.push(d)
-  return out
+export function defaultDisk(size: SizeLike): number {
+  return size.disk
 }
 
-/** Selectable storage steps, honouring restricted_disk_values where a plan sets them. */
-export function diskChoices(size: SizeLike): number[] {
+/** The smallest storage a plan can have with this image: the plan's floor or the image's, whichever is larger. */
+export function diskFloor(size: SizeLike, image?: ImageLike): number {
+  return Math.max(size.options?.disk_min ?? size.disk, image?.min_disk_size ?? 0)
+}
+
+/**
+ * Selectable storage for a plan, from `disk_min` (20 GB on every Standard plan,
+ * not the plan's included amount) or the image's minimum, whichever is larger,
+ * up to `disk_max`. Windows Server with SQL needs 30 GB, so it starts there.
+ *
+ * The steps are the values the API accepts. One more is added as the untouched
+ * choice, which is never sent: `keep`, the server's own storage on its current
+ * plan, or otherwise the plan's included amount even when it sits between steps
+ * (std-8vcpu's 340 GB, see `defaultDisk`). On the current plan the included
+ * amount is not untouched - picking it would send it - so there it is offered
+ * only if it is a step. Where a plan sets
+ * `restricted_disk_values`, only those are used.
+ */
+export function diskChoices(size: SizeLike, image?: ImageLike, keep?: number): number[] {
   const o = size.options || {}
+  const extra = [keep ?? defaultDisk(size)].filter((d): d is number => typeof d === 'number' && d > 0)
   if (Array.isArray(o.restricted_disk_values) && o.restricted_disk_values.length) {
-    return o.restricted_disk_values as number[]
+    return [...new Set([...(o.restricted_disk_values as number[]), ...extra])].sort((x, y) => x - y)
   }
-  const min = size.disk
+  const min = diskFloor(size, image)
   const max = o.disk_max ?? size.disk
-  if (min >= max) return [min]
-  const steps = diskLadder().filter((d) => d >= min && d <= max)
-  if (!steps.includes(min)) steps.unshift(min)
-  if (!steps.includes(max)) steps.push(max)
-  return steps
+  const steps = diskSteps(max).filter((d) => d >= min)
+  if (!steps.includes(max) && max >= min) steps.push(max)
+  return [...new Set([...steps, ...extra.filter((d) => d <= max)])].sort((x, y) => x - y)
 }
 
 /**
