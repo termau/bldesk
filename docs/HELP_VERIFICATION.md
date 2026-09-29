@@ -1,5 +1,9 @@
 # Help verification
 
+## GUI harness backup model (30 September 2026, issue #198)
+
+Branch: `fix/gui-mock-backups`. Only developer harness documentation changed; no in-app text changed. Checked `scripts/gui-test/README.md` against `sizeOpts`, `mkServer`, `reset`, `makeBackup`, `backupPlan`, the image routes and `applyAction` in `scripts/gui-test/mock.mjs`, and the checks in `scripts/gui-test/mock.test.mjs`. Field names, slot and replacement semantics, lock restrictions and attachment metadata were checked against `SizeOptions`, `OffsiteBackupFrequencyCost`, `BackupInfo`, `BackupDisk`, `TakeBackup`, `BackupReplacementStrategy`, `ImageRequest` and `AttachedBackup` in `openapi.json`. The documented pricing constants are explicitly attributed to the dated public snapshot reported in #198; no live account was accessed for this change. Documentation also states that the other fixture prices are fictitious and temporary images do not expire automatically in the mock.
+
 ## DNS record TTL (29 September 2026, after 1.0.62-beta.7)
 
 Branch: `fix/dns-record-ttl`. No new runtime dependencies. Reference wording for `DomainRecordRequest.ttl` in `openapi.json`: "The default and only supported value is 3600. Leave null to accept this default."

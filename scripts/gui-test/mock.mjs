@@ -75,8 +75,10 @@ const sizeOpts = (memMax, extra = {}) => ({
   disk_min: 20, disk_max: 2000, disk_cost_per_additional_gigabyte: 0.11, restricted_disk_values: null,
   memory_max: memMax, memory_cost_per_additional_megabyte: 0.0048, transfer_max: 8192, transfer_cost_per_additional_gigabyte: 0.01,
   ipv4_addresses_max: 8, ipv4_addresses_cost_per_address: 2.5, discount_for_no_public_ipv4: 2.5,
-  daily_backups: 4, weekly_backups: 4, monthly_backups: 4, backups_cost_per_backup_per_gigabyte: 0.02,
-  offsite_backups_cost_per_gigabyte: 0.01, offsite_backup_frequency_cost: { daily: 0.5, weekly: 0.25, monthly: 0.1 }, ...extra
+  // Public sizes snapshot recorded in #198 on 2026-09-29.
+  daily_backups: 0, weekly_backups: 0, monthly_backups: 0, backups_cost_per_backup_per_gigabyte: 0.05,
+  offsite_backups_cost_per_gigabyte: 0.05,
+  offsite_backup_frequency_cost: { daily_per_gigabyte: 0, weekly_per_gigabyte: 0, monthly_per_gigabyte: 0 }, ...extra
 })
 const sizes = sizeRows.map(([slug, vcpus, memory, disk, price, transfer]) => mk('SizesResponse', 'sizes', {
   slug, description: slug.replace('std-', 'Standard ').replace('vcpu', ' vCPU'), cpu_description: `${vcpus} vCPU`, storage_description: 'SSD',
@@ -106,7 +108,7 @@ const imgRows = [
 ]
 const images = imgRows.map(([id, slug, full_name, distribution, mem, disk]) => mk('ImagesResponse', 'images', {
   id, slug, name: full_name, full_name, distribution, public: true, regions: ['syd', 'bne', 'mel', 'per', 'sin'], min_disk_size: disk || 10,
-  min_memory_megabytes: mem || 512, type: 'distribution', image_type: 'distribution',
+  min_memory_megabytes: mem || 512, type: 'distribution', image_type: 'distribution', backup_info: null,
   distribution_info: { password_recovery: ['manual'], remote_access_user: distribution === 'Windows' ? 'Administrator' : 'root', features: distribution === 'Windows' ? [] : ['user-data', 'ssh-keys'] }
 }))
 const imgBySlug = (s) => images.find((i) => i.slug === s) || images[0]
@@ -115,23 +117,30 @@ const RNAMES = ['edge-web', 'api', 'postgres', 'queue-worker', 'redis', 'observa
 const nowIso = () => new Date().toISOString()
 function mkServer(o) {
   const size = sizeBySlug(o.size_slug), region = regionBySlug(o.region), image = imgBySlug(o.image)
+  const options = {
+    daily_backups: o.backups === false ? 0 : 3, weekly_backups: o.backups === false ? 0 : 2,
+    monthly_backups: o.backups === false ? 0 : 1, offsite_backups: !!o.offsite, ...o.options
+  }
+  const hasBackups = options.daily_backups + options.weekly_backups + options.monthly_backups > 0
   const v4 = o.public === false ? [] : [{ ip_address: o.ip, type: 'public', netmask: '255.255.255.0', gateway: '203.0.113.1', reverse_name: null }]
   ;(o.extra_ips || []).forEach((ip) => v4.push({ ip_address: ip, type: 'public', netmask: '255.255.255.0', gateway: '203.0.113.1' }))
   v4.push({ ip_address: `10.${20 + (o.vpc_id % 10)}.0.${o.id % 200}`, type: 'private', netmask: '255.255.0.0', gateway: null })
   return mk('ServersResponse', 'servers', {
     id: o.id, name: o.name, memory: o.memory ?? size.memory, vcpus: size.vcpus, disk: o.disk ?? size.disk, vpc_id: o.vpc_id, created_at: '2026-08-01T00:00:00Z',
-    status: o.status || 'active', backup_ids: o.backups === false ? [] : [7101, 7102, 7103], features: o.backups === false ? [] : ['backups', 'ipv6'],
+    status: o.status || 'active', backup_ids: [], features: hasBackups ? ['backups', 'ipv6'] : [],
     region, image, size, size_slug: size.slug,
-    selected_size_options: { memory: o.memory ?? size.memory, disk: o.disk ?? size.disk, ipv4_addresses: v4.filter((n) => n.type === 'public').length, daily_backups: 3, weekly_backups: 2, monthly_backups: 1, offsite_backups: !!o.offsite },
+    selected_size_options: { memory: o.memory ?? size.memory, disk: o.disk ?? size.disk, ipv4_addresses: v4.filter((n) => n.type === 'public').length, ...options },
     networks: { v4, v6: o.v6 ? [{ ip_address: '2001:db8:10::' + (o.id % 200).toString(16), type: 'public', netmask: 64, gateway: '2001:db8:10::1' }] : [] },
-    next_backup_window: { start_hour: 2, end_hour: 4, day: null }, disks: [{ id: o.id * 10, size_gigabytes: o.disk ?? size.disk, description: 'Primary disk', primary: true }, ...(o.extraDisk ? [{ id: o.id * 10 + 1, size_gigabytes: 50, description: 'Data', primary: false }] : [])],
+    next_backup_window: hasBackups ? { start_hour: 2, end_hour: 4, day: null } : null,
+    attached_backup: null,
+    disks: [{ id: o.id * 10, size_gigabytes: o.disk ?? size.disk, description: 'Primary disk', primary: true }, ...(o.extraDisk ? [{ id: o.id * 10 + 1, size_gigabytes: 50, description: 'Data', primary: false }] : [])],
     failover_ips: o.failover || [], partner_id: o.partner || null, password_change_supported: image.distribution !== 'Windows',
     permalink: `srv-${o.id}`, is_under_maintenance: false, cancelled_at: null,
     advanced_features: { enabled_advanced_features: image.distribution === 'Windows' ? ['emulated-hyperv', 'emulated-devices'] : ['cloud-init', 'qemu-guest-agent'], machine_type: 'pc_i440fx_7point2point1', processor_model: 0, video_device: 'cirrus-logic' }
   })
 }
 const IPB = ['203.0.113', '198.51.100', '192.0.2']
-let servers, actions, nextId, keys, domains, lbs, vpcs, records, backupsAdded, fails, cfg
+let servers, actions, nextId, keys, domains, lbs, vpcs, records, serverBackups, fails, cfg
 function reset() {
   servers = []
   for (let i = 0; i < 18; i++) {
@@ -150,7 +159,14 @@ function reset() {
     mkServer({ id: 9009, name: 'multi-ip-v6-01', size_slug: 'std-4vcpu', region: 'mel', image: 'almalinux-9', vpc_id: 903, ip: '192.0.2.98', extra_ips: ['192.0.2.99', '192.0.2.100'], v6: true, failover: ['192.0.2.150'] }),
     mkServer({ id: 9010, name: 'cpanel-host-01', size_slug: 'std-6vcpu', region: 'syd', image: 'cpanel-whm-rocky-8', vpc_id: 901, ip: '203.0.113.101' })
   )
-  actions = new Map(); nextId = 50000; backupsAdded = []; fails = []; cfg = { updateVersion: null, empty: false, rejectAuth: false, unpaid: false, actionMs: 2500, actionOutcome: 'completed', latencyMs: 0 }
+  actions = new Map(); nextId = 50000; serverBackups = new Map(); fails = []; cfg = { updateVersion: null, empty: false, rejectAuth: false, unpaid: false, actionMs: 2500, actionOutcome: 'completed', latencyMs: 0 }
+  servers.forEach((s, index) => {
+    const list = s.next_backup_window ? [
+      ['temporary', 'Before database upgrade', 1], ['daily', 'Nightly production baseline', 2],
+      ['weekly', 'Weekly recovery checkpoint', 7], ['monthly', 'Monthly archive', 28]
+    ].map(([type, name, days], i) => makeBackup(s, type, name, new Date(Date.now() - days * 86400000).toISOString(), 7101 + index * 10 + i)) : []
+    setBackups(s, list)
+  })
   keys = [['ops-laptop', true], ['deploy-ci', false], ['old-key-2024', false], ['a-key-with-a-particularly-long-name-to-test-wrapping-in-the-table', false]].map(([name, def], i) => mk('SshKeysResponse', 'ssh_keys', {
     id: 9100 + i, name, default: def, public_key: `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI${'x'.repeat(30)}${i} ${name}@host`, fingerprint: `SHA256:${'abcdefghijklmnop'.repeat(2)}${i}`
   }))
@@ -190,8 +206,40 @@ const sample = (s, off = 0) => {
       network_incoming_kbps: 2500 + ratio * 18000 * wave, network_outgoing_kbps: 1200 + ratio * 14000 * wave, storage_read_kbps: 1000 + ratio * 23000 * wave, storage_write_kbps: 800 + ratio * 15000 * wave, storage_read_iops: 300 + ratio * 1500, storage_write_iops: 100 + ratio * 900 }
   })
 }
-const backupsFor = (s) => s.backup_ids.length === 0 && !backupsAdded.length ? [] : ['Before database upgrade', 'Nightly production baseline', 'Weekly recovery checkpoint', 'Monthly August archive', ...backupsAdded.map((b) => b.name)].map((name, i) =>
-  mk('BackupsResponse', 'backups', { id: 7101 + i, name, created_at: new Date(Date.now() - (i + 1) * 86400000).toISOString(), min_disk_size: 40, type: 'backup', backup_type: ['temporary', 'daily', 'weekly', 'monthly', 'temporary', 'temporary'][i] || 'temporary', status: 'available', size_gigabytes: 40 }))
+function makeBackup(s, type, name, createdAt = nowIso(), id = nextId++) {
+  const disks = s.disks.map((d, i) => ({ id: id * 10 + i, min_disk_size: d.size_gigabytes, size_gigabytes: d.size_gigabytes / 2, description: d.description }))
+  return mk('BackupsResponse', 'backups', {
+    id, name, created_at: createdAt, min_disk_size: disks.reduce((n, d) => n + d.min_disk_size, 0), type: 'backup', status: 'available',
+    size_gigabytes: disks.reduce((n, d) => n + d.size_gigabytes, 0),
+    backup_info: { type, server_id: s.id, offsite: type !== 'temporary' && s.selected_size_options.offsite_backups, locked: false, iso: false, backup_disks: disks }
+  })
+}
+function setBackups(s, list) { serverBackups.set(s.id, list); s.backup_ids = list.map((b) => b.id) }
+const backupsFor = (s) => serverBackups.get(s.id) || []
+const backupImage = (id) => [...serverBackups.values()].flat().find((b) => b.id === id)
+const isAttached = (id) => servers.some((s) => s.attached_backup?.id === id)
+function backupPlan(s, body) {
+  const list = backupsFor(s), strategy = body.replacement_strategy
+  const replaceable = (b) => !b.backup_info.locked && !isAttached(b.id)
+  if (strategy === 'specified') {
+    const replace = list.find((b) => b.id === body.backup_id_to_replace)
+    if (!replace) return { error: 'The specified backup does not belong to this server.' }
+    if (!replaceable(replace)) return { error: 'The specified backup is locked or attached.' }
+    return { type: replace.backup_info.type, replace }
+  }
+  if (!['none', 'oldest', 'newest'].includes(strategy)) return { error: 'Invalid backup replacement strategy.' }
+  const type = body.backup_type
+  if (!S.BackupSlot.enum.includes(type)) return { error: 'A valid backup_type is required.' }
+  // Temporary backups have no configurable retention count. Scheduled slots use this server's options, not plan inclusions.
+  const capacity = type === 'temporary' ? Infinity : s.selected_size_options[`${type}_backups`]
+  if (!(capacity > 0)) return { error: `No ${type} backup slots are configured.` }
+  const held = list.filter((b) => b.backup_info.type === type)
+  if (held.length < capacity) return { type }
+  if (strategy === 'none') return { error: `No free ${type} backup slots.` }
+  const candidates = held.filter(replaceable).sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at))
+  const replace = strategy === 'oldest' ? candidates[0] : candidates.at(-1)
+  return replace ? { type, replace } : { error: `No replaceable ${type} backups.` }
+}
 const invoices = Array.from({ length: 27 }, (_, i) => mk('InvoicesResponse', 'invoices', {
   invoice_id: 4000 + i, invoice_number: `INV-${20260 - i}`, amount: 40 + i * 3.3, tax: 3.6, created: new Date(Date.now() - i * 30 * 86400000).toISOString(), date_due: new Date(Date.now() - (i * 30 - 14) * 86400000).toISOString(),
   paid: i !== 0, refunded: false, reference: '', invoice_view_url: 'https://home.binarylane.com.au/invoice/' + i, invoice_download_url: 'https://home.binarylane.com.au/invoice/' + i + '.pdf', payment_failure_count: i === 0 ? 1 : 0, invoice_items: []
@@ -207,7 +255,7 @@ function newAction(type, server, body) {
   return id
 }
 function applyAction(a, server) {
-  if (a.outcome !== 'completed' || !server) return
+  if (a.outcome !== 'completed' || !server || !servers.includes(server)) return
   const b = a.body || {}
   if (['power_on', 'reboot', 'power_cycle', 'boot'].includes(a.type)) server.status = 'active'
   if (['shutdown', 'power_off'].includes(a.type)) server.status = 'off'
@@ -216,7 +264,13 @@ function applyAction(a, server) {
     if (b.options?.memory) server.memory = b.options.memory
     if (b.options?.disk) server.disk = b.options.disk
   }
-  if (a.type === 'take_backup') backupsAdded.push({ name: b.label || 'Manual backup' })
+  if (a.type === 'take_backup') {
+    const plan = backupPlan(server, b)
+    if (plan.error) { a.outcome = 'errored'; a.error = plan.error; return }
+    setBackups(server, [...backupsFor(server).filter((image) => image !== plan.replace), makeBackup(server, plan.type, b.label || 'Manual backup')])
+  }
+  if (a.type === 'attach_backup') server.attached_backup = { id: b.image, disk_identifiers: ['sdb'], attached_at: nowIso(), attachment_expires: null }
+  if (a.type === 'detach_backup') server.attached_backup = null
   if (a.type === 'change_advanced_firewall_rules') fwOverride.set(server.id, b.firewall_rules || [])
 }
 function actionView(a) {
@@ -226,7 +280,7 @@ function actionView(a) {
     id: a.id, status, type: a.type, started_at: new Date(a.startedAt).toISOString(), completed_at: done ? new Date(a.startedAt + a.ms).toISOString() : null,
     resource_type: 'server', resource_id: a.server_id ?? 0, region: server?.region, region_slug: server?.region?.slug, title: a.type.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()),
     reason: 'Your request is being processed', progress: { current_step: done ? '' : 'Working', current_step_detail: null, percent_complete: done ? 100 : Math.min(90, Math.round((Date.now() - a.startedAt) / a.ms * 100)), completed_steps: done ? ['Working'] : [] },
-    error_message: done && a.outcome === 'errored' ? 'The simulated action failed (mock server).' : null, result_data: null, blocking_invoice_id: null, user_interaction_required: null
+    error_message: done && a.outcome === 'errored' ? a.error || 'The simulated action failed (mock server).' : null, result_data: null, blocking_invoice_id: null, user_interaction_required: null
   })
   return base
 }
@@ -269,6 +323,19 @@ async function handleApi(req, res, u, body) {
   if ((mt = p.match(/^\/v2\/domains\/([^/]+)\/records\/(\d+)$/)) && m === 'DELETE') { const d = decodeURIComponent(mt[1]); records[d] = (records[d] || []).filter((r) => r.id !== +mt[2]); return json(res, 204) }
   if ((mt = p.match(/^\/v2\/domains\/([^/]+)$/)) && m === 'DELETE') { domains = domains.filter((x) => x.name !== decodeURIComponent(mt[1])); return json(res, 204) }
   if (m === 'GET' && p === '/v2/images') return json(res, 200, page(images, q, 'images'))
+  if ((mt = p.match(/^\/v2\/images\/(\d+)$/))) {
+    const image = backupImage(+mt[1]) || images.find((i) => i.id === +mt[1])
+    if (!image) return json(res, 404, { id: 'not_found', message: 'Image not found' })
+    if (m === 'GET') return json(res, 200, { image })
+    if (m === 'PUT' && image.type === 'backup' && image.backup_info) {
+      if (body?.locked != null) {
+        if (image.backup_info.type === 'temporary' || isAttached(image.id)) return json(res, 400, { id: 'bad_request', message: 'Cannot lock or unlock temporary or attached backups.' })
+        image.backup_info.locked = !!body.locked
+      }
+      if (body?.name != null) image.name = body.name
+      return json(res, 200, { image })
+    }
+  }
   if (m === 'GET' && /^\/v2\/images\/\d+\/download$/.test(p)) return json(res, 200, { link: 'https://example.com/download/image.raw.gz' })
   if (m === 'GET' && p === '/v2/regions') return json(res, 200, page(regions, q, 'regions'))
   if (m === 'GET' && p === '/v2/sizes') {
@@ -296,16 +363,24 @@ async function handleApi(req, res, u, body) {
   }
   if (m === 'GET' && p === '/v2/servers') return json(res, 200, page(servers, q, 'servers'))
   if (m === 'POST' && p === '/v2/servers') {
-    const id = nextId++, s = mkServer({ id, name: body.name, size_slug: body.size, region: body.region, image: body.image, vpc_id: body.vpc_id || 901, ip: '203.0.113.' + (id % 200), status: 'new' })
+    const id = nextId++, s = mkServer({ id, name: body.name, size_slug: body.size, region: body.region, image: body.image, vpc_id: body.vpc_id || 901, ip: '203.0.113.' + (id % 200), status: 'new', backups: false,
+      memory: body.options?.memory, disk: body.options?.disk, options: { ...(body.backups ? { daily_backups: 2 } : {}), ...body.options } })
     servers.push(s); setTimeout(() => { s.status = 'active' }, cfg.actionMs * 2); return json(res, 200, { server: s, links: {} })
   }
   if ((mt = p.match(/^\/v2\/servers\/(\d+)(\/.*)?$/))) {
     const s = servers.find((x) => x.id === +mt[1]), sub = mt[2] || ''
     if (!s) return json(res, 404, { id: 'not_found', message: 'Server not found' })
     if (sub === '' && m === 'GET') return json(res, 200, { server: s })
-    if (sub === '' && m === 'DELETE') { servers = servers.filter((x) => x !== s); return json(res, 204) }
+    if (sub === '' && m === 'DELETE') { servers = servers.filter((x) => x !== s); serverBackups.delete(s.id); return json(res, 204) }
     if (sub === '/actions' && m === 'GET') return json(res, 200, page([...actions.values()].filter((a) => a.server_id === s.id).reverse().map(actionView), q, 'actions'))
-    if (sub === '/actions' && m === 'POST') return json(res, 200, { action: actionView(actions.get(newAction(body?.type || 'unknown', s, body))) })
+    if (sub === '/actions' && m === 'POST') {
+      if (body?.type === 'take_backup') {
+        const plan = backupPlan(s, body)
+        if (plan.error) return json(res, 400, { id: 'bad_request', message: plan.error })
+      }
+      if (body?.type === 'attach_backup' && !backupImage(body.image)) return json(res, 400, { id: 'bad_request', message: 'Backup image not found.' })
+      return json(res, 200, { action: actionView(actions.get(newAction(body?.type || 'unknown', s, body))) })
+    }
     if (sub === '/advanced_firewall_rules') return json(res, 200, { firewall_rules: fwOverride.get(s.id) ?? firewall(s) })
     if (sub === '/available_advanced_features') return json(res, 200, { available_advanced_server_features: { advanced_features: ['emulated-hyperv', 'emulated-devices', 'driver-disk', 'cloud-init', 'emulated-tpm', 'unset-uuid', 'local-rtc', 'qemu-guest-agent', 'uefi-boot'], machine_types: ['pc_i440fx_7point2point1'], processor_models: [{ id: 0, name: 'Host default' }], video_devices: ['cirrus-logic', 'standard', 'virtio', 'virtio-wide'] } })
     if (sub === '/backups') return json(res, 200, page(backupsFor(s), q, 'backups'))
@@ -359,4 +434,4 @@ const server = create(async (req, res) => {
   if (f) { f.count--; return json(res, f.status, { id: f.status === 429 ? 'too_many_requests' : 'server_error', message: `Injected ${f.status}` }) }
   try { await handleApi(req, res, u, body) } catch (e) { appendFileSync(LOG, `ERROR ${req.method} ${u.pathname} ${e.stack}\n`); json(res, 500, { id: 'mock_error', message: String(e) }) }
 })
-server.listen(PORT, '127.0.0.1', () => console.log(`mock listening on ${PORT}`))
+server.listen(PORT, '127.0.0.1', () => console.log(`mock listening on ${server.address().port}`))

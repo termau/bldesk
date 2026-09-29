@@ -19,6 +19,14 @@ node scripts/gui-test/signin.mjs                       # signs in through the re
 node scripts/gui-test/launch.mjs --stop                # when finished
 ```
 
+Backup-model regressions can also run without Electron or Playwright:
+
+```sh
+node --test scripts/gui-test/mock.test.mjs
+```
+
+This starts a local HTTP mock on a free port with a fictitious token, then stops it. It checks plan backup options, per-server ownership, free and full slots, replacement strategies, locked/attached images, failed actions and reset.
+
 `launch.mjs` options: `--name NAME` (run several at once; default `default`), `--mock-port` (8443), `--cdp-port` (9333), `--bin PATH` (an installed BLDesk instead of this checkout, to test the packaged app with its production CSP), `--mock-only`, `--http`, `--stop`. Everything for a run, including the mock log (`mock.log`, every request with its body), the app log and screenshots, is in `<tmp>/bldesk-gui-test/NAME/`.
 
 On Linux the app is started with `--password-store=basic`, so it never touches your keyring; the sign-in dialog then shows the "no keyring" warning and the script ticks "save without encryption". That warning screen is itself worth a look.
@@ -29,16 +37,20 @@ On Linux the app is started with `--password-store=basic`, so it never touches y
 
 ## The mock
 
-Responses are generated from `openapi.json`, then overridden with fleet data, so field names and shapes follow the public reference. The mock does not validate request bodies; read the bodies in `mock.log` and compare them with the spec, which is how wrong field names show up.
+Responses are generated from `openapi.json`, then overridden with fleet data, so field names and shapes follow the public reference. Most request bodies are not validated; backup requests check slot availability, the replacement strategy, ownership and locked/attached images. Read the bodies in `mock.log` and compare them with the spec, which is how wrong field names show up.
+
+Plan backup pricing follows the public sizes snapshot reported in [#198](https://github.com/termau/bldesk/issues/198) on 2026-09-29: no included daily, weekly or monthly backups; $0.05 per backup per GB and $0.05 per offsite copy per GB; `daily_per_gigabyte`, `weekly_per_gigabyte` and `monthly_per_gigabyte` frequency costs all zero. The fleet and other plan figures remain fictitious.
 
 Fixture fleet (28 servers, more than 20 so paging is exercised):
 
 - 8100-8117: the "Atlas" fleet across syd/bne/mel, VPCs 901-903, load balancers 950-952.
 - 9001 `win-app-01`: Windows Server 2022 with a data disk and licences. 9002 `legacy-gs1`: on a retired plan. 9003 `stopped-batch-01`: off, no backups. 9004 `vpc-only-01`: no public IPv4. 9005 `building-01`: status new. 9006/9007: an HA pair. 9008: a very long name. 9009: three public IPv4s, IPv6 and a failover IP. 9010 `cpanel-host-01`.
 - Regions syd, bne, mel, per, sin and an unavailable adl. Sizes `std-min` to `std-8vcpu` (`std-8vcpu` includes 340 GB, which is off the valid storage steps), a CPU Optimised size with restricted disk values, and the retired `a-3040` (returned only in the resize list of a server on it). Stock is per operating system: a Windows image makes `std-6vcpu` and `std-8vcpu` out of stock in bne, an Ubuntu image makes 4 vCPU and up out of stock in mel.
-- Seven images (Linux, Windows, Windows with SQL, cPanel), 4 SSH keys, 3 domains with every record type, 27 invoices (the newest unpaid), and backups per server.
+- Seven images (Linux, Windows, Windows with SQL, cPanel), 4 SSH keys, 3 domains with every record type, 27 invoices (the newest unpaid), and backups with distinct IDs and state per server. Each server with a schedule starts with a temporary, daily, weekly and monthly image; `backup_info` identifies its actual slot type, originating server and disks.
 
-Actions complete after about 2.5 seconds. Power actions, resize, backups and firewall writes change the mock's state; other server settings (rename, add disk, and so on) complete without changing anything.
+Actions complete after about 2.5 seconds. Power actions, resize, taking/attaching/detaching backups and firewall writes change the mock's state; other server settings (rename, add disk, and so on) complete without changing anything.
+
+`take_backup` uses the server's selected retention counts for scheduled slots. `none` needs a free slot; `oldest` and `newest` use a free slot first, then replace the selected unlocked, unattached image of that type; `specified` replaces a named image belonging to that server and inherits its slot type. Taking a temporary backup requires no scheduled retention. Temporary images are not automatically expired by the mock. Image GET/PUT supports inspecting backup metadata, renaming images and locking/unlocking scheduled images; attaching an image protects it from replacement until it is detached.
 
 Control endpoints (POST JSON to the mock, for example `curl -sk -X POST -d '{"empty":true}' https://127.0.0.1:8443/__mock/config`):
 
