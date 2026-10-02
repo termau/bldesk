@@ -71,6 +71,7 @@ if (!scriptTemplate) {
         stagingDir: '/tmp/Staging',
         stagedApp: '/tmp/Staging/BLDesk.app',
         targetApp: '/tmp/Test.app',
+        shQuote: (word) => `'${word}'`,
         forceRunAfter
       })
       execFileSync('bash', ['-n'], { input: script, stdio: ['pipe', 'pipe', 'pipe'] })
@@ -90,9 +91,9 @@ if (!scriptTemplate) {
 function installOrderProblems(template) {
   const problems = []
   const lines = template.split('\n').map((l) => l.replace(/(^|\s)#.*$/, ''))
-  const appRefs = new Set(['${targetApp}'])
+  const appRefs = new Set(['${targetApp}', '${shQuote(targetApp)}'])
   for (const l of lines) {
-    const alias = l.match(/^\s*([A-Za-z_]\w*)=(["']?)\$\{targetApp\}\2\s*$/)
+    const alias = l.match(/^\s*([A-Za-z_]\w*)=(?:(["']?)\$\{targetApp\}\2|\$\{shQuote\(targetApp\)\})\s*$/)
     if (alias) appRefs.add('$' + alias[1])
   }
   const lead = new Set(['if', 'elif', 'then', 'else', 'do', 'while', 'until', '!', '{', '(', 'command', 'exec'])

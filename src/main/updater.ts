@@ -7,6 +7,7 @@ import { ensureOwnerDir, writeOwnerFileAtomic } from './ownerFiles'
 import { execFileSync, spawn } from 'child_process'
 import { UpdateChannel, UpdaterState, UpdaterStatus } from '../shared/ipc-types'
 import { restartArguments } from '../shared/deeplink'
+import { shQuote } from '../shared/ssh'
 
 // electron-updater is CJS with dynamic getter exports; resolve via namespace/default
 const autoUpdater = (electronUpdater as any).autoUpdater || (electronUpdater as any).default?.autoUpdater || electronUpdater
@@ -165,8 +166,14 @@ function installMacUpdate(zipPath: string, forceRunAfter: boolean): void {
   // The installed app is replaced only once the new one has unzipped (exit 0, or 1 for warnings only) and been copied
   // next to it, by two renames in the same folder. A failure logs to the system log, exits non-zero and leaves a
   // complete app on disk: the installed one, or if putting it back fails too, both bundles, named in the log line.
+  // Each path is written once, single-quoted, and the rest of the script only expands the variable: a quote, dollar
+  // sign or backtick in a path is part of its name, never shell syntax.
   const scriptContent = `#!/bin/bash
 PID=${process.pid}
+ZIP=${shQuote(zipPath)}
+STAGING=${shQuote(stagingDir)}
+STAGED=${shQuote(stagedApp)}
+TARGET=${shQuote(targetApp)}
 COUNT=0
 while kill -0 $PID 2>/dev/null; do
   sleep 0.1
@@ -177,32 +184,32 @@ while kill -0 $PID 2>/dev/null; do
   fi
 done
 
-NEW="${targetApp}.new"
-OLD="${targetApp}.old"
+NEW="$TARGET.new"
+OLD="$TARGET.old"
 STATUS=1
 LEFT=""
 # Leftovers of an earlier attempt are cleared only while the installed app is in place. With no app at that path they
 # may be the only copies of one, and nothing here touches them.
-if [ -d "${targetApp}" ]; then rm -rf "$NEW" "$OLD"; fi
-unzip -q -o "${zipPath}" -d "${stagingDir}"
+if [ -d "$TARGET" ]; then rm -rf "$NEW" "$OLD"; fi
+unzip -q -o "$ZIP" -d "$STAGING"
 UNZIP=$?
 # unzip exits 1 for warnings and carries on; 2 and above are errors. Only that the app folder exists is checked after.
 # mv would move a bundle into a folder that already exists, so each rename first checks that its destination is free.
-if [ $UNZIP -le 1 ] && [ -d "${stagedApp}" ] && [ -d "${targetApp}" ] && [ ! -e "$NEW" ] && [ ! -e "$OLD" ] && cp -R "${stagedApp}" "$NEW" && mv "${targetApp}" "$OLD"; then
-  if [ ! -e "${targetApp}" ] && mv "$NEW" "${targetApp}"; then
+if [ $UNZIP -le 1 ] && [ -d "$STAGED" ] && [ -d "$TARGET" ] && [ ! -e "$NEW" ] && [ ! -e "$OLD" ] && cp -R "$STAGED" "$NEW" && mv "$TARGET" "$OLD"; then
+  if [ ! -e "$TARGET" ] && mv "$NEW" "$TARGET"; then
     rm -rf "$OLD"
-    xattr -cr "${targetApp}" 2>/dev/null || true
+    xattr -cr "$TARGET" 2>/dev/null || true
     STATUS=0
-  elif [ -e "${targetApp}" ] || ! mv "$OLD" "${targetApp}"; then
+  elif [ -e "$TARGET" ] || ! mv "$OLD" "$TARGET"; then
     LEFT=" (the new version is in $NEW and the previous one in $OLD)"
   fi
 fi
 # $NEW is removed only when an app is at the installed path, and so is not the only copy of one.
-if [ -z "$LEFT" ] && [ -d "${targetApp}" ]; then rm -rf "$NEW"; fi
-rm -rf "${stagingDir}"
-rm -f "${zipPath}"
+if [ -z "$LEFT" ] && [ -d "$TARGET" ]; then rm -rf "$NEW"; fi
+rm -rf "$STAGING"
+rm -f "$ZIP"
 [ $STATUS -eq 0 ] || logger -t BLDesk "Update not installed: the new version could not be unzipped and put in place$LEFT"
-${forceRunAfter ? `open "${targetApp}"` : ''}
+${forceRunAfter ? 'open "$TARGET"' : ''}
 exit $STATUS
 `
   writeFileSync(scriptPath, scriptContent, { mode: 0o755 })
