@@ -21,7 +21,7 @@ BLDesk brings BinaryLane account management together with fleet-wide views and l
 - **Review firewall changes:** ordered IPv4 rules, a fleet matrix, audit flags, local tags/groups and per-target diffs when copying rulesets.
 - **Build repeatably:** whole-server YAML templates, built-in starters, variables and capture from an existing server, followed by the Create Server review.
 - **Change plans deliberately:** resources, licences, backup/offsite options, pre-action backup, monthly-cost comparison and explicit review of address releases or reinstall.
-- **Recover and inspect:** on-demand backups, slot/replacement selection, restore, read-only backup attachment, download links and nightly schedule controls.
+- **Recover and inspect:** on-demand backups, slot/replacement selection, restore, read-only backup attachment, download links and backup schedule controls.
 - **Work quickly:** a verb-first command palette with glob/ID/IP/tag targets, desktop TCP reachability/traceroute and server/help deep links.
 - **Keep SSH in context:** persistent desktop terminal tabs, scrollback search, optional reopen after restart and reviewed parallel broadcast commands with per-host output and History. Native SSH remains an explicit alternative.
 - **Follow outcomes:** page-action confirmation dialogs, change tables/diffs, typed irreversible confirmations, local per-profile History and running-action tracking.

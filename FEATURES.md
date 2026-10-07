@@ -14,7 +14,7 @@ Source audit: 5 September 2026, package version 1.0.61-beta.1. This inventory de
 | Network map | VPC membership, regional topology, load-balancer backends, rule-derived exposure, selection, mouse pan/zoom and SVG/PNG export | `NetworkMap.tsx`, `lib/networkMap.ts` |
 | Fleet heatmap | CPU/RAM/disk capacity ratios, network/IO rates, sorting, stale/missing-data states and links to Usage | `FleetHeatmap.tsx`, `lib/heatmap.ts` |
 | VPCs and load balancers | VPC create/member inspection/detach/delete; balancer create, forwarding-rule display, backend attach/detach/delete | `VpcManager.tsx`, `LoadBalancerManager.tsx` |
-| Backups | Slot/replacement selection, restore, read-only attachment/detachment, download link and nightly schedule toggle | `BackupManager.tsx`, `lib/backupSlots.ts` |
+| Backups | Slot/replacement selection, restore, read-only attachment/detachment, download link, daily-backups toggle and backup schedule | `BackupManager.tsx`, `lib/backupSlots.ts` |
 | DNS and SSH keys | Paginated hosted zones, add/delete records, zone export before removal; account public-key add/import/copy/delete, rename and default for new servers, and key-pair generation into ~/.ssh with the system ssh-keygen (desktop only) | `DnsManager.tsx`, `SshKeysManager.tsx`, `GenerateKeyPairDialog.tsx`, `src/main/sshKeygen.ts` |
 | Account and billing | Read-only account/security fields, balances, pending charges, paginated invoices and mPanel links | `AccountOverview.tsx`, `BillingOverview.tsx` |
 | Review and History | Shared page-action review, typed irreversible confirmations, change tables/diffs, per-profile local outcomes | `context/ConfirmContext.tsx`, `HistoryView.tsx`, `lib/changelog.ts` |

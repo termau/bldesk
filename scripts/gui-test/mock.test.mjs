@@ -287,3 +287,21 @@ test('a second account (extraToken) sees only its own server (#138)', async () =
   // The first account is unchanged.
   assert.ok((await request('/v2/servers')).servers.length > 1)
 })
+
+test('backup_settings is reported, and change_backup_schedule changes only what is sent and answers 202 with no body', async () => {
+  const { backup_settings: first } = await server(8100)
+  assert.deepEqual(Object.keys(first).sort(), ['backup_day_of_month', 'backup_day_of_week', 'backup_hour_of_day', 'offsite_backup_settings'])
+  const post = (b) => fetch(`${base}/v2/servers/8100/actions`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body: JSON.stringify({ type: 'change_backup_schedule', ...b }) })
+  const ok = await post({ backup_hour_of_day: 5 })
+  assert.equal(ok.status, 202)
+  assert.equal(await ok.text(), '', 'no action to follow, as the live API answers')
+  const { backup_settings: second } = await server(8100)
+  assert.deepEqual(second, { ...first, backup_hour_of_day: 5 }, 'the hour changed and the days did not')
+  for (const bad of [{ backup_hour_of_day: 24 }, { backup_hour_of_day: -1 }, { backup_hour_of_day: 2.5 }, { backup_day_of_week: 7 }, { backup_day_of_month: 29 }, { backup_day_of_month: 0 }]) {
+    assert.equal((await post(bad)).status, 400, JSON.stringify(bad))
+  }
+  assert.deepEqual((await server(8100)).backup_settings, second, 'a refused change leaves the schedule alone')
+  const edge = await post({ backup_hour_of_day: 0, backup_day_of_week: 6, backup_day_of_month: 28 })
+  assert.equal(edge.status, 202)
+  assert.deepEqual((await server(8100)).backup_settings, { ...first, backup_hour_of_day: 0, backup_day_of_week: 6, backup_day_of_month: 28 })
+})

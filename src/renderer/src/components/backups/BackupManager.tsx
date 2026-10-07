@@ -25,7 +25,11 @@ import {
   useToggleAutomatedBackupsMutation,
   useAttachBackupMutation,
   useDetachBackupMutation,
-  useImageDownloadMutation
+  useImageDownloadMutation,
+  useServerActionWithHandoff,
+  actionFailureMessage,
+  ACCEPTED_WITHOUT_ACTION,
+  type ServerActionBody
 } from '../../api/queries'
 import { useTrackedActions } from '../../context/ActionTrackerContext'
 import { useConfirm } from '../../context/ConfirmContext'
@@ -33,6 +37,33 @@ import { recordChange, updateChange } from '../../lib/changelog'
 import type { FieldChange } from '../../lib/diff'
 import { availableBackupSlots, BACKUP_SLOT_LABELS, describeBackup, replacedByOldest } from '../../lib/backupSlots'
 import { notifyFailure } from '../../lib/failures'
+import {
+  FORMATTERS,
+  changedFields,
+  formatDayOfMonth,
+  formatHour,
+  formatWeekday,
+  optionsFor,
+  readBackupSchedule,
+  scheduleBodyFields,
+  scheduleDraft,
+  scheduleFields,
+  setScheduleEdit,
+  type ScheduleEdits,
+  type ScheduleField
+} from '../../lib/backupSchedule'
+
+/** What the confirmation's table calls each field, and what the form's label adds to it. */
+const SCHEDULE_NAMES: Record<ScheduleField, string> = {
+  hour: 'Hour of the day',
+  dayOfWeek: 'Day of the week',
+  dayOfMonth: 'Day of the month'
+}
+const SCHEDULE_HINTS: Record<ScheduleField, string> = {
+  hour: 'Australia/Sydney time, approximate',
+  dayOfWeek: 'for weekly backups',
+  dayOfMonth: 'for monthly backups'
+}
 
 interface BackupManagerProps {
   /** The app's server list — see AGENTS.md rule 8; tabs do not call useServers. */
@@ -77,12 +108,20 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
   const attachBackupMutation = useAttachBackupMutation(client, activeServerId)
   const detachBackupMutation = useDetachBackupMutation(client, activeServerId)
   const downloadMutation = useImageDownloadMutation(client)
+  const scheduleMutation = useServerActionWithHandoff(client, activeServerId)
 
   // Form & Action states
   const [isTakingBackup, setIsTakingBackup] = useState(false)
   const [backupLabel, setBackupLabel] = useState('')
   const [selectedSlot, setSelectedSlot] = useState('temporary')
   const [actionProcessingId, setActionProcessingId] = useState<number | null>(null)
+  // The schedule form: open, and the values it is showing. `changing` covers the confirmation and the request.
+  const [isChangingSchedule, setIsChangingSchedule] = useState(false)
+  const [changing, setChanging] = useState(false)
+  const changingRef = useRef(false)
+  // Only what the user has chosen in the form. The rest is the schedule the server reports now (`draft`, below), so it follows
+  // the 15-second refresh of the server list instead of being a copy taken when the form opened.
+  const [edits, setEdits] = useState<ScheduleEdits>({})
 
   const backups = backupsQuery.data || []
   const actions = actionsQuery.data || []
@@ -92,6 +131,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
   useEffect(() => {
     setSelectedSlot('temporary')
     setBackupLabel('')
+    setIsChangingSchedule(false)
   }, [activeServerId])
   // And it only counts while the form can still show it (the backup may have been deleted, or the plan changed).
   const slotOptions = [...availableBackupSlots(activeServer?.selected_size_options), ...backups.map((b) => `replace:${b.id}`)] as string[]
@@ -109,11 +149,19 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
   const isAutoBackupEnabled = activeServer?.selected_size_options
     ? (activeServer.selected_size_options.daily_backups ?? 0) > 0
     : !!activeServer?.next_backup_window
-  // Weekly or monthly retention without a daily one is a schedule too, just not the nightly one this banner switches:
+  // Weekly or monthly retention without a daily one is a schedule too, just not the daily ones this banner switches:
   // "Disabled" would be untrue, and enabling two daily backups is for a server with no backups.
   const weeklyOrMonthlyOnly =
     !isAutoBackupEnabled &&
     ((activeServer?.selected_size_options?.weekly_backups ?? 0) > 0 || (activeServer?.selected_size_options?.monthly_backups ?? 0) > 0)
+
+  // When the server's scheduled backups run, from the app's server list (`backup_settings`). Only what applies to what the
+  // server keeps is shown and changed: nothing while it keeps no daily, weekly or monthly backups, the weekday only with weekly
+  // ones and the day of the month only with monthly ones (see lib/backupSchedule.ts).
+  const schedule = readBackupSchedule(activeServer)
+  const shownFields = scheduleFields(activeServer?.selected_size_options)
+  const draft = schedule ? scheduleDraft(schedule, edits) : null
+  const changedNow = schedule && draft ? changedFields(schedule, draft, shownFields) : []
 
   // One take at a time, from the submit until the request is sent or the dialog is cancelled. A second submit would send
   // the same request again, which the client refuses, leaving a failed History entry and a failure message. Meanwhile the form
@@ -356,6 +404,68 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
     }
   }
 
+  // Change when the server's scheduled backups run: confirm the rows that change, send only those, and record the outcome in
+  // History. The form stays open when the request fails, so what was chosen is not lost. This action is one that readQueuedAction
+  // (api/queries.ts) says the API answers with 202 and no action to follow, which useServerActionWithHandoff reports as `accepted`.
+  const handleChangeSchedule = async (e: React.FormEvent) => {
+    e.preventDefault()
+    // One change at a time, from the submit until the request is sent or the confirmation is cancelled: a second submit would
+    // send the same request again. The ref answers at once, before the state has re-rendered.
+    if (!activeServerId || !schedule || !draft || changingRef.current || changedNow.length === 0) return
+    const serverId = activeServerId
+    changingRef.current = true
+    setChanging(true)
+    try {
+      const c = await confirmAction({
+        title: 'Change backup schedule',
+        helpSlug: 'backups#backup-schedule',
+        target: { kind: 'server', id: serverId, name: activeServer?.name || `#${serverId}` },
+        summary: "Changes when BinaryLane runs this server's scheduled backups. The hour is approximate, and the days are Australia/Sydney calendar days.",
+        severity: 'normal',
+        changes: changedNow.map((f) => ({ label: SCHEDULE_NAMES[f], from: FORMATTERS[f](schedule[f]), to: FORMATTERS[f](draft[f]) }))
+      })
+      if (!c.ok) return
+      const label = 'Change Backup Schedule'
+      const body: ServerActionBody = { type: 'change_backup_schedule', ...scheduleBodyFields(draft, changedNow) }
+      try {
+        const outcome = await scheduleMutation.mutateAsync(body)
+        switch (outcome.state) {
+          case 'completed':
+            void updateChange(c.changeId, { outcome: 'completed', actionId: outcome.action.id })
+            break
+          case 'handed-off':
+          case 'awaiting-interaction':
+            track(outcome.action, label, activeServer?.name, c.changeId)
+            break
+          case 'accepted':
+            void updateChange(c.changeId, { outcome: 'submitted', detail: ACCEPTED_WITHOUT_ACTION })
+            break
+          case 'blocked-by-invoice':
+            track(outcome.action, label, activeServer?.name, c.changeId)
+            notifyFailure('Schedule update blocked', new Error(`"${label}" is blocked by invoice #${outcome.action.blocking_invoice_id}, which requires payment.`))
+            return
+          case 'errored': {
+            const detail = actionFailureMessage(label, outcome.action)
+            void updateChange(c.changeId, { outcome: 'errored', actionId: outcome.action.id, detail })
+            notifyFailure('Schedule update failed', new Error(detail))
+            return
+          }
+        }
+        window.bldeskApi?.sendNotification?.({
+          title: 'Schedule Change Requested',
+          body: `Changing when the backups of server #${serverId} run.`
+        })
+        setIsChangingSchedule(false)
+      } catch (err: any) {
+        void updateChange(c.changeId, { outcome: 'failed', detail: err.message })
+        notifyFailure('Schedule update failed', err)
+      }
+    } finally {
+      changingRef.current = false
+      setChanging(false)
+    }
+  }
+
   // Toggle Automated Backups
   const handleToggleAuto = async () => {
     if (!activeServerId) return
@@ -364,7 +474,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
       title: enable ? 'Enable automated backups' : 'Remove daily backups',
       target: { kind: 'server', id: activeServerId, name: activeServer?.name || `#${activeServerId}` },
       summary: enable
-        ? 'BinaryLane takes a nightly backup on the server\'s schedule.'
+        ? 'BinaryLane takes daily backups on the server\'s schedule.'
         : 'Changes the server\'s options to remove its daily backups. This is not a pause: BinaryLane removes them, including any you took with Take Backup into a daily slot, and does not ask again.',
       severity: enable ? 'normal' : 'destructive',
       notes: enable
@@ -443,7 +553,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
             </div>
             <div>
               <div className="text-xs font-bold text-[#212529] dark:text-white flex items-center gap-2">
-                <span>Automated Nightly Backups</span>
+                <span>Automated Daily Backups</span>
                 <span
                   className={`px-2 py-0.5 text-[10px] font-semibold rounded-full ${
                     isAutoBackupEnabled
@@ -451,15 +561,15 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
                       : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30'
                   }`}
                 >
-                  {isAutoBackupEnabled ? 'Enabled' : weeklyOrMonthlyOnly ? 'No nightly' : 'Disabled'}
+                  {isAutoBackupEnabled ? 'Enabled' : weeklyOrMonthlyOnly ? 'No daily' : 'Disabled'}
                 </span>
               </div>
               <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-0.5">
                 {isAutoBackupEnabled
-                  ? "BinaryLane takes an automated nightly backup during your scheduled maintenance window. Weekly and monthly backups are set in the server's Change Plan, under Backups."
+                  ? "BinaryLane takes automated daily backups. The Backup Schedule below shows when they run. Weekly and monthly backups are set in the Backups section of the server's Change Plan."
                   : weeklyOrMonthlyOnly
-                    ? "This server keeps weekly or monthly backups and no daily ones. Daily, weekly and monthly backups are set in the server's Change Plan, under Backups."
-                    : "Automated backups are currently turned off for this server. The button enables two daily backups; weekly and monthly backups are set in the server's Change Plan, under Backups."}
+                    ? "This server keeps weekly or monthly backups and no daily ones. Daily, weekly and monthly backups are set in the Backups section of the server's Change Plan."
+                    : "Automated backups are currently turned off for this server. The button enables daily backups and keeps two of them; weekly and monthly backups are set in the Backups section of the server's Change Plan."}
               </p>
             </div>
           </div>
@@ -473,8 +583,37 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
                 : 'text-[#017cb6] bg-[#017cb6]/10 border-[#017cb6]/30 hover:bg-[#017cb6]/20'
             }`}
           >
-            {isAutoBackupEnabled ? 'Remove Daily Backups' : 'Enable Nightly Backups'}
+            {isAutoBackupEnabled ? 'Remove Daily Backups' : 'Enable Daily Backups'}
           </button>}
+        </div>
+      )}
+
+      {/* Backup schedule: when the server's scheduled backups run */}
+      {activeServer && shownFields.length > 0 && (
+        <div className="bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg p-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+          <div className="min-w-0 flex-1 basis-60">
+            <div className="text-xs font-bold text-[#212529] dark:text-white">Backup Schedule</div>
+            {schedule ? (
+              <div className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-0.5 space-y-0.5">
+                <p>Backups run at about {formatHour(schedule.hour)}, Australia/Sydney time.</p>
+                {shownFields.includes('dayOfWeek') && <p>Weekly backups run on {formatWeekday(schedule.dayOfWeek)}.</p>}
+                {shownFields.includes('dayOfMonth') && <p>Monthly backups run on the {formatDayOfMonth(schedule.dayOfMonth)}.</p>}
+              </div>
+            ) : (
+              <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-0.5">BinaryLane did not report when this server's backups run.</p>
+            )}
+          </div>
+          {schedule && (
+            <button
+              onClick={() => {
+                setEdits({})
+                setIsChangingSchedule(true)
+              }}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-[#017cb6] hover:bg-[#016594] rounded transition whitespace-nowrap shadow-sm"
+            >
+              Change Schedule
+            </button>
+          )}
         </div>
       )}
 
@@ -641,6 +780,63 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
           </div>
         )}
       </div>
+
+      {/* Backup schedule dialog */}
+      {isChangingSchedule && schedule && draft && (
+        <Modal
+          title="Change Backup Schedule"
+          size="sm"
+          onClose={() => setIsChangingSchedule(false)}
+          // While the confirmation is open and the request is sent the form cannot be closed, like every form while its request runs.
+          busy={scheduleMutation.isPending || changing}
+          as="form"
+          onSubmit={handleChangeSchedule}
+          footer={
+            <div className="flex justify-end gap-2 p-4 text-xs">
+              <button
+                type="button"
+                onClick={() => setIsChangingSchedule(false)}
+                disabled={scheduleMutation.isPending || changing}
+                className="px-3 py-1.5 text-xs text-[#6c757d] hover:text-[#212529] dark:hover:text-white disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={scheduleMutation.isPending || changing || changedNow.length === 0}
+                className="px-4 py-1.5 bg-[#017cb6] hover:bg-[#016594] text-white font-medium rounded transition flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+              >
+                {(scheduleMutation.isPending || changing) && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Change Schedule</span>
+              </button>
+            </div>
+          }
+        >
+          <div className="p-5 space-y-4 text-xs">
+            <p className="text-[#6c757d] dark:text-slate-400">
+              Sets when BinaryLane runs the scheduled backups of {activeServer?.name}. The hour and the days are in Australia/Sydney time, whichever region the server is in.
+            </p>
+            {shownFields.map((field) => (
+              <div key={field}>
+                <label className="block font-medium text-[#495057] dark:text-[#ced4da] mb-1">
+                  {SCHEDULE_NAMES[field]} <span className="font-normal text-[#6c757d] dark:text-slate-400">({SCHEDULE_HINTS[field]})</span>
+                </label>
+                <select
+                  value={draft[field]}
+                  onChange={(e) => setEdits((prev) => setScheduleEdit(prev, field, Number(e.target.value), schedule))}
+                  className="w-full bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] text-xs text-[#212529] dark:text-white px-3 py-2 rounded focus:outline-none focus:border-[#017cb6]"
+                >
+                  {optionsFor(field, schedule[field]).map((n) => (
+                    <option key={n} value={n}>
+                      {FORMATTERS[field](n)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+        </Modal>
+      )}
 
       {/* Take Backup dialog */}
       {isTakingBackup && (

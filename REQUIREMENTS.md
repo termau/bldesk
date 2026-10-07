@@ -95,7 +95,7 @@ Based on the 94 endpoints, 206 schemas, and 42 server actions in the BinaryLane 
 | | Detach Backup Disk | `POST /v2/servers/{id}/actions` (`type: detach_backup`) |
 | | Enable Backups | `POST /v2/servers/{id}/actions` (`type: enable_backups`) |
 | | Disable Backups | `POST /v2/servers/{id}/actions` (`type: disable_backups`) |
-| | Backup Schedule | `POST /v2/servers/{id}/actions` (`type: change_backup_schedule`, `backup_hour?`, `schedule?`) |
+| | Backup Schedule | `POST /v2/servers/{id}/actions` (`type: change_backup_schedule`, `backup_hour_of_day?`, `backup_day_of_week?`, `backup_day_of_month?`) |
 | | Offsite Backup Location | `POST /v2/servers/{id}/actions` (`type: change_offsite_backup_location`, `offsite_location`) |
 | | Offsite Backup Copies | `POST /v2/servers/{id}/actions` (`type: change_manage_offsite_backup_copies`, `enabled`) |
 | **Advanced & Cluster**| Advanced Features | `POST /v2/servers/{id}/actions` (`type: change_advanced_features`, `features`) |

@@ -134,6 +134,8 @@ function mkServer(o) {
     selected_size_options: { memory: o.memory ?? size.memory, disk: o.disk ?? size.disk, ipv4_addresses: v4.filter((n) => n.type === 'public').length, ...options },
     networks: { v4, v6: o.v6 ? [{ ip_address: '2001:db8:10::' + (o.id % 200).toString(16), type: 'public', netmask: 64, gateway: '2001:db8:10::1' }] : [] },
     next_backup_window: hasBackups ? { start_hour: 2, end_hour: 4, day: null } : null,
+    // BackupSettings requires all three; Sunday is day 0 and times are Australia/Sydney.
+    backup_settings: { backup_hour_of_day: o.backup_hour ?? 2, backup_day_of_week: o.backup_dow ?? 0, backup_day_of_month: o.backup_dom ?? 1, offsite_backup_settings: null },
     attached_backup: null,
     disks: [{ id: o.id * 10, size_gigabytes: o.disk ?? size.disk, description: 'Primary disk', primary: true }, ...(o.extraDisk ? [{ id: o.id * 10 + 1, size_gigabytes: 50, description: 'Data', primary: false }] : [])],
     failover_ips: o.failover || [], partner_id: o.partner || null, password_change_supported: image.distribution !== 'Windows',
@@ -391,6 +393,15 @@ async function handleApi(req, res, u, body) {
         if (plan.error) return json(res, 400, { id: 'bad_request', message: plan.error })
       }
       if (body?.type === 'attach_backup' && !backupImage(body.image)) return json(res, 400, { id: 'bad_request', message: 'Backup image not found.' })
+      if (body?.type === 'change_backup_schedule') {
+        // ChangeBackupSchedule: each value is optional ("Do not provide a value to keep the current setting") and a whole number in range.
+        // The reference documents 202 with no content, and readQueuedAction (src/renderer/src/api/queries.ts) says the live API answers this action that way; so does this.
+        const ranges = { backup_hour_of_day: [0, 23], backup_day_of_week: [0, 6], backup_day_of_month: [1, 28] }
+        const bad = Object.entries(ranges).map(([k, [lo, hi]]) => body[k] == null || (Number.isInteger(body[k]) && body[k] >= lo && body[k] <= hi) ? null : `${k} must be a whole number from ${lo} to ${hi}.`).find(Boolean)
+        if (bad) return json(res, 400, { id: 'bad_request', message: bad })
+        for (const k of Object.keys(ranges)) if (body[k] != null) s.backup_settings[k] = body[k]
+        return json(res, 202)
+      }
       if (body?.type === 'change_advanced_firewall_rules') {
         // AdvancedFirewallRuleRequest requires action, protocol, source_addresses and destination_addresses, each address list with at least one entry.
         const bad = (Array.isArray(body.firewall_rules) ? body.firewall_rules : [null]).map((r, i) => {
