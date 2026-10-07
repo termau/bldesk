@@ -108,10 +108,10 @@ export const ServerList: React.FC<ServerListProps> = ({
   // a finger does, so tags are edited in the server's own Settings > Tags.
   const phone = usePhoneLayout()
 
-  const handleCopyIp = (ip: string, e: React.MouseEvent) => {
+  const handleCopyIp = (ip: string, e: React.MouseEvent, key = ip) => {
     e.stopPropagation()
     navigator.clipboard.writeText(ip)
-    setCopiedIp(ip)
+    setCopiedIp(key)
     setTimeout(() => setCopiedIp(null), 1500)
   }
 
@@ -613,9 +613,26 @@ export const ServerList: React.FC<ServerListProps> = ({
 
       {/* View 2: Grid Cards */}
       {!isLoading && filteredServers.length > 0 && viewMode === 'grid' && (
+        // The cards of a row stretch to the tallest one (the grid's default), so a row of cards is one height. The footer (region
+        // and SSH) stays pinned to the bottom of its card, as it did: in the tallest card of a row it is 8px under the last address
+        // row, and in a shorter card the extra space sits between that row and the footer's divider.
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredServers.map((server) => {
-            const primaryIp = server.networks?.v4?.find((n) => n.type === 'public')?.ip_address || server.networks?.v4?.[0]?.ip_address
+            // What the table's Public IP and Private IP / VPC columns list, in rows. The first public IPv4 (the one this tile
+            // always showed) comes first, as it does in the server's Overview; any other public ones are its secondary
+            // addresses. The private ones follow in one row, called "VPC IP" for a server in a VPC and "Private IP" for one
+            // that is not, with the VPC's name on its own line under them, as the table shows it under its private address. "Public IP:" is always
+            // there, with the table's "None" when the server has no public address; a server in a VPC always has its private
+            // row, with "None" if no private address is listed. Otherwise a row with nothing in it is left out.
+            const publicIps = (server.networks?.v4 || []).filter((n) => n.type === 'public')
+            const secondaryIps = publicIps.slice(1)
+            const privateIps = (server.networks?.v4 || []).filter((n) => n.type === 'private')
+            const inVpc = !!server.vpc_id
+            const addressRows = [
+              { kind: 'public', label: 'Public IP:', ips: publicIps.slice(0, 1) },
+              { kind: 'secondary', label: secondaryIps.length > 1 ? 'Secondary IPs:' : 'Secondary IP:', ips: secondaryIps },
+              { kind: 'private', label: `${inVpc ? 'VPC IP' : 'Private IP'}${privateIps.length > 1 ? 's' : ''}:`, ips: privateIps }
+            ].filter((row) => row.kind === 'public' || row.ips.length > 0 || (row.kind === 'private' && inVpc))
             const state = describeStatus(server.status)
             const distroIcon = logoForDistribution(server.image?.distribution)
             const ramGB = (server.memory / 1024).toFixed(0)
@@ -653,7 +670,7 @@ export const ServerList: React.FC<ServerListProps> = ({
                   {tagsOf(tags, server.id).length > 0 && <div className="mt-2">{renderTags(server.id)}</div>}
 
                   {/* Specs */}
-                  <div className="mt-3 py-2 border-t border-b border-[#ced4da]/60 dark:border-[#373b3e] grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="mt-2 py-2 border-t border-b border-[#ced4da]/60 dark:border-[#373b3e] grid grid-cols-3 gap-2 text-center text-xs">
                     <div>
                       <div className="text-[10px] text-[#6c757d] uppercase">CPU</div>
                       <div className="font-semibold">{server.vcpus} vCPU</div>
@@ -668,20 +685,53 @@ export const ServerList: React.FC<ServerListProps> = ({
                     </div>
                   </div>
 
-                  {primaryIp && (
-                    <div className="mt-2 flex items-center justify-between text-xs font-mono text-[#6c757d] dark:text-slate-300">
-                      <span>{primaryIp}</span>
-                      <button
-                        onClick={(e) => handleCopyIp(primaryIp, e)}
-                        className="text-[#6c757d] hover:text-[#017cb6]"
-                      >
-                        {copiedIp === primaryIp ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
-                      </button>
-                    </div>
-                  )}
+                  {/* One row per kind of address, divided as the card's own sections are: every divider in the card has 8px of space
+                      above and below it (py-2 here, as in the specs block above and the footer below). The footer's divider is the
+                      one exception, in a card shorter than the tallest in its row: the extra space is above it, since the footer is
+                      pinned to the bottom. A row's addresses wrap to the card's width, each with its copy button beside it. */}
+                  <div className="divide-y divide-[#ced4da]/60 dark:divide-[#373b3e] text-xs font-mono text-[#6c757d] dark:text-slate-300">
+                    {addressRows.map((row) => (
+                      <div key={row.kind} className="py-2">
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                          <span className="font-sans text-[11px] -mr-2 dark:text-slate-400">{row.label}</span>
+                          {row.ips.length === 0 ? (
+                            <span className="font-sans text-[11px] text-[#6c757d]">None</span>
+                          ) : (
+                            row.ips.map((ip) => {
+                              // Keyed by server too: a private address can be the same on two servers.
+                              const copyKey = `${server.id}:${ip.ip_address}`
+                              return (
+                                <div key={ip.ip_address} className="flex items-center gap-1.5">
+                                  <span>{ip.ip_address}</span>
+                                  <button
+                                    onClick={(e) => handleCopyIp(ip.ip_address, e, copyKey)}
+                                    // On a phone the button's touch area grows without moving anything (the padding is taken back by the margin).
+                                    // It grows sideways more than up and down: wrapped addresses are 20 px apart, so a taller area would overlap the next line's.
+                                    className={`text-[#6c757d] hover:text-[#017cb6] ${phone ? 'px-2 py-1 -mx-2 -my-1' : ''}`}
+                                    title={`Copy ${ip.ip_address}`}
+                                    aria-label={`Copy ${ip.ip_address}`}
+                                  >
+                                    {copiedIp === copyKey ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
+                                  </button>
+                                </div>
+                              )
+                            })
+                          )}
+                        </div>
+                        {row.kind === 'private' && inVpc && (
+                          // The same component as the table's Private IP / VPC column: the network's icon and name, "VPC #id" until it
+                          // is known. It is on its own line under the addresses, in the same row (no divider), at the row's left edge
+                          // under its label, and a long name is cut with an ellipsis at the card's width.
+                          <div className="mt-1 flex min-w-0 font-sans font-medium text-[#017cb6]">
+                            <VpcBadge vpcId={server.vpc_id} client={client} />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-[#ced4da]/60 dark:border-[#373b3e] flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
+                <div className="pt-2 border-t border-[#ced4da]/60 dark:border-[#373b3e] flex items-center justify-between" onClick={(e) => e.stopPropagation()}>
                   <span className="text-[11px] text-[#6c757d] dark:text-slate-400">
                     {server.region?.name || server.region?.slug?.toUpperCase()}
                   </span>
