@@ -18,6 +18,91 @@ test('describeApiError gives the reason in words and never raw JSON', () => {
   assert.ok(describeApiError('x'.repeat(1000)).length <= 301)
 })
 
+// The bodies below are synthetic: their shape follows the reference's ValidationProblemDetails (`errors`: field -> list of reasons)
+// plus the `message` BinaryLane sends, and the wording is made up for these tests.
+test('describeApiError keeps the field-level reason when a generic message comes with it', () => {
+  const generic = 'Validation of the request failed.'
+  assert.equal(
+    describeApiError({ message: generic, errors: { backup_type: ['There are no free slots of that kind.'] } }),
+    'Validation of the request failed. backup_type: There are no free slots of that kind.'
+  )
+  // The reference's own `detail` is the summary when there is no `message`.
+  assert.equal(describeApiError({ detail: generic, errors: { name: ['is required'] } }), 'Validation of the request failed. name: is required')
+  // A summary with no full stop still reads as two sentences.
+  assert.equal(describeApiError({ message: 'The request was refused', errors: { size: ['is unknown'] } }), 'The request was refused. size: is unknown')
+})
+
+test('describeApiError gives every field and every reason, in the order the API listed them', () => {
+  const body = { message: 'Validation failed.', errors: { name: ['is required', 'is too long'], 'pre_action_backup.backup_type': ['has no free slot'], size: 'is unknown' } }
+  assert.equal(describeApiError(body), 'Validation failed. name: is required, is too long; pre_action_backup.backup_type: has no free slot; size: is unknown')
+})
+
+test('describeApiError does not say a reason twice when the message already says it', () => {
+  const limit = 'A limit of 2 per 7 day period has been reached.'
+  assert.equal(describeApiError({ message: limit, errors: { backup_type: [limit] } }), limit)
+  assert.equal(describeApiError({ message: limit, errors: { backup_type: [limit.toUpperCase()] } }), limit, 'compared without regard to case')
+  // One that is new is still added.
+  assert.equal(describeApiError({ message: limit, errors: { backup_type: [limit], size: ['is unknown'] } }), `${limit} backup_type: ${limit}; size: is unknown`)
+})
+
+test('describeApiError says a reason once when it appears under several fields', () => {
+  const same = 'must not be specified if the strategy is not specified.'
+  assert.equal(
+    describeApiError({ message: 'Validation failed.', errors: { replace_id: [same], strategy: [same] } }),
+    `Validation failed. replace_id, strategy: ${same}`
+  )
+  // Only fields with the very same reasons are joined, and the order the API listed them in is kept.
+  assert.equal(
+    describeApiError({ errors: { a: ['x'], b: ['y'], c: ['x'], d: ['x', 'y'] } }),
+    'a, c: x; b: y; d: x, y'
+  )
+  // Joined fields count once towards the five that are shown.
+  const many = Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`field${i}`, ['is wrong']]))
+  assert.equal(describeApiError({ message: 'Failed.', errors: many }), 'Failed. field0, field1, field2, field3, field4, field5, field6, field7: is wrong')
+  // A reason the message already says is still not repeated for either field.
+  assert.equal(describeApiError({ message: `Failed: ${same}`, errors: { replace_id: [same], strategy: [same] } }), `Failed: ${same}`)
+})
+
+test('describeApiError ignores an errors value that is not field -> reasons, and falls back as before', () => {
+  const odd = [null, undefined, 'a string', 7, true, [], ['x', 'y'], {}, { name: [] }, { name: [''] }, { name: ['   '] }, { name: null }, { name: 7 }, { name: { deep: ['x'] } }, { name: [{ a: 1 }, 7, null] }]
+  for (const errors of odd) {
+    assert.equal(describeApiError({ message: 'Server not found', errors }), 'Server not found', JSON.stringify(errors))
+    assert.equal(describeApiError({ title: 'Conflict', errors }), 'Conflict', JSON.stringify(errors))
+    const bare = describeApiError({ errors })
+    assert.equal(bare, 'BinaryLane returned an error without a reason.', JSON.stringify(errors))
+  }
+  // Reasons of the wrong kind inside a good field are dropped; the good ones stay.
+  assert.equal(describeApiError({ message: 'Failed.', errors: { name: [{ a: 1 }, 'is required', 7, null], size: { deep: ['x'] } } }), 'Failed. name: is required')
+  for (const errors of odd) {
+    const text = describeApiError({ message: 'Failed.', errors })
+    assert.ok(!text.includes('[object') && !text.includes('{') && !text.includes('undefined') && !text.includes('null'), text)
+  }
+})
+
+test('describeApiError bounds what it adds from errors', () => {
+  const many = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`field${i}`, [`is wrong ${i}`]]))
+  const text = describeApiError({ message: 'Failed.', errors: many })
+  assert.ok(text.includes('field0: is wrong 0') && text.includes('field4: is wrong 4'), 'the first fields are shown')
+  assert.ok(!text.includes('field5:') && /and 15 more/.test(text), text)
+  const long = describeApiError({ message: 'Failed.', errors: { name: ['x'.repeat(2000)] } })
+  assert.ok(long.length <= 'Failed. '.length + 301, `${long.length} characters`)
+  assert.ok(long.endsWith('…'))
+  // Line breaks and runs of spaces in a reason do not reach the screen.
+  assert.equal(describeApiError({ message: 'Failed.', errors: { name: ['is\nrequired \t here'] } }), 'Failed. name: is required here')
+  // The same bound holds with no message at all.
+  assert.ok(describeApiError({ errors: many }).length <= 301)
+})
+
+test('a message alone, a detail alone and a title alone read as they did, and a failed call carries the reason', () => {
+  assert.equal(describeApiError({ message: 'Server not found' }), 'Server not found')
+  assert.equal(describeApiError({ detail: 'name is required' }), 'name is required')
+  assert.equal(describeApiError({ message: 'm', detail: 'd' }), 'm')
+  assert.equal(describeApiError({ title: 'Conflict', status: 409 }), 'Conflict')
+  const failure = apiFailure({ message: 'Validation of the request failed.', errors: { backup_type: ['There are no free slots of that kind.'] } }, { status: 400 })
+  assert.equal(failure.message, 'Validation of the request failed. backup_type: There are no free slots of that kind.')
+  assert.equal(failure.status, 400)
+})
+
 test('apiFailure carries the status, including for a failure with an empty body', () => {
   const withBody = apiFailure({ message: 'No such key' }, { status: 404 })
   assert.ok(withBody instanceof ApiError && withBody instanceof Error)

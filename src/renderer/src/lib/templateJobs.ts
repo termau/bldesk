@@ -1,4 +1,5 @@
 import type { BinaryLaneClient } from '../api/client'
+import { describeApiError } from '../api/errors'
 import { recordChange, updateChange } from './changelog'
 import { loadTags, saveTags, withTag } from './serverGroups'
 import type { FwRule } from './firewallMatrix'
@@ -51,13 +52,6 @@ function set(job: TemplateJob, patch: Partial<TemplateJob>): void {
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
-
-function errText(error: unknown): string {
-  if (!error) return 'Unknown error'
-  if (typeof error === 'string') return error
-  const e = error as any
-  return e.message || e.error?.message || JSON.stringify(error)
-}
 
 /** Poll until the server leaves `new`, or give up after `timeoutMs`. */
 async function waitForBuild(client: BinaryLaneClient, serverId: number, timeoutMs: number, onTick: (status: string) => void): Promise<string> {
@@ -150,7 +144,7 @@ async function run(
       params: { path: { server_id: id } },
       body: { type: 'change_advanced_firewall_rules', firewall_rules: rules }
     })
-    if (error || !response.ok) throw new Error(error ? errText(error) : `BinaryLane answered HTTP ${response.status} with no reason.`)
+    if (error || !response.ok) throw new Error(error ? describeApiError(error) : `BinaryLane answered HTTP ${response.status} with no reason.`)
     void updateChange(changeId, { outcome: 'completed', actionId: data?.action?.id, detail: `${rules.length} rule${rules.length === 1 ? '' : 's'} applied.` }, input.profileId)
     set(job, { status: 'done', detail: `${rules.length} firewall rule${rules.length === 1 ? '' : 's'} applied${tags.length ? ` and tagged ${tags.join(', ')}` : ''}.` })
   } catch (err: any) {

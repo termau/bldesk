@@ -1106,19 +1106,11 @@ export function useTakeBackupMutation(client: BinaryLaneClient | null) {
         body.backup_id_to_replace = p.backupIdToReplace
       }
 
-      const { data, error } = await client.POST('/v2/servers/{server_id}/actions', {
+      const { data, error, response } = await client.POST('/v2/servers/{server_id}/actions', {
         params: { path: { server_id: serverId } },
         body
       })
-      if (error) {
-        const errorObj = error as any
-        const msg =
-          errorObj?.message ||
-          errorObj?.title ||
-          (errorObj?.errors && Object.values(errorObj.errors).flat().join(', ')) ||
-          JSON.stringify(error)
-        throw new Error(msg)
-      }
+      if (error) throw apiFailure(error, response)
       return data?.action
     },
     onSuccess: (_, { serverId }) => {
@@ -1133,14 +1125,10 @@ export function useImageDownloadMutation(client: BinaryLaneClient | null) {
   return useMutation({
     mutationFn: async (imageId: number) => {
       if (!client) throw new Error('No client')
-      const { data, error } = await client.GET('/v2/images/{image_id}/download', {
+      const { data, error, response } = await client.GET('/v2/images/{image_id}/download', {
         params: { path: { image_id: imageId } }
       })
-      if (error) {
-        const errorObj = error as any
-        const msg = errorObj?.message || errorObj?.title || JSON.stringify(error)
-        throw new Error(msg)
-      }
+      if (error) throw apiFailure(error, response)
       return data?.link
     }
   })

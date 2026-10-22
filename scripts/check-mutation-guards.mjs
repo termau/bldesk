@@ -26,6 +26,10 @@
  *     `servers` as a prop.
  *  6. An id from recordChange() must reach updateChange() or track() and must
  *     not be `void`ed — otherwise the entry never leaves "Submitted".
+ *  7. An API error becomes text through describeApiError() or apiFailure()
+ *     (api/errors.ts), never by hand: a hand-rolled version lets a generic
+ *     `message` hide the field-level reason, and its last resort prints the
+ *     response body as raw JSON.
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
@@ -95,6 +99,15 @@ for (const file of walk(SRC)) {
       failures.push(`${rel}:${i + 1}: native alert() — report a failure with notifyFailure(title, error) from lib/failures.ts so it shows inside the app.`)
     }
   })
+
+  // 7. An API error is turned into text by describeApiError()/apiFailure(), not by hand.
+  if (rel !== 'api/errors.ts') {
+    codeOnly.forEach((l, i) => {
+      if (/JSON\.stringify\(\s*(error|err|errorObj|e)\s*\)|Object\.values\(\s*\w+\??\.errors\s*\)/.test(l)) {
+        failures.push(`${rel}:${i + 1}: an API error turned into text by hand — use describeApiError(error) or apiFailure(error, response) from api/errors, so the reason BinaryLane gave reaches the screen and a response body is never printed as raw JSON.`)
+      }
+    })
+  }
 
   // 2. One dialog shell. Every dialog is a <Modal> (components/ui/Modal.tsx),
   //    so they all look and behave the same; anything that changes something

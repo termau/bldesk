@@ -15,10 +15,51 @@ export class ApiError extends Error {
 }
 
 const MAX_TEXT = 300
+const MAX_FIELDS = 5
+
+/** One reason, or one field name, on one line and no longer than `max`. */
+const tidy = (text: string, max = MAX_TEXT): string => {
+  const line = text.replace(/\s+/g, ' ').trim()
+  return line.length > max ? `${line.slice(0, max)}…` : line
+}
+
+/**
+ * The field-level reasons in a validation body: `errors` maps a field to the reasons for it (the reference's
+ * ValidationProblemDetails). Anything else in there is left out, never printed: a value that is not a string or a list of
+ * strings, a field with nothing readable, an `errors` that is not an object. The text is bounded: at most MAX_FIELDS fields,
+ * each reason on one line.
+ */
+function fieldReasons(errors: unknown): { field: string; reasons: string[] }[] {
+  if (!errors || typeof errors !== 'object' || Array.isArray(errors)) return []
+  const found: { field: string; reasons: string[] }[] = []
+  for (const [field, raw] of Object.entries(errors)) {
+    const reasons = (Array.isArray(raw) ? raw : [raw]).filter((r): r is string => typeof r === 'string').map((r) => tidy(r)).filter(Boolean)
+    if (reasons.length) found.push({ field: tidy(field, 80), reasons })
+  }
+  return found
+}
+
+/**
+ * Fields whose reasons are the very same, joined into one entry ("replace_id, strategy: reason"): the same text under
+ * several fields is said once, because repeating it reads as noise. The order the fields were listed in is kept.
+ */
+function mergeSameReasons(fields: { field: string; reasons: string[] }[]): { field: string; reasons: string[] }[] {
+  const groups = new Map<string, { names: string[]; reasons: string[] }>()
+  for (const { field, reasons } of fields) {
+    const key = reasons.join('\n')
+    const group = groups.get(key)
+    if (group) group.names.push(field)
+    else groups.set(key, { names: [field], reasons })
+  }
+  return [...groups.values()].map(({ names, reasons }) => ({ field: names.join(', '), reasons }))
+}
 
 /**
  * The reason BinaryLane gave, in words. Never raw JSON: a body with none of the fields the API reference
  * documents reads as a generic failure rather than a dump of what came back.
+ *
+ * A validation failure can carry a generic summary in `message` (or `detail`) and the actionable reason only in `errors`
+ * ("backup_type: there is no free slot"). Both are shown, the summary first, unless the summary already says every reason.
  */
 export function describeApiError(error: unknown): string {
   if (!error) return 'Unknown error'
@@ -26,13 +67,21 @@ export function describeApiError(error: unknown): string {
     const text = error.trim()
     return text.length > MAX_TEXT ? `${text.slice(0, MAX_TEXT)}…` : text || 'Unknown error'
   }
-  const e = error as { message?: unknown; detail?: unknown; title?: unknown; errors?: Record<string, unknown> }
-  if (typeof e.message === 'string' && e.message) return e.message
-  if (typeof e.detail === 'string' && e.detail) return e.detail
-  if (e.errors && typeof e.errors === 'object') {
-    const parts = Object.entries(e.errors).map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : String(msgs)}`)
-    if (parts.length) return parts.join('; ')
+  const e = error as { message?: unknown; detail?: unknown; title?: unknown; errors?: unknown }
+  const summary = typeof e.message === 'string' && e.message ? e.message : typeof e.detail === 'string' && e.detail ? e.detail : ''
+  const fields = mergeSameReasons(fieldReasons(e.errors))
+  let reasons = ''
+  if (fields.length) {
+    const shown = fields.slice(0, MAX_FIELDS).map(({ field, reasons: list }) => `${field}: ${list.join(', ')}`)
+    if (fields.length > MAX_FIELDS) shown.push(`and ${fields.length - MAX_FIELDS} more`)
+    reasons = tidy(shown.join('; '))
   }
+  if (summary) {
+    const said = summary.toLowerCase()
+    if (!reasons || fields.every(({ reasons: list }) => list.every((r) => said.includes(r.toLowerCase())))) return summary
+    return `${summary}${/[.!?]$/.test(summary.trim()) ? '' : '.'} ${reasons}`
+  }
+  if (reasons) return reasons
   if (typeof e.title === 'string' && e.title) return e.title
   return 'BinaryLane returned an error without a reason.'
 }
