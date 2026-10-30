@@ -5,6 +5,13 @@ All notable changes to the **BLDesk** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [1.0.63-beta.3] - 2026-10-30
+
+**Firewall Import and Export speak mPanel's format**
+
+### Added
+- **Firewall Export writes the text mPanel's Import/Export dialog shows, and Import reads it** (#354, #349). A backup taken in mPanel, a configuration from a knowledge-base article written for it, or another server's rules pasted from it now import into BLDesk, and a BLDesk export can be pasted into mPanel. Import tells the two formats apart by their keys, so files saved by earlier versions of Export still import; a file that mixes them, or an mPanel rule with a key BLDesk has no place for, is refused naming the rule and the key rather than guessed at. A netmask that is a whole range is written as CIDR. The address `0.0.0.255/0.0.0.255`, which mPanel's default multicast rule uses and the API reference does not document, is kept only as a destination in a rule the server already has, exactly as it is; Import never adds it to a new or changed rule, and refuses it as a source and any other netmask with a gap, each with the reason.
+
 ## [1.0.63-beta.2] - 2026-10-30
 
 **Every export saves on Android, through its own Save as dialog**
