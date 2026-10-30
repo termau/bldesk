@@ -21,6 +21,7 @@ import { updateChange, type ChangeTarget } from '../../lib/changelog'
 import { diffLines, describeFirewallRule } from '../../lib/diff'
 import { useTrackedActions } from '../../context/ActionTrackerContext'
 import { insertRule, isIpv4OrRange, readImportedRules, ruleCount, ruleLimitNote, rulesAllowed, toRuleRequest } from '../../lib/firewallRules'
+import { mpanelText } from '../../lib/firewallMpanel'
 import { addressChoicesFor, PORT_CHOICES, presetRule, withChoice, type PresetName } from '../../lib/firewallPicks'
 import type { FwRule } from '../../lib/firewallMatrix'
 import { describePending, draftApplies, draftFromRules, hasPendingChanges, pendingChanges, rulesToWrite, rowsWithProblems, sameRules, splitList, type DraftRow } from '../../lib/firewallDraft'
@@ -378,12 +379,12 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
     }
   }
 
-  // Handle Export Rules JSON
+  // Handle Export Rules JSON: the text mPanel's Import/Export dialog shows, which Import reads back.
   // The Android app opens Android's Save as dialog; the desktop app and the browser build download the file as before.
   const handleExportJson = async () => {
     setExporting(true)
     try {
-      await saveTextFile(`firewall-rules-${activeServer?.name || activeServerId}.json`, JSON.stringify(currentRules, null, 2))
+      await saveTextFile(`firewall-rules-${activeServer?.name || activeServerId}.json`, mpanelText(currentRules))
     } catch (err) {
       notifyFailure('Could not export firewall rules', err)
     } finally {
@@ -399,7 +400,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
 
     try {
       // What is written is checked against the API reference first: a rule list it would refuse is never sent.
-      const read = readImportedRules(JSON.parse(importJsonText), currentRules.length)
+      const read = readImportedRules(JSON.parse(importJsonText), currentRules.length, currentRules)
       if (read.error !== undefined) throw new Error(read.error)
       const parsed = read.rules
       if (parsed.length === 0 && currentRules.length === 0) throw new Error('The file has no rules, and this server has none, so there is nothing to import.')
@@ -939,6 +940,10 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
           }
         >
           <div className="p-5 space-y-4">
+            <p className="text-xs text-[#6c757d] dark:text-slate-400">
+              Reads the text from mPanel&apos;s firewall Import/Export dialog, which is also what Export saves, or a list in the API&apos;s own rule fields (source_addresses, destination_addresses,
+              destination_ports, protocol, action, description).
+            </p>
             <div>
               <label className="text-xs font-semibold text-[#495057] dark:text-[#ced4da] block mb-1">
                 Upload .json configuration file:
@@ -967,7 +972,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
               <textarea
                 required
                 rows={8}
-                placeholder={`[\n  {\n    "action": "accept",\n    "protocol": "tcp",\n    "destination_ports": ["22", "80", "443"],\n    "source_addresses": ["0.0.0.0/0"],\n    "destination_addresses": ["0.0.0.0/0"],\n    "description": "Production Web & SSH"\n  }\n]`}
+                placeholder={`[\n  {\n    "sourceaddr": "0.0.0.0/0",\n    "destaddr": "203.0.113.17",\n    "destport": "22,80,443",\n    "action": "ACCEPT",\n    "description": "Production Web & SSH",\n    "protocol": "TCP"\n  }\n]`}
                 value={importJsonText}
                 onChange={(e) => setImportJsonText(e.target.value)}
                 className="w-full p-3 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded text-[#212529] dark:text-white font-mono text-[11px] focus:outline-none focus:border-[#017cb6]"
