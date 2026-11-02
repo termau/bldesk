@@ -23,8 +23,8 @@ async function until(check) {
   assert.fail('Transport did not reach the expected execution count')
 }
 
-// The production adapter and openapi-fetch run unchanged; only the clock and final transport are fixtures.
-function fixture(native = false, failDigest = false) {
+// Production adapter/openapi-fetch are unchanged; clock, transport and digest settlement are controlled.
+function fixture(native = false, failDigest = false, digest = webcrypto.subtle.digest.bind(webcrypto.subtle)) {
   let now = 10000, digests = 0
   const calls = [], warnings = [], keys = [], events = [], module = { exports: {} }
   let reply = () => response()
@@ -59,7 +59,7 @@ function fixture(native = false, failDigest = false) {
     crypto: { subtle: { digest(...args) {
       digests++
       if (failDigest) return Promise.reject(new Error('Fixture digest unavailable'))
-      return webcrypto.subtle.digest(...args)
+      return digest(...args)
     } } },
     require(name) {
       if (name === 'openapi-fetch') return { __esModule: true, default: createClient }
@@ -145,6 +145,16 @@ for (const native of [false, true]) {
     assert.equal(results.filter(result => result.status === 'fulfilled').length, 1)
     const rejection = results.find(result => result.status === 'rejected')
     assert.match(rejection.reason.message, /Action was already submitted/)
+  })
+
+  test(`${mode}: an already-resolved digest cannot split same-credential check and registration`, async () => {
+    const f = fixture(native, false, () => Promise.resolve(new ArrayBuffer(32)))
+    const results = await Promise.allSettled(Array.from({ length: 3 }, () => f.client(tokens.a).POST(endpoint)))
+    assert.equal(f.calls.length, 1)
+    assert.equal(results.filter(result => result.status === 'fulfilled').length, 1)
+    const rejections = results.filter(result => result.status === 'rejected')
+    assert.equal(rejections.length, 2)
+    assert.ok(rejections.every(result => /Action was already submitted/.test(result.reason.message)))
   })
 
   test(`${mode}: same-credential pending requests still coalesce after the cooldown`, async () => {

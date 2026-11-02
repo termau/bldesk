@@ -20,21 +20,28 @@ are otherwise unchanged.
 
 ### Checks Performed
 
-- `npm run typecheck`: 492 tests, 483 passed, nine platform skips, zero failures.
+- `npm run typecheck`: 494 tests, 485 passed, nine platform skips, zero failures.
   `npm run build`, `npm run test:terminal` and the 32 existing mock tests passed.
-- `npm run test:mutation-isolation`: 21 tests, included in `test:api-errors` and
+- `npm run test:mutation-isolation`: 23 tests, included in `test:api-errors` and
   therefore the normal typecheck/CI path. They run the production adapter and
   actual openapi-fetch with a controlled clock and intercepted web/native
   transports. They cover different credentials inside/outside the cooldown,
   distinct JSON results, a delayed 429 versus another account's 204, same-token
   client recreation, simultaneous duplicates, pending reuse, failure without
   replay, Authorization overrides/removal, token/header disclosure, reads, empty tokens
-  and fingerprint failure. These native-adapter unit tests use a plugin stub,
+  and fingerprint failure. Two cases use an already-resolved digest promise to
+  exercise simultaneous identical calls in adjacent microtasks. These
+  native-adapter unit tests use a plugin stub,
   not Android hardware.
 - Read-only in-memory negative controls: replacing the adapter with main's
-  version makes 13 tests fail; moving the maps inside each client makes six
+  version makes 13 tests fail; moving the maps inside each client makes eight
   same-credential tests fail. A header-only scope fails the native header-removal
-  test. No product files were modified by these controls.
+  test. Inserting a one-microtask gap before registration fails both new
+  immediate-digest cases. No product files were modified by these controls.
+- Composed with the revised #361 candidate: 56 focused tests pass; full typecheck
+  passes 518 tests with nine platform skips, and the combined build passes. The
+  branches remain independent; later integration must retain both script entries
+  and verification sections and update their inclusion statements.
 - Real Electron, isolated profiles and loopback API: eight checks passed. Web
   Crypto was available in the application secure context. Default success sent
   one POST. With A still pending after 1.7 seconds, switching to B sent a second
@@ -59,9 +66,13 @@ The shared adapter's account isolation, rather than provider DNS cache scope or
 observed customer incidence, is what these checks establish.
 Distinct concurrent, unawaited mutations can reach the transport in a different
 order after the asynchronous digest; callers requiring ordered submission must
-sequence their requests explicitly. No FIFO queue is added. Request bodies remain part of the in-memory
-tracking key, so this change does not remove passwords or user data from those
-keys, or add pruning of old cooldown entries.
+sequence their requests explicitly. No FIFO queue is added. Request bodies remain
+part of the in-memory tracking key, so this change does not remove passwords or
+user data from those keys, or add pruning of old cooldown entries.
+
+Review follow-up (3 November 2026): added the already-resolved-digest regressions
+and comments documenting ordering and synchronous check/registration. The runtime
+change since the platform checks above is explanatory comments only.
 
 ## Firewall: Import and Export use mPanel's text format (30 October 2026, after 1.0.63-beta.2)
 
