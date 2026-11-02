@@ -4,7 +4,7 @@ import { NULL_BODY_STATUSES, refusesToken } from './errors'
 
 interface InFlightMutation {
   response: Promise<Response>
-  consumers: number
+  waiting: number
 }
 
 // In-flight mutation tracker to prevent duplicate concurrent requests and rapid-fire spam
@@ -13,12 +13,12 @@ const recentMutationTimestamps = new Map<string, number>()
 const MUTATION_COOLDOWN_MS = 1500 // 1.5 second debounce for identical mutations
 
 function responseForCaller(pending: InFlightMutation): Promise<Response> {
-  pending.consumers++
+  pending.waiting++
   return pending.response.then(response => {
     // The map entry is removed before this promise settles, so no new caller can join here.
     // Give the last caller the original: every body branch has a consumer, with no unread internal copy.
-    pending.consumers--
-    return pending.consumers === 0 ? response : response.clone()
+    pending.waiting--
+    return pending.waiting === 0 ? response : response.clone()
   })
 }
 
@@ -204,7 +204,7 @@ export function createBinaryLaneClient(token: string) {
         throw new Error('Action was already submitted. Please wait a moment before trying again.')
       }
 
-      // If exact same mutation is actively in-flight, return the existing pending promise
+      // Share the pending execution, but give each caller its own response.
       if (inFlightMutations.has(mutationKey)) {
         console.warn(`[AntiSpam] Reusing in-flight request for: ${method} ${url}`)
         return responseForCaller(inFlightMutations.get(mutationKey)!)
@@ -227,7 +227,7 @@ export function createBinaryLaneClient(token: string) {
         }
       })()
 
-      const pending = { response: executionPromise, consumers: 0 }
+      const pending = { response: executionPromise, waiting: 0 }
       inFlightMutations.set(mutationKey, pending)
       return responseForCaller(pending)
     }
