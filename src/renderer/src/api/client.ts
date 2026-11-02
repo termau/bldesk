@@ -2,10 +2,25 @@ import createClient from 'openapi-fetch'
 import type { paths } from '@shared/api/schema'
 import { NULL_BODY_STATUSES, refusesToken } from './errors'
 
+interface InFlightMutation {
+  response: Promise<Response>
+  consumers: number
+}
+
 // In-flight mutation tracker to prevent duplicate concurrent requests and rapid-fire spam
-const inFlightMutations = new Map<string, Promise<Response>>()
+const inFlightMutations = new Map<string, InFlightMutation>()
 const recentMutationTimestamps = new Map<string, number>()
 const MUTATION_COOLDOWN_MS = 1500 // 1.5 second debounce for identical mutations
+
+function responseForCaller(pending: InFlightMutation): Promise<Response> {
+  pending.consumers++
+  return pending.response.then(response => {
+    // The map entry is removed before this promise settles, so no new caller can join here.
+    // Give the last caller the original: every body branch has a consumer, with no unread internal copy.
+    pending.consumers--
+    return pending.consumers === 0 ? response : response.clone()
+  })
+}
 
 async function safeNormalizeResponse(response: Response): Promise<Response> {
   // A response with a null-body status has no body to rewrite, and `new Response(body, { status })` throws for such a
@@ -192,7 +207,7 @@ export function createBinaryLaneClient(token: string) {
       // If exact same mutation is actively in-flight, return the existing pending promise
       if (inFlightMutations.has(mutationKey)) {
         console.warn(`[AntiSpam] Reusing in-flight request for: ${method} ${url}`)
-        return inFlightMutations.get(mutationKey)!
+        return responseForCaller(inFlightMutations.get(mutationKey)!)
       }
 
       recentMutationTimestamps.set(mutationKey, now)
@@ -212,8 +227,9 @@ export function createBinaryLaneClient(token: string) {
         }
       })()
 
-      inFlightMutations.set(mutationKey, executionPromise)
-      return executionPromise
+      const pending = { response: executionPromise, consumers: 0 }
+      inFlightMutations.set(mutationKey, pending)
+      return responseForCaller(pending)
     }
 
     // Standard GET / read query path
