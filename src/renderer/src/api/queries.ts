@@ -664,6 +664,25 @@ export function useDeleteLoadBalancerMutation(client: BinaryLaneClient | null) {
 
 // --- DNS DOMAINS & RECORDS ---
 
+export function dnsCacheRefreshMutationKey(profileId?: string) {
+  return ['dns-cache-refresh', profileId ?? 'default'] as const
+}
+
+export function useDnsCacheRefreshMutation(client: BinaryLaneClient | null, profileId?: string) {
+  return useMutation<void, Error>({
+    mutationKey: dnsCacheRefreshMutationKey(profileId),
+    retry: false,
+    // This button previously called the transport directly: fail now if offline, not queue a later refresh.
+    networkMode: 'always',
+    mutationFn: async () => {
+      if (!client) throw new Error('No client available')
+      // history: n/a - reloads the nameserver cache; no record changes.
+      const { error, response } = await client.POST('/v2/domains/refresh_nameserver_cache')
+      if (error || !response.ok) throw apiFailure(error, response)
+    }
+  })
+}
+
 /**
  * All domains on the account.
  *

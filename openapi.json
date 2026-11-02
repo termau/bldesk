@@ -8,7 +8,7 @@
       "url": "https://support.binarylane.com.au/support/home",
       "email": "support@binarylane.com.au"
     },
-    "version": "0.46.0",
+    "version": "0.47.0",
     "x-logo": {
       "url": "https://www.binarylane.com.au/res/images/binarylane/logo.png",
       "backgroundColor": "#000000",
@@ -539,7 +539,7 @@
           "Domains"
         ],
         "summary": "Refresh Cached Nameserver Domain Records",
-        "description": "The nameservers for domains are cached. If you have recently altered the nameservers for a managed domain you may need to refresh the cached domain records.",
+        "description": "The nameservers for domains are cached. If you have recently altered the nameservers for a managed domain you may need to refresh the cached domain records. Send refresh requests one at a time: a request made while another is still in progress may be rejected with 429 Too Many Requests.",
         "requestBody": {
           "content": {
             "application/json": {
@@ -556,6 +556,26 @@
         "responses": {
           "204": {
             "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationProblemDetails"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProblemDetails"
+                }
+              }
+            }
           },
           "401": {
             "description": "Unauthorized"

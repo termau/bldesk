@@ -14,6 +14,11 @@ Deleting a record does not flush resolver caches: previous answers may remain un
 
 The [palette](help:palette#dns) can prepare a DNS record, but still requires review before writing.
 
+## Refresh nameserver information
+After changing a domain's nameservers, you may need to use Flush DNS Cache to refresh BinaryLane's cached nameserver information. This does not flush the caches of recursive DNS resolvers.
+
+While a refresh is pending, its button shows a spinner and is disabled, including if you leave DNS and reopen it. The button re-enables when the request finishes; BLDesk's short repeat-request cooldown still applies. A refused request shows its reason rather than a success notification. Refresh attempts are not held offline to run on reconnect. Connection failures are reported, and the request is not retried automatically. Another client can still submit a refresh, so BinaryLane may refuse an overlapping request with HTTP 429.
+
 ## Worked example
 For an example zone example.com with three loaded records, the irreversible dialog is titled “Remove DNS hosting” and says:
 

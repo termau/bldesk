@@ -446,7 +446,7 @@ function MainDashboard() {
             )}
 
             {activeTab === 'dns' && (
-              <DnsManager client={client} />
+              <DnsManager client={client} profileId={activeProfile?.id} />
             )}
 
             {activeTab === 'backups' && (
