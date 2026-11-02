@@ -10,12 +10,10 @@ Use DNS to browse hosted zones, add records and delete records. The zone list pa
 ## Add and delete records
 Choose a zone and Add Record, then enter its type, name and value. The form sends no TTL, so BinaryLane's default applies: its API reference gives 3600 seconds as the default and only supported value. There is no TTL input or existing-record editor. MX records ask for a priority, SRV records for a priority, weight and port, and CAA records for flags and a tag, because those record types use them; the palette adds A, AAAA, CNAME, MX (with a priority), NS and TXT records, but not SRV or CAA. In the record list, an MX, SRV or CAA row shows those values in blue above its data. These are limits of BLDesk's current controls, not a claim that the DNS API cannot edit records.
 
-Deleting a record does not flush resolver caches: previous answers may remain until their TTL expires.
-
 The [palette](help:palette#dns) can prepare a DNS record, but still requires review before writing.
 
 ## Refresh nameserver information
-After changing a domain's nameservers, you may need to use Flush DNS Cache to refresh BinaryLane's cached nameserver information. This does not flush the caches of recursive DNS resolvers.
+After changing a domain's nameservers, you may need to use Flush DNS Cache to refresh BinaryLane's cached domain records.
 
 While a refresh is pending, its button shows a spinner and is disabled, including if you leave DNS and reopen it. The button re-enables when the request finishes; BLDesk's short repeat-request cooldown still applies. A refused request shows its reason rather than a success notification. Refresh attempts are not held offline to run on reconnect. Connection failures are reported, and the request is not retried automatically. Another client can still submit a refresh, so BinaryLane may refuse an overlapping request with HTTP 429.
 
