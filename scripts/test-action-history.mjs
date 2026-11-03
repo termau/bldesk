@@ -70,6 +70,9 @@ function fixture(confirmPowerState) {
         describeActionFailure: () => 'Fixture action failure',
         pollActionToSettled: (api, id, options) => {
           const gate = deferred(); polls.push({ api, id, options, gate })
+          const abort = () => gate.reject(new DOMException('Aborted', 'AbortError'))
+          if (options.signal?.aborted) abort()
+          else options.signal?.addEventListener('abort', abort, { once: true })
           if (options.initial?.status === 'completed') gate.resolve({ state: 'completed', action: options.initial })
           return gate.promise
         }
@@ -162,7 +165,10 @@ for (const cleanup of ['switch', 'unmount']) test(`${cleanup} closes every pendi
   if (cleanup === 'switch') f.switchProfile('fixture-b')
   else f.unmount()
   assert.ok(f.polls[0].options.signal.aborted)
+  await flush()
   assert.ok((await f.entries('fixture-a')).every(row => row.outcome === 'lost'))
+  assert.ok((await f.entries('fixture-a')).every(row => /stopped following/.test(row.detail)))
+  if (cleanup === 'switch') assert.equal(f.view().tracked.length, 0)
   assert.equal((await f.entries('fixture-b')).length, 0)
   f.finish(); await flush()
   assert.ok((await f.entries('fixture-a')).every(row => row.outcome === 'lost'))
@@ -207,6 +213,29 @@ test('power-state detail reaches all entries, including a joiner after settlemen
   f.view().track(action(), 'Reboot', 'fixture-server', third)
   assert.ok((await f.entries('fixture-a')).every(row => row.outcome === 'completed' && row.detail === 'Server is running.'))
   assert.equal(f.polls.length, 1)
+  f.unmount()
+})
+
+test('shutdown signal detail reaches both entries and a late joiner without claiming the server is off', async () => {
+  const f = fixture(), first = await f.record(), second = await f.record()
+  const shutdown = action(73001, 'in-progress', 'shutdown')
+  f.view().track(shutdown, 'Shut down', 'fixture-server', first)
+  f.view().track(shutdown, 'Shut down', 'fixture-server', second)
+  f.polls[0].gate.resolve({ state: 'completed', action: { ...shutdown, status: 'completed' } })
+  await flush()
+  const third = await f.record()
+  f.view().track(shutdown, 'Shut down', 'fixture-server', third)
+  const rows = await f.entries('fixture-a')
+  assert.equal(rows.length, 3)
+  for (const row of rows) {
+    assert.equal(row.outcome, 'completed')
+    assert.match(row.detail, /^Shutdown signal sent\./)
+    assert.match(row.detail, /once its OS halts/)
+    assert.notEqual(row.detail, 'Server is off.')
+  }
+  assert.equal(f.polls.length, 1)
+  assert.equal(f.notices.length, 1)
+  assert.match(f.view().tracked[0].detail, /^Shutdown signal sent\./)
   f.unmount()
 })
 

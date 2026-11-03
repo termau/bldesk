@@ -22,7 +22,7 @@ ownership. Old timers are cleared without re-arming from the previous tracked
 list during the same passive-effect commit. This does not change the
 mutation transport or address the separate Windows replay issue #360.
 
-Checks: `npm run test:action-history` has 30 passing tests and is included in
+Checks: `npm run test:action-history` has 31 passing tests and is included in
 `test:api-errors`, hence the normal typecheck/CI path. The tests execute the
 production provider and changelog with explicit layout/passive-effect turns,
 controlled poll promises and local storage. All changed-effect cleanups run
@@ -31,7 +31,8 @@ DOM mounts. Coverage includes
 pending and late joins, duplicate and absent History IDs, immediate completion,
 independent actions, stalled actions, dismissal, profile changes, old progress,
 unmount, StrictMode reactivation, discarded renders, the commit-to-passive-cleanup
-gap, queued old timers and power-state detail. Against the base provider, 26 fail
+gap, queued old timers and power-state detail. In the original 30-case suite,
+against the base provider, 26 fail
 and four positive controls pass. Deliberate first-entry-only, wrong-profile and
 no-join controls fail 15, six and 19 tests respectively. Removing each of the
 active-scope guard, reactivation, completed-watch timer check, queued-timer owner
@@ -50,6 +51,32 @@ settlement in that interval is ignored; passive cleanup closes still-pending
 entries as Lost track, even if the old action has since finished. Entries settled
 before the switch retain their outcome. This is conservative client tracking,
 not a claim that the remote action failed.
+
+This also changes the case where the account switches before the mutation POST
+returns: a late action registration is recorded as Lost track in the originating
+profile, with no new poll or toast in the current profile. Previously that late
+registration could track the old account's action while showing its toast over
+the new account. The conservative behavior is retained rather than introducing
+History-only background tracking. It does not mean the remote action failed.
+
+Review follow-up: the fixture poll now rejects with AbortError on abort, matching
+the production poller's sleep. The switch/unmount cases assert that the
+stop-following detail survives that rejection; switch also asserts no tracked
+toast rows remain. A shutdown case checks signal-sent detail for both callers
+and a late joiner without claiming that the guest is off. The timer's three
+ownership checks deliberately overlap; the combined guard is covered, not a
+claim that each condition is independently necessary. Scope allocation remains
+useMemo keyed by client; replacing that with explicit state ownership is left
+as a non-blocking robustness consideration, not claimed fixed by this follow-up.
+All 31 follow-up cases pass. Removing the abort catch guard fails two cases;
+removing toast-row cleanup fails one, and omitting shutdown detail from the
+History update fails one. Provider output compiled without comments is identical
+to the initially reviewed head; this follow-up changes tests, comments and
+verification prose, not executable behavior. Earlier GUI/native evidence is
+retained with its original scope, not presented as a new device run.
+The follow-up Windows typecheck/guards run with Git Bash passes: 571 tests,
+562 passed, nine platform skips and zero failures. Build, terminal regression
+and the 32 existing mock tests also pass on this candidate.
 
 Real Windows Electron, using the production bundle and the isolated GUI mock:
 confirm Reboot from the Servers list, wait beyond the cooldown and confirm the
@@ -76,7 +103,7 @@ change and the second profile stays empty after the old action completes. No
 page exceptions occurred. These are controlled HTTP/USB-loopback observations,
 not physical-network-loss or production TLS checks.
 
-Full Windows typecheck/guards: 570 tests, 561 passed, nine platform skips, zero
+Full Windows typecheck/guards before the review follow-up: 570 tests, 561 passed, nine platform skips, zero
 failures. Build, Android debug build, terminal regression and the 32 existing mock
 tests pass. No new layout or native transport code was introduced. Not run:
 macOS/Linux GUI, live BinaryLane operations or the installed release. The GUI

@@ -346,6 +346,9 @@ export function ActionTrackerProvider({
       if (watch?.result.outcome !== 'completed') continue
       if (dismissTimers.current.has(action.actionId)) continue
       const timer = setTimeout(() => {
+        // These checks deliberately overlap: scope activity covers teardown, watch identity covers retirement or
+        // replacement of this action, and timer identity covers cancellation or rescheduling of this callback.
+        // Keep the queued callback tied to all three owners, even where one check currently implies another.
         if (!scope.active || scope.watches.get(action.actionId) !== watch || dismissTimers.current.get(action.actionId) !== timer) return
         dismissTimers.current.delete(action.actionId)
         dismiss(action.actionId)
