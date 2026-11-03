@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { webcrypto } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { runInNewContext } from 'node:vm'
 import ts from 'typescript'
@@ -15,7 +16,7 @@ function adapter(native, web = () => { throw new Error('Unexpected fetch fallbac
   const calls = [], fallbacks = [], module = { exports: {} }
   const fetch = async (...args) => { fallbacks.push(args); return web(...args) }
   runInNewContext(compiled, {
-    module, exports: module.exports, Request, Response, Headers, URL, TypeError, CustomEvent,
+    module, exports: module.exports, Request, Response, Headers, URL, TypeError, CustomEvent, TextEncoder, crypto: webcrypto,
     console: { warn() {} }, fetch,
     window: { fetch, dispatchEvent() {}, Capacitor: { isNativePlatform: () => true,
       Plugins: { CapacitorHttp: { request: async options => { calls.push(options); return native(options) } } }
