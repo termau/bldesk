@@ -556,7 +556,7 @@ export interface paths {
         put?: never;
         /**
          * Refresh Cached Nameserver Domain Records
-         * @description The nameservers for domains are cached. If you have recently altered the nameservers for a managed domain you may need to refresh the cached domain records.
+         * @description The nameservers for domains are cached. If you have recently altered the nameservers for a managed domain you may need to refresh the cached domain records. Send refresh requests one at a time: a request made while another is still in progress may be rejected with 429 Too Many Requests.
          */
         post: {
             parameters: {
@@ -578,12 +578,30 @@ export interface paths {
                     };
                     content?: never;
                 };
+                /** @description Bad Request */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ValidationProblemDetails"];
+                    };
+                };
                 /** @description Unauthorized */
                 401: {
                     headers: {
                         [name: string]: unknown;
                     };
                     content?: never;
+                };
+                /** @description Too Many Requests */
+                429: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ProblemDetails"];
+                    };
                 };
             };
         };

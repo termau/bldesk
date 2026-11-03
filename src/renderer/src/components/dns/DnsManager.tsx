@@ -2,9 +2,10 @@ import { HelpLink } from '../ui/HelpLink'
 import { Modal } from '../ui/Modal'
 import { LoadError } from '../ui/LoadError'
 import React, { useEffect, useState } from 'react'
+import { useIsMutating, useQueryClient } from '@tanstack/react-query'
 import { Globe, Plus, Trash2, Search, RefreshCw, Loader2, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react'
 import { BinaryLaneClient } from '../../api/client'
-import { useDomains, useDomainRecords, useLocalNameservers } from '../../api/queries'
+import { useDomains, useDomainRecords, useLocalNameservers, dnsCacheRefreshMutationKey, useDnsCacheRefreshMutation } from '../../api/queries'
 import { useConfirm } from '../../context/ConfirmContext'
 import { apiFailure } from '../../api/queries'
 import { recordChange, updateChange } from '../../lib/changelog'
@@ -13,6 +14,7 @@ import { notifyFailure } from '../../lib/failures'
 
 interface DnsManagerProps {
   client: BinaryLaneClient | null
+  profileId?: string
 }
 
 /**
@@ -130,7 +132,11 @@ function recordExtras(r: { type?: string; priority?: number | null; weight?: num
   return parts.join(' · ')
 }
 
-export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
+export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => {
+  const queryClient = useQueryClient()
+  const refreshCache = useDnsCacheRefreshMutation(client, profileId)
+  const refreshKey = dnsCacheRefreshMutationKey(profileId)
+  const refreshPending = useIsMutating({ mutationKey: refreshKey, exact: true }) > 0
   const [selectedDomain, setSelectedDomain] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [domainPage, setDomainPage] = useState(1)
@@ -174,18 +180,21 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
   }
 
   const handleFlushCache = async () => {
-    if (!client) return
+    // The cache survives tab remounts; the synchronous read also catches clicks before a render.
+    if (!client || queryClient.isMutating({ mutationKey: refreshKey, exact: true }) > 0) return
+    // history: n/a — asks BinaryLane's nameservers to reload; no record changes.
+    const request = refreshCache.mutateAsync()
+    const operation = queryClient.getMutationCache().find({ mutationKey: refreshKey, exact: true, status: 'pending' })
+    // App clears this cache on account switches, but not tab switches. Keep feedback with its originating operation.
+    const stillTracked = () => operation !== undefined && queryClient.getMutationCache().getAll().includes(operation)
     try {
-      // history: n/a — asks BinaryLane's nameservers to reload; no record changes
-      const { error, response } = await client.POST('/v2/domains/refresh_nameserver_cache')
-      // The typed client does not throw on an error answer: without this check a refusal reported "refreshed successfully".
-      if (error || !response.ok) throw apiFailure(error, response)
-      window.bldeskApi?.sendNotification?.({
+      await request
+      if (stillTracked()) window.bldeskApi?.sendNotification?.({
         title: 'DNS Cache Flushed',
         body: 'BinaryLane authoritative nameserver cache refreshed successfully.'
       })
-    } catch (err: any) {
-      notifyFailure('Flush failed', err)
+    } catch (error) {
+      if (stillTracked()) notifyFailure('Flush failed', error)
     }
   }
 
@@ -354,10 +363,12 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client }) => {
         <div className="flex items-center gap-2">
           <button
             onClick={handleFlushCache}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#212529] dark:text-slate-200 bg-white dark:bg-[#2b3035] hover:bg-[#f1f1f1] dark:hover:bg-[#343a40] border border-[#ced4da] dark:border-[#373b3e] rounded transition shadow-sm"
-            title="Force nameserver cache flush"
+            disabled={!client || refreshPending}
+            aria-busy={refreshPending}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-[#212529] dark:text-slate-200 bg-white dark:bg-[#2b3035] hover:bg-[#f1f1f1] dark:hover:bg-[#343a40] border border-[#ced4da] dark:border-[#373b3e] rounded transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+            title={refreshPending ? 'Refreshing nameserver cache' : 'Force nameserver cache flush'}
           >
-            <RefreshCw className="w-3.5 h-3.5" />
+            {refreshPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" /> : <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />}
             <span>Flush DNS Cache</span>
           </button>
           <HelpLink slug="dns" />
