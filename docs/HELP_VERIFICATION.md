@@ -1,5 +1,79 @@
 # Help verification
 
+## API: isolate mutation tracking by credentials (2 November 2026, #357, after 1.0.63-beta.3)
+
+Code: `src/renderer/src/api/client.ts`. No new control, API operation, confirmation,
+History behaviour or user-facing help text. The existing module-global cooldown
+and pending-request maps now namespace their keys with a SHA-256 fingerprint of
+the trimmed client token and request-specific Authorization header. Recreated
+clients with those same credentials still share duplicate protection; different
+credentials do not share a cooldown or response. The API token and its
+Authorization header are not kept in tracking keys or added to warnings. This
+fingerprint is not an authorization mechanism: requests still send the same
+headers to the API.
+
+The digest uses Web Crypto only for mutations. Reads and the early empty-token
+refusal do not require it. A digest failure rejects before sending; it does not
+fall back to an unscoped request. The existing 1.5-second cooldown, response/error
+handling, native no-unsafe-retry path and same-credential pending-response reuse
+are otherwise unchanged.
+
+### Checks Performed
+
+- `npm run typecheck`: 494 tests, 485 passed, nine platform skips, zero failures.
+  `npm run build`, `npm run test:terminal` and the 32 existing mock tests passed.
+- `npm run test:mutation-isolation`: 23 tests, included in `test:api-errors` and
+  therefore the normal typecheck/CI path. They run the production adapter and
+  actual openapi-fetch with a controlled clock and intercepted web/native
+  transports. They cover different credentials inside/outside the cooldown,
+  distinct JSON results, a delayed 429 versus another account's 204, same-token
+  client recreation, simultaneous duplicates, pending reuse, failure without
+  replay, Authorization overrides/removal, token/header disclosure, reads, empty tokens
+  and fingerprint failure. Two cases use an already-resolved digest promise to
+  exercise simultaneous identical calls in adjacent microtasks. These
+  native-adapter unit tests use a plugin stub,
+  not Android hardware.
+- Read-only in-memory negative controls: replacing the adapter with main's
+  version makes 13 tests fail; moving the maps inside each client makes eight
+  same-credential tests fail. A header-only scope fails the native header-removal
+  test. Inserting a one-microtask gap before registration fails both new
+  immediate-digest cases. No product files were modified by these controls.
+- Composed with the revised #361 candidate: 56 focused tests pass; full typecheck
+  passes 518 tests with nine platform skips, and the combined build passes. The
+  branches remain independent; later integration must retain both script entries
+  and verification sections and update their inclusion statements.
+- Real Electron, isolated profiles and loopback API: eight checks passed. Web
+  Crypto was available in the application secure context. Default success sent
+  one POST. With A still pending after 1.7 seconds, switching to B sent a second
+  POST with B's credentials. Switching back to A and resubmitting after the
+  cooldown reused A's pending request. Rapid same-credential repeats sent one
+  POST and showed the existing duplicate refusal. Empty 400/429 responses failed
+  without success or resend. Seven total mutation executions; no page exceptions.
+- A separate Android fixture was built from the same base with candidate files
+  copied and hash-matched before test-only app-identity and loopback overlays.
+  Its HTTP exception was loopback-only; production TLS configuration was not
+  changed. Native Web Crypto and the same eight UI/profile-switch checks passed.
+  Seven actual `CapacitorHttp.request` nativePromise bridge calls agreed with
+  seven loopback POST executions; no web-fetch fallback or page exceptions.
+  Profile switches used the actual rendered select/change handler. Ordinary
+  refresh buttons were tapped through Android input; rapid repeat clicks were
+  injected through the DOM.
+
+Limits: no real provider account/API, physical network loss, macOS/Linux GUI,
+new layout/zoom matrix or same-credential JSON-response-consumption claim. Runtime
+checks used the existing DNS caller on main, not the separate pending DNS UI PR.
+The shared adapter's account isolation, rather than provider DNS cache scope or
+observed customer incidence, is what these checks establish.
+Distinct concurrent, unawaited mutations can reach the transport in a different
+order after the asynchronous digest; callers requiring ordered submission must
+sequence their requests explicitly. No FIFO queue is added. Request bodies remain
+part of the in-memory tracking key, so this change does not remove passwords or
+user data from those keys, or add pruning of old cooldown entries.
+
+Review follow-up (3 November 2026): added the already-resolved-digest regressions
+and comments documenting ordering and synchronous check/registration. The runtime
+change since the platform checks above is explanatory comments only.
+
 ## Firewall: Import and Export use mPanel's text format (30 October 2026, after 1.0.63-beta.2)
 
 Branch: `feat/firewall-mpanel-format`, on top of #351 (Firewall Export saves through Android's Save as dialog, the fix for #346) because it changes the same function. Fixes #349. Code: new `lib/firewallMpanel.ts` (the text format, pure), `readImportedRules` in `lib/firewallRules.ts`, `FirewallManager.tsx` (what Export writes, the Import dialog's hint and placeholder, and the rules it passes to Import); help: the Export and Import paragraphs of `docs/help/firewall.md`; tests: new `scripts/test-firewall-mpanel.mjs`, run by `npm run test:firewall-rules`. No API calls added, no dependency.

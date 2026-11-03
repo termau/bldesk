@@ -179,7 +179,14 @@ export function createBinaryLaneClient(token: string) {
 
     // Spam & Concurrency Protection for Mutations (Create/Update/Delete/Actions)
     if (isMutation) {
-      const mutationKey = `${method}:${url}:${req.body ?? ''}`
+      // Keep recreated clients with the same credentials together, but never share another token's response.
+      // Hash the identity so the tracking maps do not retain raw credentials in their keys.
+      const identity = JSON.stringify([cleanToken, req.headers.authorization ?? null])
+      // Distinct unawaited mutations may start out of order; await submissions when order matters.
+      const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(identity))
+      const credentialScope = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
+      const mutationKey = `${credentialScope}:${method}:${url}:${req.body ?? ''}`
+      // Keep the checks and registration below synchronous after the digest.
       const now = Date.now()
       const lastSent = recentMutationTimestamps.get(mutationKey) || 0
 
