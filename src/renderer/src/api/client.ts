@@ -2,10 +2,25 @@ import createClient from 'openapi-fetch'
 import type { paths } from '@shared/api/schema'
 import { NULL_BODY_STATUSES, refusesToken } from './errors'
 
+interface InFlightMutation {
+  response: Promise<Response>
+  waiting: number
+}
+
 // In-flight mutation tracker to prevent duplicate concurrent requests and rapid-fire spam
-const inFlightMutations = new Map<string, Promise<Response>>()
+const inFlightMutations = new Map<string, InFlightMutation>()
 const recentMutationTimestamps = new Map<string, number>()
 const MUTATION_COOLDOWN_MS = 1500 // 1.5 second debounce for identical mutations
+
+function responseForCaller(pending: InFlightMutation): Promise<Response> {
+  pending.waiting++
+  return pending.response.then(response => {
+    // The map entry is removed before this promise settles, so no new caller can join here.
+    // Give the last caller the original: every body branch has a consumer, with no unread internal copy.
+    pending.waiting--
+    return pending.waiting === 0 ? response : response.clone()
+  })
+}
 
 async function safeNormalizeResponse(response: Response): Promise<Response> {
   // A response with a null-body status has no body to rewrite, and `new Response(body, { status })` throws for such a
@@ -196,10 +211,10 @@ export function createBinaryLaneClient(token: string) {
         throw new Error('Action was already submitted. Please wait a moment before trying again.')
       }
 
-      // If exact same mutation is actively in-flight, return the existing pending promise
+      // Share the pending execution, but give each caller its own response.
       if (inFlightMutations.has(mutationKey)) {
         console.warn(`[AntiSpam] Reusing in-flight request for: ${method} ${url}`)
-        return inFlightMutations.get(mutationKey)!
+        return responseForCaller(inFlightMutations.get(mutationKey)!)
       }
 
       recentMutationTimestamps.set(mutationKey, now)
@@ -219,8 +234,9 @@ export function createBinaryLaneClient(token: string) {
         }
       })()
 
-      inFlightMutations.set(mutationKey, executionPromise)
-      return executionPromise
+      const pending = { response: executionPromise, waiting: 0 }
+      inFlightMutations.set(mutationKey, pending)
+      return responseForCaller(pending)
     }
 
     // Standard GET / read query path
