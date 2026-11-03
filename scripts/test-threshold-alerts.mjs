@@ -3,7 +3,7 @@
 //   node --experimental-strip-types --test scripts/test-threshold-alerts.mjs
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { alertCountLabel, alertSummary, alertValueLimits, describeRaisedAlert, describeReachedAlert, describeRule, formatAlertValue, isAlertExceeded, pendingAlertChanges, raisedAlerts, shortUnit } from '../src/renderer/src/lib/thresholdAlerts.ts'
+import { alertCountLabel, alertSummary, alertValueLimits, applyAlertEdit, describeRaisedAlert, describeReachedAlert, describeRule, formatAlertValue, isAlertExceeded, pendingAlertChanges, raisedAlerts, shortUnit } from '../src/renderer/src/lib/thresholdAlerts.ts'
 
 const alert = (over = {}) => ({
   alert_type: 'cpu', name: 'CPU Usage', unit: '%', description: '', enabled: true, value: 80, current_value: 35, last_raised: null, last_cleared: null, ...over
@@ -123,7 +123,7 @@ test('a rule can change both its status and its threshold at once, and rules pas
   assert.deepEqual(changes.map((c) => c.request), [{ alert_type: 'storage-requests', enabled: false, value: 900 }, { alert_type: 'memory-used', value: 130 }])
 })
 
-test('a box BinaryLane would refuse blocks saving instead of being sent', () => {
+test('a box BLDesk does not accept blocks saving instead of being sent', () => {
   for (const bad of [null, 0, -3, 101, 12.5, Number.NaN]) {
     const { changes, invalid } = pendingAlertChanges(rules(), { cpu: { value: bad } })
     assert.deepEqual(invalid, ['cpu'], String(bad))
@@ -137,4 +137,61 @@ test('the other valid edits are still listed beside an invalid one', () => {
   const { changes, invalid } = pendingAlertChanges(rules(), { cpu: { value: null }, 'storage-requests': { value: 600 } })
   assert.deepEqual(invalid, ['cpu'])
   assert.deepEqual(changes.map((c) => c.type), ['storage-requests'])
+})
+
+// --- an edit put back is not an override: a refresh must not turn it into someone else's change undone ---
+
+test('turning a rule off and on again leaves nothing pending', () => {
+  let edits = applyAlertEdit(rules(), {}, 'cpu', { enabled: false })
+  assert.deepEqual(edits, { cpu: { enabled: false } })
+  edits = applyAlertEdit(rules(), edits, 'cpu', { enabled: true })
+  assert.deepEqual(edits, {})
+  assert.deepEqual(pendingAlertChanges(rules(), edits), { changes: [], invalid: [] })
+})
+
+test('putting one field back keeps the other field\'s genuine edit', () => {
+  let edits = applyAlertEdit(rules(), {}, 'cpu', { enabled: false })
+  edits = applyAlertEdit(rules(), edits, 'cpu', { value: 85 })
+  edits = applyAlertEdit(rules(), edits, 'cpu', { value: 80 })
+  assert.deepEqual(edits, { cpu: { enabled: false } })
+})
+
+test('review case: off, on, a real disk edit, then someone else turns CPU off and a refresh arrives', () => {
+  let edits = applyAlertEdit(rules(), {}, 'cpu', { enabled: false })
+  edits = applyAlertEdit(rules(), edits, 'cpu', { enabled: true })
+  edits = applyAlertEdit(rules(), edits, 'storage-requests', { value: 700 })
+  const refreshed = rules().map((r) => (r.alert_type === 'cpu' ? { ...r, enabled: false } : r))
+  const { changes, invalid } = pendingAlertChanges(refreshed, edits)
+  assert.deepEqual(invalid, [])
+  assert.deepEqual(changes.map((c) => c.request), [{ alert_type: 'storage-requests', value: 700 }])
+})
+
+test('putting back a rule that is not the first one drops its edit too (the rule is found by type)', () => {
+  let edits = applyAlertEdit(rules(), {}, 'storage-requests', { value: 700 })
+  assert.deepEqual(edits, { 'storage-requests': { value: 700 } })
+  edits = applyAlertEdit(rules(), edits, 'storage-requests', { value: 500 })
+  assert.deepEqual(edits, {})
+  edits = applyAlertEdit(rules(), {}, 'network-outgoing', { enabled: true })
+  edits = applyAlertEdit(rules(), edits, 'network-outgoing', { enabled: false })
+  assert.deepEqual(edits, {})
+})
+
+test('a genuine edit survives a refresh that changes another rule, and is dropped when the refresh makes it a no-op', () => {
+  const edits = applyAlertEdit(rules(), {}, 'storage-requests', { value: 700 })
+  const other = rules().map((r) => (r.alert_type === 'cpu' ? { ...r, value: 70 } : r))
+  assert.deepEqual(pendingAlertChanges(other, edits).changes.map((c) => c.type), ['storage-requests'])
+  const same = rules().map((r) => (r.alert_type === 'storage-requests' ? { ...r, value: 700 } : r))
+  assert.deepEqual(pendingAlertChanges(same, edits), { changes: [], invalid: [] })
+})
+
+test('a cleared box stays an edit (it blocks saving), and a rule the list does not have is kept as typed', () => {
+  assert.deepEqual(applyAlertEdit(rules(), {}, 'cpu', { value: null }), { cpu: { value: null } })
+  assert.deepEqual(applyAlertEdit(rules(), {}, 'unknown-rule', { value: 5 }), { 'unknown-rule': { value: 5 } })
+})
+
+test('applyAlertEdit does not change the edits it is given', () => {
+  const before = { cpu: { enabled: false } }
+  const copy = JSON.parse(JSON.stringify(before))
+  applyAlertEdit(rules(), before, 'cpu', { enabled: true })
+  assert.deepEqual(before, copy)
 })

@@ -73,9 +73,10 @@ export function shortUnit(unit: string): string {
 }
 
 /**
- * What a threshold box accepts: a whole number of at least 1, and for a percentage at most 100. Memory is the exception:
- * it includes swap, so BinaryLane describes it as able to pass 100%. Other units have no upper limit here; BinaryLane
- * refuses what it will not take.
+ * What a threshold box accepts in BLDesk: a whole number of at least 1, and for a percentage at most 100. These are BLDesk's
+ * own limits: the public reference declares the value as an optional integer and states no range. Memory is the exception
+ * to the 100: it includes swap, so BinaryLane describes it as able to pass 100%. Other units have no upper limit here, and a
+ * value BinaryLane does not take comes back as its own refusal.
  */
 export function alertValueLimits(alert: Pick<ThresholdAlert, 'alert_type' | 'unit'>): { min: number; max?: number } {
   return alert.unit === '%' && alert.alert_type !== 'memory-used' ? { min: 1, max: 100 } : { min: 1 }
@@ -95,8 +96,8 @@ export interface AlertChange {
 
 /**
  * The rules whose status or threshold now differs from what BinaryLane holds, ready to send, and the rules whose box holds
- * something it will not accept (cleared, not whole, or out of range), which block saving. A rule the user left alone, or
- * put back to what it was, is neither: it is not sent, so saving can never overwrite a rule nobody touched.
+ * something BLDesk does not accept (cleared, not whole, or outside `alertValueLimits`), which block saving. A rule the user
+ * left alone, or put back to what it was, is neither: it is not sent, so saving can never overwrite a rule nobody touched.
  */
 export function pendingAlertChanges(
   alerts: readonly ThresholdAlert[],
@@ -126,4 +127,28 @@ export function pendingAlertChanges(
     })
   }
   return { changes, invalid }
+}
+
+/**
+ * Records the user's edit to one field of one rule. An edit is an override of what BinaryLane held when the user made it, so a
+ * field put back to that value is not an override at all and is dropped (and the rule with it, once nothing is left). Kept, it
+ * would outlive a later refresh: if someone else then changed the field, the stale override would show the old value over
+ * theirs, and saving would write it back as the user's change. A genuine edit is kept through a refresh.
+ */
+export function applyAlertEdit(
+  alerts: readonly ThresholdAlert[],
+  edits: Readonly<Partial<Record<string, AlertEdit>>>,
+  type: string,
+  patch: AlertEdit
+): Partial<Record<string, AlertEdit>> {
+  const rule = alerts.find((alert) => alert.alert_type === type)
+  const merged: AlertEdit = { ...edits[type], ...patch }
+  if (rule) {
+    if (merged.enabled === rule.enabled) delete merged.enabled
+    if (merged.value === rule.value) delete merged.value
+  }
+  const next = { ...edits }
+  if (merged.enabled === undefined && merged.value === undefined) delete next[type]
+  else next[type] = merged
+  return next
 }

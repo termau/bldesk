@@ -75,6 +75,9 @@ const AlertPopup: React.FC<{
   const panelRef = useRef<HTMLDivElement>(null)
   const closeRef = useRef<HTMLButtonElement>(null)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
+  // The most height the popup may take: all of the window less its margins. Past that its alert list scrolls, with the header and the
+  // settings button kept in view, so a small window or a large zoom never puts the button where nothing can reach it.
+  const [room, setRoom] = useState(() => document.documentElement.clientHeight - MARGIN * 2)
 
   // Below the bell, or above it when there is no room, and always inside what can be seen: phones are narrower than the popup.
   const place = useCallback((): boolean => {
@@ -84,10 +87,13 @@ const AlertPopup: React.FC<{
     const viewportW = document.documentElement.clientWidth
     const viewportH = document.documentElement.clientHeight
     const width = Math.min(WIDTH, viewportW - MARGIN * 2)
-    const height = panel.offsetHeight
+    const available = viewportH - MARGIN * 2
+    setRoom(available)
+    const height = Math.min(panel.offsetHeight, available)
     const left = Math.min(Math.max(MARGIN, a.left + a.width / 2 - width / 2), viewportW - width - MARGIN)
     const below = a.bottom + GAP
-    const top = below + height + MARGIN <= viewportH ? below : Math.max(MARGIN, a.top - GAP - height)
+    const wanted = below + height + MARGIN <= viewportH ? below : a.top - GAP - height
+    const top = Math.min(Math.max(MARGIN, wanted), viewportH - height - MARGIN)
     setPos({ top, left })
     return true
   }, [anchor])
@@ -145,10 +151,10 @@ const AlertPopup: React.FC<{
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => e.stopPropagation()}
       onContextMenu={(e) => e.stopPropagation()}
-      style={{ position: 'fixed', top: pos?.top ?? 0, left: pos?.left ?? 0, width: Math.min(WIDTH, document.documentElement.clientWidth - MARGIN * 2), visibility: pos ? 'visible' : 'hidden' }}
-      className="z-50 whitespace-normal rounded-lg border border-[#ced4da] bg-white p-3 text-left text-xs font-normal text-[#212529] shadow-xl dark:border-[#495057] dark:bg-[#2b3035] dark:text-[#f8f9fa]"
+      style={{ position: 'fixed', top: pos?.top ?? 0, left: pos?.left ?? 0, width: Math.min(WIDTH, document.documentElement.clientWidth - MARGIN * 2), maxHeight: room, visibility: pos ? 'visible' : 'hidden' }}
+      className="z-50 flex flex-col whitespace-normal rounded-lg border border-[#ced4da] bg-white p-3 text-left text-xs font-normal text-[#212529] shadow-xl dark:border-[#495057] dark:bg-[#2b3035] dark:text-[#f8f9fa]"
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex shrink-0 items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 text-sm font-semibold"><BellRing aria-hidden="true" className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />Threshold alert</div>
           <div className="truncate text-[11px] text-[#6c757d] dark:text-slate-400">{serverName}</div>
@@ -164,7 +170,7 @@ const AlertPopup: React.FC<{
         </button>
       </div>
 
-      <div className="mt-2 space-y-1.5">
+      <div className="mt-2 min-h-0 space-y-1.5 overflow-y-auto overscroll-contain">
         {detail?.status === 'failed' && <p className="text-rose-700 dark:text-rose-300">BinaryLane reports a threshold alert on this server, but its alert details could not be loaded{detail.error ? `: ${detail.error}` : '.'}</p>}
         {!detail || (detail.status === 'loading') ? <p className="text-[#6c757d] dark:text-slate-400">BinaryLane reports a threshold alert on this server. Loading its alert details…</p> : null}
         {raised && raised.length > 0 && (
@@ -180,12 +186,12 @@ const AlertPopup: React.FC<{
         {raised && raised.length === 0 && <p>BinaryLane reports a threshold alert on this server, but none of its enabled alerts is at its threshold in the latest reading. Its alert settings show each rule.</p>}
       </div>
 
-      <p className="mt-2 text-[10px] leading-snug text-[#6c757d] dark:text-slate-400">BinaryLane lists the server; BLDesk compares the latest reading with each enabled threshold to show which alert.</p>
+      <p className="mt-2 shrink-0 text-[10px] leading-snug text-[#6c757d] dark:text-slate-400">BinaryLane lists the server; BLDesk compares the latest reading with each enabled threshold to show which alert.</p>
 
       <button
         type="button"
         onClick={onOpenSettings}
-        className="mt-2.5 inline-flex w-full items-center justify-center gap-1.5 rounded bg-[#017cb6] px-3 py-2 text-xs font-semibold text-white hover:bg-[#016a9c]"
+        className="mt-2.5 inline-flex w-full shrink-0 items-center justify-center gap-1.5 rounded bg-[#017cb6] px-3 py-2 text-xs font-semibold text-white hover:bg-[#016a9c]"
       >
         <ExternalLink aria-hidden="true" className="h-3.5 w-3.5" />Open alert settings
       </button>

@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react'
 import { Bell, Loader2 } from 'lucide-react'
 import type { components } from '@shared/api/schema'
-import { alertValueLimits, pendingAlertChanges, shortUnit, type AlertChange, type AlertEdit } from '../../lib/thresholdAlerts'
+import { alertValueLimits, applyAlertEdit, pendingAlertChanges, shortUnit, type AlertChange, type AlertEdit } from '../../lib/thresholdAlerts'
 
 type ThresholdAlert = components['schemas']['ThresholdAlert']
 
@@ -25,12 +25,14 @@ const COLUMNS = 'md:grid-cols-[minmax(9rem,12rem)_minmax(10rem,13rem)_1fr]'
  * Every threshold alert rule BinaryLane has for the server, as its table: name, an on box and threshold, and its own
  * description. The rows come from the API, so a rule BLDesk has never heard of still shows. Saving sends only the rules
  * that were changed (the request keeps the status and value of anything left out), and it is switched off until the rules
- * have loaded, so a failed read can never be saved over the server's real rules.
+ * have loaded, so a failed read can never be saved over the server's real rules. The limits on a threshold box are BLDesk's
+ * own (see `alertValueLimits`); BinaryLane's reference states none.
  */
 export const ServerAlertRules: React.FC<Props> = ({ alerts, status, error, onRetry, busy, onSave }) => {
   const [edits, setEdits] = useState<Partial<Record<string, AlertEdit>>>({})
   const { changes, invalid } = useMemo(() => pendingAlertChanges(alerts ?? [], edits), [alerts, edits])
-  const edit = (type: string, patch: AlertEdit) => setEdits((previous) => ({ ...previous, [type]: { ...previous[type], ...patch } }))
+  // A field put back to what BinaryLane holds stops being an edit, so a later refresh cannot turn it into a change nobody made.
+  const edit = (type: string, patch: AlertEdit) => setEdits((previous) => applyAlertEdit(alerts ?? [], previous, type, patch))
   const canSave = status === 'ready' && !busy && changes.length > 0 && invalid.length === 0
 
   const save = async (e: React.FormEvent) => {

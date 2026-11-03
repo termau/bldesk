@@ -69,7 +69,9 @@ function Cell({ cell, kind }: { cell: HeatmapCell; kind: 'ratio' | 'rate' }) {
 export const FleetHeatmap: React.FC<Props> = ({ client, servers, serversLoading, onSelectServer, onOpenAlerts }) => {
   const activeIds = useMemo(() => servers.filter((server) => server.status === 'active').map((server) => server.id), [servers])
   const fleet = useFleetMetrics(client, activeIds)
-  const alerts = useFleetThresholdAlerts(client, activeIds)
+  // BinaryLane can list a stopped server too (a locked backup slot alerts whatever the power state), so every row is asked about, not only the ones with metrics.
+  const allIds = useMemo(() => servers.map((server) => server.id), [servers])
+  const alerts = useFleetThresholdAlerts(client, allIds)
   const [sort, setSort] = useState<HeatmapSort>('name')
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc')
   const rows = useMemo(
