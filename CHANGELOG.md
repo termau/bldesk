@@ -5,6 +5,15 @@ All notable changes to the **BLDesk** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [1.0.63-beta.4] - 2026-11-03
+
+**Two accounts no longer trip over each other's actions, and Flush DNS Cache shows it is working**
+
+### Fixed
+- **An action sent from one account is no longer blocked or answered by another account's** (#358, #357). BLDesk holds back an identical change sent twice within a second and a half, and hands a repeat that arrives while the first is still pending the first one's answer. It did this by the request alone, so with two profiles the second account's identical action could be refused as a duplicate, or reported as done from the first account's reply without ever being sent. The check now also goes by the account's credentials, kept only as a one-way fingerprint, so each account's change is sent and answered on its own, while a repeat from the same account is still caught.
+- **Every caller that joins a pending action gets its own answer** (#361, #359). When a second request for the same action joined one already in flight, both were handed the same reply, which can be read only once: the second saw "body stream already read" and History marked it Failed although BinaryLane had accepted it, and a refusal's reason reached only the first. Each caller now receives its own copy of the reply, so the result and any refusal reason reach both.
+- **Flush DNS Cache shows a spinner and is off while its refresh is pending** (#356, #355). Repeated clicks used to pile up "Action was already submitted" errors beside the success notice. The button now waits for the answer, stays busy if you leave DNS and come back, does not report a refresh to a different profile after you switch, and fails at once when offline rather than firing later. The vendored API reference is updated to 0.47.0, which describes this endpoint's refusals.
+
 ## [1.0.63-beta.3] - 2026-10-30
 
 **Firewall Import and Export speak mPanel's format**
