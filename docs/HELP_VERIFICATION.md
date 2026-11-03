@@ -10,7 +10,7 @@ Verification:
 
 - `npm run typecheck`: 504 tests, 495 passed and 9 platform skips; `npm run build`, `npm run test:terminal` and the 32 existing GUI mock tests passed. The 33 new regressions use the production client with real `openapi-fetch`; two also execute the production server-action mutation hook with TanStack MutationObservers. Six cover three callers using `parseAs: 'text'` and a timeout signal, as used by the network-action and handoff hooks: action JSON, an empty HTTP 202 and a JSON refusal, through both adapters. An accepted action remains `in-progress`, not completed.
 - Regressions cover two/four independent JSON readers, refusal bodies, null/empty bodies, the original single-reader path, unchanged cooldown, transport rejection and cleanup, subsequent requests, content-type normalization, slow stream readers, cancellation, stream errors and malformed JSON. Loopback fetch checks response URL, redirect metadata and headers. Cancelling every reader reaches the stream source; deliberately cloning for every caller leaves an unread internal branch and fails that check. The original implementation and deliberate shared-body/first-caller bypass controls also fail the relevant regressions.
-- Detached integration with #358 at `787d112`: all 54 focused response/isolation tests passed; full typecheck passed 516 of 525 tests with the same 9 platform skips, and the combined build passed. The runtime patch and test scripts were composed, not Git-merged; a later merge must preserve both branches' package scripts and verification sections. This branch does not include #358's credential-key change.
+- Detached integration with #358 at `787d112`: all 54 focused response/isolation tests passed; full typecheck passed 516 of 525 tests with the same 9 platform skips, and the combined build passed. The runtime patch and test scripts were composed, not Git-merged, for that check. On 3 November 2026, after #358 merged, this branch was merged with main: both package-script entries and both verification sections are kept, and the branch now includes #358's credential-key change.
 - Real Windows Electron and Android WebView/native HTTP, using a separate fixture build, fictitious token and local API. The client source matched the candidate. The Android fixture used its own application ID, a loopback-only cleartext exception and CSP allowance, and request-only middleware redirecting the API host to loopback; it did not alter responses. A test-only factory exposure invoked the client directly; these were transport checks, not a reproduced button/History workflow. Two and four readers received the same successful data; both readers retained an HTTP 400 reason and handled an HTTP 204. Each of these cases made one transport call and one HTTP request. A split-body HTTP reply was readable by both; Android's native plugin buffers it before constructing its Response, so this is not evidence of live native streaming.
 - Lost-reply limitation: on Android both callers rejected with one native execution and one HTTP request, without a web fallback. On Windows both rejected from one JavaScript fetch, but the TLS fixture recorded two POST requests after a connection was dropped. A separate direct-fetch control, without the API client, reproduced the two requests. This run did not record connection identities or establish the reason for the second request. Further confirmation with main's client and complete-request/backend counters is recorded in [#360](https://github.com/termau/bldesk/issues/360). This existing transport behavior is outside the response-ownership fix; these checks do not establish exactly-once server execution after a lost desktop reply.
 
@@ -18,7 +18,80 @@ Not verified in the platform checks above: a naturally occurring overlapping UI 
 
 Review follow-up (3 November 2026): named the pending counter `waiting`, which counts callers not yet served, and corrected the coalescing comment to distinguish sharing an execution from owning a response. No runtime behaviour changed. The platform checks above apply to the original equivalent logic; they were not repeated for this rename/comment edit. The subsequent review reproduced the separate History limitation through the Servers list and palette against the mock; it is not fixed here.
 
-Composed integration of the revised #358 and #361 candidates passes all 56 focused tests and full typecheck (527 total, 518 passed, nine platform skips), plus build. These remain independent branches: this verification is not a Git merge, and a later merge must retain both script entries and verification sections and update statements about which changes it includes.
+Composed integration of the revised #358 and #361 candidates passes all 56 focused tests and full typecheck (527 total, 518 passed, nine platform skips), plus build. That check was a composition, not a Git merge. On 3 November 2026 the two were Git-merged on main with both script entries and verification sections kept; typecheck (591 tests with #356 also merged), the focused suites and the build passed on the result.
+## API: isolate mutation tracking by credentials (2 November 2026, #357, after 1.0.63-beta.3)
+
+Code: `src/renderer/src/api/client.ts`. No new control, API operation, confirmation,
+History behaviour or user-facing help text. The existing module-global cooldown
+and pending-request maps now namespace their keys with a SHA-256 fingerprint of
+the trimmed client token and request-specific Authorization header. Recreated
+clients with those same credentials still share duplicate protection; different
+credentials do not share a cooldown or response. The API token and its
+Authorization header are not kept in tracking keys or added to warnings. This
+fingerprint is not an authorization mechanism: requests still send the same
+headers to the API.
+
+The digest uses Web Crypto only for mutations. Reads and the early empty-token
+refusal do not require it. A digest failure rejects before sending; it does not
+fall back to an unscoped request. The existing 1.5-second cooldown, response/error
+handling, native no-unsafe-retry path and same-credential pending-response reuse
+are otherwise unchanged.
+
+### Checks Performed
+
+- `npm run typecheck`: 494 tests, 485 passed, nine platform skips, zero failures.
+  `npm run build`, `npm run test:terminal` and the 32 existing mock tests passed.
+- `npm run test:mutation-isolation`: 23 tests, included in `test:api-errors` and
+  therefore the normal typecheck/CI path. They run the production adapter and
+  actual openapi-fetch with a controlled clock and intercepted web/native
+  transports. They cover different credentials inside/outside the cooldown,
+  distinct JSON results, a delayed 429 versus another account's 204, same-token
+  client recreation, simultaneous duplicates, pending reuse, failure without
+  replay, Authorization overrides/removal, token/header disclosure, reads, empty tokens
+  and fingerprint failure. Two cases use an already-resolved digest promise to
+  exercise simultaneous identical calls in adjacent microtasks. These
+  native-adapter unit tests use a plugin stub,
+  not Android hardware.
+- Read-only in-memory negative controls: replacing the adapter with main's
+  version makes 13 tests fail; moving the maps inside each client makes eight
+  same-credential tests fail. A header-only scope fails the native header-removal
+  test. Inserting a one-microtask gap before registration fails both new
+  immediate-digest cases. No product files were modified by these controls.
+- Composed with the revised #361 candidate: 56 focused tests pass; full typecheck
+  passes 518 tests with nine platform skips, and the combined build passes. The
+  branches remain independent; later integration must retain both script entries
+  and verification sections and update their inclusion statements.
+- Real Electron, isolated profiles and loopback API: eight checks passed. Web
+  Crypto was available in the application secure context. Default success sent
+  one POST. With A still pending after 1.7 seconds, switching to B sent a second
+  POST with B's credentials. Switching back to A and resubmitting after the
+  cooldown reused A's pending request. Rapid same-credential repeats sent one
+  POST and showed the existing duplicate refusal. Empty 400/429 responses failed
+  without success or resend. Seven total mutation executions; no page exceptions.
+- A separate Android fixture was built from the same base with candidate files
+  copied and hash-matched before test-only app-identity and loopback overlays.
+  Its HTTP exception was loopback-only; production TLS configuration was not
+  changed. Native Web Crypto and the same eight UI/profile-switch checks passed.
+  Seven actual `CapacitorHttp.request` nativePromise bridge calls agreed with
+  seven loopback POST executions; no web-fetch fallback or page exceptions.
+  Profile switches used the actual rendered select/change handler. Ordinary
+  refresh buttons were tapped through Android input; rapid repeat clicks were
+  injected through the DOM.
+
+Limits: no real provider account/API, physical network loss, macOS/Linux GUI,
+new layout/zoom matrix or same-credential JSON-response-consumption claim. Runtime
+checks used the existing DNS caller on main, not the separate pending DNS UI PR.
+The shared adapter's account isolation, rather than provider DNS cache scope or
+observed customer incidence, is what these checks establish.
+Distinct concurrent, unawaited mutations can reach the transport in a different
+order after the asynchronous digest; callers requiring ordered submission must
+sequence their requests explicitly. No FIFO queue is added. Request bodies remain
+part of the in-memory tracking key, so this change does not remove passwords or
+user data from those keys, or add pruning of old cooldown entries.
+
+Review follow-up (3 November 2026): added the already-resolved-digest regressions
+and comments documenting ordering and synchronous check/registration. The runtime
+change since the platform checks above is explanatory comments only.
 
 ## Firewall: Import and Export use mPanel's text format (30 October 2026, after 1.0.63-beta.2)
 
