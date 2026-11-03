@@ -7,6 +7,7 @@ import { Sidebar, ActiveTab, ServerSubTab } from './components/layout/Sidebar'
 import { BottomNav } from './components/layout/BottomNav'
 import { ServerList } from './components/servers/ServerList'
 import { ServerDetails } from './components/servers/ServerDetails'
+import type { SettingsStart } from './components/servers/ServerSettings'
 import { AuthModal } from './components/auth/AuthModal'
 import { CommandPalette } from './components/palette/CommandPalette'
 import { TerminalView } from './components/terminal/TerminalView'
@@ -115,6 +116,8 @@ function MainDashboard() {
   }
   const [selectedServer, setSelectedServer] = useState<any | null>(null)
   const [activeServerSubTab, setActiveServerSubTab] = useState<ServerSubTab>('overview')
+  // Set only by a link that sends the user to one Settings tab (the heatmap's alert marker); any other way into a server clears it.
+  const [settingsStart, setSettingsStart] = useState<SettingsStart | undefined>(undefined)
   const [isAuthOpen, setIsAuthOpen] = useState(false)
   const [isPaletteOpen, setIsPaletteOpen] = useState(false)
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false)
@@ -285,6 +288,18 @@ function MainDashboard() {
   const handleSelectServer = (server: any) => {
     setSelectedServer(server)
     setActiveServerSubTab('overview')
+    setSettingsStart(undefined)
+  }
+
+  const handleSelectServerSubTab = (tab: ServerSubTab) => {
+    setSettingsStart(undefined)
+    setActiveServerSubTab(tab)
+  }
+
+  // The alert pill on a server page: that server's Settings, on its Alerts rules.
+  const handleOpenServerAlerts = () => {
+    setSettingsStart({ tab: 'alerts' })
+    setActiveServerSubTab('settings')
   }
 
   // bldesk:// deep links (cold start + while running)
@@ -296,7 +311,7 @@ function MainDashboard() {
     isLoadingServers,
     onSwitchProfile: handleSwitchProfile,
     onSelectServer: handleSelectServer,
-    onSelectServerSubTab: setActiveServerSubTab,
+    onSelectServerSubTab: handleSelectServerSubTab,
     onSelectTab: setActiveTab,
     ready: !isInitializing
   })
@@ -375,7 +390,7 @@ function MainDashboard() {
             apiStatus={serverListError ? ([401, 403].includes((serversQuery.error as { status?: number } | null)?.status ?? 0) ? 'refused' : 'unreachable') : serversQuery.isFetching && !isFetchedAfterMount ? 'checking' : 'online'}
             selectedServer={selectedServer}
             activeServerSubTab={activeServerSubTab}
-            onSelectServerSubTab={setActiveServerSubTab}
+            onSelectServerSubTab={handleSelectServerSubTab}
             onBackToServers={() => setSelectedServer(null)}
             isMobileDrawerOpen={isMobileDrawerOpen}
             onCloseMobileDrawer={() => setIsMobileDrawerOpen(false)}
@@ -392,7 +407,9 @@ function MainDashboard() {
                   servers={servers}
                   client={client}
                   activeSubTab={activeServerSubTab}
-                  onSelectSubTab={setActiveServerSubTab}
+                  onSelectSubTab={handleSelectServerSubTab}
+                  settingsStart={settingsStart}
+                  onOpenAlertSettings={handleOpenServerAlerts}
                   onBack={() => setSelectedServer(null)}
                   onCancelled={(id) => setSelectedServer((cur: any) => (cur?.id === id ? null : cur))}
                   onOpenTerminal={handleOpenTerminalForIp}
@@ -500,6 +517,12 @@ function MainDashboard() {
                   setActiveServerSubTab('usage')
                   setActiveTab('servers')
                 }}
+                onOpenAlerts={(server) => {
+                  handleSelectServer(server)
+                  setActiveServerSubTab('settings')
+                  setSettingsStart({ tab: 'alerts' })
+                  setActiveTab('servers')
+                }}
               />
             )}
 
@@ -533,7 +556,7 @@ function MainDashboard() {
           client={client}
           profileId={activeProfile?.id}
           onSelectServer={handleSelectServer}
-          onSelectServerSubTab={setActiveServerSubTab}
+          onSelectServerSubTab={handleSelectServerSubTab}
           onNavigateTab={setActiveTab}
           onCreateFromTemplate={(template, hostname) => {
             setTemplateApply({ template, hostname })

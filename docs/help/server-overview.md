@@ -10,6 +10,9 @@ Use Overview to check that you have the right server before acting. The header s
 ## Quick actions
 Select a local SSH key and open SSH (embedded desktop tab by default, or native with that preference), or open the rescue console. A failed reachability probe is a reason to investigate, not proof that the VM is off. Power actions and diagnostics have different effects; [Servers](help:servers) explains the distinction.
 
+## Threshold alerts
+When BinaryLane lists the server as having a current exceeded threshold alert, a yellow pill counting its alerts (for example 1 alert triggered) appears under the server's name on every tab. Select it to open Settings on the Alerts rules, where a yellow banner names each alert and its latest reading against its threshold. BinaryLane reports which servers have an alert, not which alert, so BLDesk compares each enabled alert's latest reading with its threshold. If none is at it, the pill says only that an alert was triggered and the banner says so. The same servers carry a bell on the [Fleet heatmap](help:heatmap#threshold-alerts). Looking changes nothing.
+
 ## Worked example
 The shared header offers Reboot and Graceful Shutdown when the server is considered running, or Power On otherwise. Graceful Shutdown says:
 

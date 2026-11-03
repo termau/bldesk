@@ -1,4 +1,4 @@
-import { keepPreviousData, useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery, useQueries, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { BinaryLaneClient } from './client'
 import { components, paths } from '@shared/api/schema'
 import type { FleetMetricResult } from '../lib/heatmap'
@@ -1632,6 +1632,8 @@ export function useNetworkActionMutation(client: BinaryLaneClient | null, server
         queryClient.invalidateQueries({ queryKey: ['server', serverId], refetchType: 'all' }),
         queryClient.invalidateQueries({ queryKey: ['servers'] }),
         queryClient.invalidateQueries({ queryKey: ['server-threshold-alerts', serverId] }),
+        // Which servers BinaryLane lists as alerting can change with any action (new thresholds, a resized disk), so the server page's alert pill and the heatmap's markers read it again too.
+        queryClient.invalidateQueries({ queryKey: ['fleet-threshold-alerts'] }),
         queryClient.invalidateQueries({ queryKey: ['server-advanced-features', serverId] })
       ])
       await Promise.race([refetch, new Promise((r) => setTimeout(r, ACTION_REQUEST_TIMEOUT_MS))])
@@ -1712,6 +1714,8 @@ export function useServerActionWithHandoff(client: BinaryLaneClient | null, serv
         queryClient.invalidateQueries({ queryKey: ['server', serverId], refetchType: 'all' }),
         queryClient.invalidateQueries({ queryKey: ['servers'] }),
         queryClient.invalidateQueries({ queryKey: ['server-threshold-alerts', serverId] }),
+        // Which servers BinaryLane lists as alerting can change with any action (new thresholds, a resized disk), so the server page's alert pill and the heatmap's markers read it again too.
+        queryClient.invalidateQueries({ queryKey: ['fleet-threshold-alerts'] }),
         queryClient.invalidateQueries({ queryKey: ['server-advanced-features', serverId] })
       ])
       await Promise.race([refetch, new Promise((r) => setTimeout(r, ACTION_REQUEST_TIMEOUT_MS))])
@@ -1780,19 +1784,74 @@ export function useServerDiagnosticMutation(client: BinaryLaneClient | null, ser
   })
 }
 
+async function fetchServerThresholdAlerts(client: BinaryLaneClient, serverId: number) {
+  const { data, error, response } = await client.GET('/v2/servers/{server_id}/threshold_alerts', {
+    params: { path: { server_id: serverId } }
+  })
+  if (error || !response.ok) throw apiFailure(error, response)
+  return data?.threshold_alerts || []
+}
+
 export function useServerThresholdAlerts(client: BinaryLaneClient | null, serverId: number | undefined) {
   return useQuery({
     queryKey: ['server-threshold-alerts', serverId],
     queryFn: async () => {
       if (!client || !serverId) return []
-      const { data, error, response } = await client.GET('/v2/servers/{server_id}/threshold_alerts', {
-        params: { path: { server_id: serverId } }
-      })
-      if (error || !response.ok) throw apiFailure(error, response)
-      return data?.threshold_alerts || []
+      return fetchServerThresholdAlerts(client, serverId)
     },
     enabled: !!client && !!serverId
   })
+}
+
+const THRESHOLD_ALERT_REFRESH_MS = 60_000
+
+export interface FleetAlertDetail {
+  /** `ready` once this server's own alert list has loaded, `failed` if that request was refused or failed. */
+  status: 'loading' | 'ready' | 'failed'
+  alerts: components['schemas']['ThresholdAlert'][]
+  error: string | null
+}
+
+/**
+ * Which of `serverIds` BinaryLane lists as having a current exceeded threshold alert, and the alerts behind each one.
+ * Read-only. The list says which servers; each listed server's own alert list (the one Server Settings reads, so they share
+ * a cache entry) says which alerts, and the caller compares. A failed list must not hide the heatmap, so it is reported
+ * as `error` and the caller shows the rows as before.
+ */
+export function useFleetThresholdAlerts(client: BinaryLaneClient | null, serverIds: number[]) {
+  const queryClient = useQueryClient()
+  const listed = useQuery({
+    queryKey: ['fleet-threshold-alerts'],
+    queryFn: async () => {
+      if (!client) return []
+      const { data, error, response } = await client.GET('/v2/servers/threshold_alerts')
+      if (error || !response.ok) throw apiFailure(error, response)
+      return data?.server_ids ?? []
+    },
+    enabled: !!client,
+    refetchInterval: THRESHOLD_ALERT_REFRESH_MS
+  })
+  const shown = (listed.data ?? []).filter((id) => serverIds.includes(id))
+  const details = useQueries({
+    queries: shown.map((id) => ({
+      queryKey: ['server-threshold-alerts', id],
+      queryFn: async () => (client ? fetchServerThresholdAlerts(client, id) : []),
+      enabled: !!client,
+      refetchInterval: THRESHOLD_ALERT_REFRESH_MS
+    })),
+    combine: (results) => new Map<number, FleetAlertDetail>(shown.map((id, index) => {
+      const result = results[index]
+      const status = result?.isError ? 'failed' : result?.data ? 'ready' : 'loading'
+      return [id, { status, alerts: result?.data ?? [], error: result?.isError ? describeApiError(result.error) : null }]
+    }))
+  })
+  return {
+    ids: shown,
+    details,
+    error: listed.isError ? describeApiError(listed.error) : null,
+    /** Reads the list and each listed server's alerts again now, for the heatmap's Refresh. */
+    refresh: () => Promise.all([listed.refetch(), queryClient.invalidateQueries({ queryKey: ['server-threshold-alerts'] })])
+  }
 }
 
 export function useAvailableAdvancedFeatures(client: BinaryLaneClient | null, serverId: number | undefined) {

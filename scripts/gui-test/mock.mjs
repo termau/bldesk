@@ -204,6 +204,20 @@ const firewall = (s) => {
   return out
 }
 const fwOverride = new Map()
+// `change_threshold_alerts` edits, by `${serverId}:${alertType}`: BinaryLane keeps the status or value of a field the request leaves out.
+const alertOverride = new Map()
+// BinaryLane's eight threshold alert rules, in its order, with its own names, units and descriptions. `value` is the rule's threshold
+// here, `reading` what a quiet server measures, `off` a rule that starts switched off (as the Data Transfer Limit does).
+const ALERT_RULES = [
+  { type: 'cpu', name: 'CPU Usage', unit: '%', value: 90, reading: 35, description: 'The average percentage of all CPU; 100% is the maximum possible even with multiple processors. A high average will prevent the server from responding quickly.' },
+  { type: 'storage-requests', name: 'Disk I/O Requests', unit: 'requests/second', value: 500, reading: 12, description: 'The average number of requests (combined read and write) received by the storage subsystem. A high number of requests often indicates swap usage (due to memory exhaustion) and is associated with poor performance.' },
+  { type: 'network-incoming', name: 'Incoming Network Traffic', unit: 'kilobytes/second', value: 500, reading: 20, description: 'Amount of data going into the server (from the internet and the LAN). A sudden increase may indicate the server is the victim of a DOS attack.' },
+  { type: 'network-outgoing', name: 'Outgoing Network Traffic', unit: 'kilobytes/second', value: 500, reading: 15, off: true, description: 'Amount of data coming out of the server (to the internet and the LAN). A sudden increase may indicate the server has been hacked and is being used for spam delivery.' },
+  { type: 'data-transfer-used', name: 'Data Transfer Limit', unit: '%', value: 80, reading: 12, off: true, description: 'The percentage of your monthly data transfer limit.' },
+  { type: 'storage-used', name: 'Disk Space', unit: '%', value: 90, reading: 48, description: 'Disk space consumed as a percentage of your total disk space. If the server runs out of disk space programs may fail to execute or be unable to create new files, or the server may become unresponsive.' },
+  { type: 'memory-used', name: 'Memory Consumption', unit: '%', value: 85, reading: 62, description: 'Virtual memory consumed as a percentage of your physical memory. Virtual memory includes the swap file so the percentage may exceed 100% indicating that the server has run out of physical memory and is relying on swap space, which will generally cause poor performance.' },
+  { type: 'locked-backup-slots', name: 'Locked Backup Slots', unit: '%', value: 100, reading: 0, description: 'The percentage of scheduled backup slots (daily, weekly, monthly) occupied by locked backups. When all slots are locked, automated backups cannot proceed.' }
+]
 const sample = (s, off = 0) => {
   const i = s.id % 100, ratio = [.36, .62, .81, .94, .25, .48][i % 6], wave = 1 + Math.sin(off * .32 + i) * .2
   return mk('SampleSetsResponse', 'sample_sets', {
@@ -329,6 +343,12 @@ function applyAction(a, server) {
   if (a.type === 'attach_backup') server.attached_backup = { id: b.image, disk_identifiers: ['sdb'], attached_at: nowIso(), attachment_expires: null }
   if (a.type === 'detach_backup') server.attached_backup = null
   if (a.type === 'change_advanced_firewall_rules') fwOverride.set(server.id, b.firewall_rules || [])
+  if (a.type === 'change_threshold_alerts') {
+    for (const r of b.threshold_alerts || []) {
+      const key = `${server.id}:${r.alert_type}`
+      alertOverride.set(key, { ...alertOverride.get(key), ...(r.enabled != null ? { enabled: r.enabled } : {}), ...(r.value != null ? { value: r.value } : {}) })
+    }
+  }
 }
 function actionView(a) {
   const done = !a.waiting && a.completedAt != null, server = servers.find((s) => s.id === a.server_id)
@@ -430,6 +450,8 @@ async function handleApi(req, res, u, body) {
     if (!mt[2] && m === 'DELETE') { vpcs = vpcs.filter((v) => v.id !== +mt[1]); return json(res, 204) }
   }
   if (m === 'GET' && p === '/v2/servers') return json(res, 200, page(servers, q, 'servers'))
+  // The servers BinaryLane lists as having an exceeded threshold alert: those `cfg.raisedAlerts` names (none by default; an empty list is a listed server with no alert at its threshold).
+  if (m === 'GET' && p === '/v2/servers/threshold_alerts') return json(res, 200, { server_ids: Object.keys(cfg.raisedAlerts || {}).map(Number) })
   if (m === 'POST' && p === '/v2/servers') {
     const id = nextId++, s = mkServer({ id, name: body.name ?? `generated-name-${id}`, size_slug: body.size, region: body.region, image: body.image, vpc_id: body.vpc_id || 901, ip: '203.0.113.' + (id % 200), status: 'new', backups: false,
       memory: body.options?.memory, disk: body.options?.disk, options: { ...(body.backups ? { daily_backups: 2 } : {}), ...body.options } })
@@ -505,7 +527,16 @@ async function handleApi(req, res, u, body) {
     }
     if (sub === '/console') return json(res, 200, { console: { iframe: cfg.consoleUrl || `https://api.binarylane.com.au/__console/${s.id}`, browser: cfg.consoleUrl || `https://api.binarylane.com.au/__console/${s.id}`, width: 1024, height: 768, expiry: new Date(Date.now() + 600000).toISOString() } })
     if (sub === '/software') return json(res, 200, page(s.image.distribution === 'Windows' ? [mk('LicensedSoftwaresResponse', 'licensed_software', { licence_count: 2, incompatible: false, software: softwareFor('windows-2022')[0] })] : [], q, 'licensed_software'))
-    if (sub === '/threshold_alerts') return json(res, 200, { threshold_alerts: ['cpu', 'memory-used', 'storage-used', 'data-transfer-used'].map((t, i) => mk('ThresholdAlertsResponse', 'threshold_alerts', { alert_type: t, name: t, unit: '%', description: '', enabled: i !== 3, value: [90, 85, 90, 80][i], current_value: [35, 62, 48, 12][i], last_raised: null, last_cleared: null })) })
+    if (sub === '/threshold_alerts') {
+      // `cfg.raisedAlerts` ({ [serverId]: [alert types] }, set through /__mock/config) puts those alerts at 7 points over their threshold.
+      const raisedTypes = (cfg.raisedAlerts || {})[s.id] || []
+      return json(res, 200, { threshold_alerts: ALERT_RULES.map((rule) => {
+        const set = alertOverride.get(`${s.id}:${rule.type}`) || {}
+        const raised = raisedTypes.includes(rule.type)
+        const value = set.value ?? rule.value
+        return mk('ThresholdAlertsResponse', 'threshold_alerts', { alert_type: rule.type, name: rule.name, unit: rule.unit, description: rule.description, enabled: set.enabled ?? (!rule.off || raised), value, current_value: raised ? value + 7 : rule.reading, last_raised: raised ? new Date(Date.now() - 600000).toISOString() : null, last_cleared: null })
+      }) })
+    }
     if (sub === '/user_data') return json(res, 200, { user_data: '#cloud-config\npackages:\n  - nginx\n  - prometheus-node-exporter\nruncmd:\n  - systemctl enable --now nginx\n' })
   }
   if ((mt = p.match(/^\/v2\/samplesets\/(\d+)(\/latest)?$/))) {
@@ -530,7 +561,7 @@ const server = create(async (req, res) => {
   if (cfg.latencyMs) await new Promise((r) => setTimeout(r, cfg.latencyMs))
   // control plane
   if (u.pathname.startsWith('/__mock/')) {
-    if (u.pathname === '/__mock/reset') { reset(); fwOverride.clear(); return json(res, 200, { ok: true }) }
+    if (u.pathname === '/__mock/reset') { reset(); fwOverride.clear(); alertOverride.clear(); return json(res, 200, { ok: true }) }
     // A server that already has more than 100 rules, which a write cannot make (see change_advanced_firewall_rules): {server_id, firewall_rules}.
     if (u.pathname === '/__mock/firewall') { fwOverride.set(body.server_id, body.firewall_rules || []); return json(res, 200, { ok: true }) }
     if (u.pathname === '/__mock/config') { Object.assign(cfg, body || {}); return json(res, 200, cfg) }

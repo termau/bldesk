@@ -12,7 +12,7 @@ Source audit: 5 September 2026, package version 1.0.61-beta.1. This inventory de
 | Templates | Built-in starters, capture from a server, YAML edit/import/export, variables and reviewed creation, local tags and follow-up firewall application | `TemplatesView.tsx`, `lib/templateJobs.ts` |
 | Firewall | Ordered IPv4 rules edited in place (drag, or touch and hold on a phone, then an explicit Save changes), import/export/clone, fleet matrix, audit flags, per-target copy diff and local groups/tags | `FirewallManager.tsx`, `FirewallRulesEditor.tsx`, `FirewallMatrix.tsx`, `lib/firewallDraft.ts`, `lib/firewallMatch.ts` |
 | Network map | VPC membership, regional topology, load-balancer backends, rule-derived exposure, selection, mouse pan/zoom and SVG/PNG export | `NetworkMap.tsx`, `lib/networkMap.ts` |
-| Fleet heatmap | CPU/RAM/disk capacity ratios, network/IO rates, sorting, stale/missing-data states and links to Usage | `FleetHeatmap.tsx`, `lib/heatmap.ts` |
+| Fleet heatmap | CPU/RAM/disk capacity ratios, network/IO rates, sorting, stale/missing-data states, links to Usage and a bell marker (with popup and link to Alerts settings) on servers BinaryLane lists as having an exceeded threshold alert; the same servers show a yellow alert pill in their server header, linking to a banner on the Alerts settings | `FleetHeatmap.tsx`, `ThresholdAlertMarker.tsx`, `lib/heatmap.ts`, `lib/thresholdAlerts.ts` |
 | VPCs and load balancers | VPC create/member inspection/detach/delete; balancer create, forwarding-rule display, backend attach/detach/delete | `VpcManager.tsx`, `LoadBalancerManager.tsx` |
 | Backups | Slot/replacement selection, restore, read-only attachment/detachment, download link, daily-backups toggle and backup schedule | `BackupManager.tsx`, `lib/backupSlots.ts` |
 | DNS and SSH keys | Paginated hosted zones, add/delete records, zone export before removal; account public-key add/import/copy/delete, rename and default for new servers, and key-pair generation into ~/.ssh with the system ssh-keygen (desktop only) | `DnsManager.tsx`, `SshKeysManager.tsx`, `GenerateKeyPairDialog.tsx`, `src/main/sshKeygen.ts` |
@@ -81,7 +81,7 @@ Implemented: whole-server YAML definitions, starters, variables, capture, import
 
 ### 9. Fleet heatmap + metrics history + threshold alerts
 
-Implemented: fleet heatmap, API-backed historical Usage graphs and per-server threshold settings. No heatmap sparklines or local historical database.
+Implemented: fleet heatmap, API-backed historical Usage graphs, per-server threshold settings (all eight rules, only changed rules sent), a heatmap marker for servers with an exceeded threshold alert, and an alert pill and banner on that server's own page. No heatmap sparklines or local historical database.
 
 ### 10. Network map
 

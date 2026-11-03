@@ -23,7 +23,7 @@ import { LocalSshKey } from '@shared/ipc-types'
 import { FirewallManager } from '../firewall/FirewallManager'
 import { BackupManager } from '../backups/BackupManager'
 import { ServerNetwork } from './ServerNetwork'
-import { ServerSettings } from './ServerSettings'
+import { ServerSettings, type SettingsStart } from './ServerSettings'
 import { ServerUsage } from './ServerUsage'
 import {
   useServerMetrics,
@@ -59,6 +59,7 @@ import { imageSupportsUserData, templateFromServer, type ServerTemplate } from '
 import { describeApiError } from '../../api/queries'
 import { loadKeyAssociations, keyAssociationSource, setKeyAssociation, availableSshKeys, SSH_KEYS_EVENT } from '../../lib/sshKeyAssociations'
 import { notifyFailure } from '../../lib/failures'
+import { ServerAlertPill, useServerAlertNotice } from './ServerAlertNotice'
 
 type ServerResponse = components['schemas']['Server']
 
@@ -83,6 +84,10 @@ interface ServerDetailsProps {
   activeSubTab?: ServerSubTab
   /** Change sub-tab from inside the view, e.g. "check firewall rules". */
   onSelectSubTab?: (tab: ServerSubTab) => void
+  /** The Settings tab to open on, when the user was sent to one (see App's `settingsStart`). */
+  settingsStart?: SettingsStart
+  /** Open this server's Settings on its Alerts rules (the alert pill's link; see App's `settingsStart`). */
+  onOpenAlertSettings?: () => void
   onBack: () => void
   /**
    * This server was cancelled. The app leaves the view only if it is still the one being viewed: the confirmation can
@@ -174,6 +179,8 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
   client,
   activeSubTab = 'overview',
   onSelectSubTab,
+  settingsStart,
+  onOpenAlertSettings,
   onBack,
   onCancelled,
   servers: allServers,
@@ -218,6 +225,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
     return () => window.removeEventListener(SSH_KEYS_EVENT, refresh)
   }, [profileId, server.id])
   const [linkCopied, setLinkCopied] = useState(false)
+  const alertNotice = useServerAlertNotice(client, server.id)
   const [capturing, setCapturing] = useState(false)
   const [captureError, setCaptureError] = useState<string | null>(null)
 
@@ -520,6 +528,8 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
               <span>•</span>
               <span>{server.image?.full_name || server.image?.name}</span>
             </div>
+            {/* BinaryLane lists this server as having an exceeded threshold alert: say so on every tab, with a link to the rules. */}
+            {alertNotice && onOpenAlertSettings && <ServerAlertPill notice={alertNotice} onOpen={onOpenAlertSettings} />}
           </div>
 
           {/* Quick Action Controls */}
@@ -936,7 +946,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
         {/* SETTINGS TAB */}
 
         {activeSubTab === 'settings' && (
-          <ServerSettings client={client} server={server} servers={allServers ?? [server]} profileId={profileId} />
+          <ServerSettings client={client} server={server} servers={allServers ?? [server]} profileId={profileId} start={settingsStart} />
         )}
 
         {/* RECOVERY TAB */}
