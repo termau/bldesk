@@ -1,5 +1,87 @@
 # Help verification
 
+## History: every caller follows a shared action (3 November 2026, #362, after 1.0.63-beta.4)
+
+Sources: `ActionTrackerContext.tsx`, `lib/changelog.ts`, `ServerList.tsx`,
+`CommandPalette.tsx`, `HistoryView.tsx` and `docs/help/history.md`.
+The History help's shared-action sentence describes the provider's registration
+and outcome updates, not an API guarantee or an account-wide audit log.
+
+Each client has one watch per action ID and each watch retains the distinct
+History IDs with their originating profiles. Joiners are linked while the action
+is pending; acceptance alone does not mark them Completed. Completion, error,
+lost tracking and power-state detail reach all registered entries. Settled results
+remain available until the toast is dismissed, including its normal eight-second
+success expiry, so a late joiner does not start another poll or notification.
+Client changes and unmount close pending entries as Lost track without rewriting
+already-settled outcomes. Old-client callbacks and progress cannot attach to a
+new client's watch. The current-client reference changes at layout commit, not
+during a potentially discarded render. Completed-toast timers require a completed
+watch in the current scope, and queued callbacks verify their watch and timer
+ownership. Old timers are cleared without re-arming from the previous tracked
+list during the same passive-effect commit. This does not change the
+mutation transport or address the separate Windows replay issue #360.
+
+Checks: `npm run test:action-history` has 30 passing tests and is included in
+`test:api-errors`, hence the normal typecheck/CI path. The tests execute the
+production provider and changelog with explicit layout/passive-effect turns,
+controlled poll promises and local storage. All changed-effect cleanups run
+before any bodies, matching React's passive-effect order. These are not React
+DOM mounts. Coverage includes
+pending and late joins, duplicate and absent History IDs, immediate completion,
+independent actions, stalled actions, dismissal, profile changes, old progress,
+unmount, StrictMode reactivation, discarded renders, the commit-to-passive-cleanup
+gap, queued old timers and power-state detail. Against the base provider, 26 fail
+and four positive controls pass. Deliberate first-entry-only, wrong-profile and
+no-join controls fail 15, six and 19 tests respectively. Removing each of the
+active-scope guard, reactivation, completed-watch timer check, queued-timer owner
+check or current-client comparison fails a regression. Moving the reference write
+back into render also fails a regression. Positive timer tests check the
+eight-second delay, fire the current callback, and verify toast removal, watch
+retirement and a fresh watch on later registration. Other-action progress keeps
+the original timer instead of extending its expiry. A timer callback that simply
+returns fails three tests. Individual removals of the progress, post-await and
+power-observation ref comparisons fail one, two and one tests respectively.
+
+The commit-to-passive-cleanup tests model callbacks arriving after the new
+client's layout commit but before the old controller is aborted. Old progress
+and power observations cannot update the view, History or notifications. An old
+settlement in that interval is ignored; passive cleanup closes still-pending
+entries as Lost track, even if the old action has since finished. Entries settled
+before the switch retain their outcome. This is conservative client tracking,
+not a claim that the remote action failed.
+
+Real Windows Electron, using the production bundle and the isolated GUI mock:
+confirm Reboot from the Servers list, wait beyond the cooldown and confirm the
+same reboot in the palette while the first response is held. Release only after
+the transport reports that the second caller joined. Completion, action error
+and lost tracking each produce two linked, settled History entries for one
+received reboot POST and action ID. Switching to a second fixture account while
+pending closes both original entries as Lost track; its History remains empty,
+including after the old mock action completes. The History outcome badges were
+checked for completion, error and lost tracking. A separate real React timer
+check completes an action then changes client while its toast is visible: one
+completed-toast timer is set and cleared, with none re-armed on the new client.
+No page exceptions occurred.
+
+Android repeats all four shared-action cases in a separate native fixture build,
+with the API base redirected to loopback and a loopback-only network exception.
+The native build runs the candidate's provider and changelog source unmodified.
+Native Capacitor HTTP executions
+and received mock reboot requests are both counted: one each for two confirmed
+callers. This exercises the native app's local-storage History path, not the
+desktop IPC store. Touch-initiated list/palette flows show the expected History
+badges; the original profile's two pending entries become Lost track on a client
+change and the second profile stays empty after the old action completes. No
+page exceptions occurred. These are controlled HTTP/USB-loopback observations,
+not physical-network-loss or production TLS checks.
+
+Full Windows typecheck/guards: 570 tests, 561 passed, nine platform skips, zero
+failures. Build, Android debug build, terminal regression and the 32 existing mock
+tests pass. No new layout or native transport code was introduced. Not run:
+macOS/Linux GUI, live BinaryLane operations or the installed release. The GUI
+checks are manual fixture coverage, not a new CI browser suite.
+
 ## DNS: pending nameserver-cache refresh (2 November 2026, after 1.0.63-beta.3)
 
 Branch: `fix/dns-cache-refresh-355`. Sources: `DnsManager.tsx`, `useDnsCacheRefreshMutation` and `dnsCacheRefreshMutationKey` in `api/queries.ts`, and the profile-switch cache clear in `App.tsx`. The vendored `openapi.json` is updated from 0.46.0 to 0.47.0 with matching generated types: only the version, nameserver-cache refresh description and its 400/429 response declarations change. No component schemas change.
