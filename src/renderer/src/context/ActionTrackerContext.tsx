@@ -35,6 +35,11 @@ export interface TrackedAction {
    * `current_step`, which is only ever the bare step name.
    */
   stepDetail?: string
+  /**
+   * BinaryLane's name for the step it is on ("Shutting down server"), the last one it reported. For some actions it is
+   * all there is to say, because they report no `stepDetail`.
+   */
+  step?: string
   startedAt: number
   /**
    * The person closed the toast while the action was still being worked on. It is still followed, out of sight, so a
@@ -72,6 +77,7 @@ const COMPLETED_TOAST_TTL_MS = 8000
 
 /** Server actions whose whole point is a power-state change. */
 const POWER_ACTION_TYPES = new Set(['power_on', 'power_off', 'shutdown', 'reboot', 'power_cycle'])
+/** What History says about an action BLDesk stopped following because the account (or its token) it was started under is no longer the one in use. */
 const TRACKING_STOPPED_DETAIL = 'BLDesk stopped following this action when the account or its token changed. Its result is on BinaryLane: check the account\'s actions there.'
 
 interface FollowedAction {
@@ -189,7 +195,9 @@ export function ActionTrackerProvider({
               if (controller.signal.aborted || currentScope.current !== scope) return
               update(action.id, {
                 percentComplete: fresh.progress?.percent_complete,
-                stepDetail: fresh.progress?.current_step_detail ?? undefined
+                stepDetail: fresh.progress?.current_step_detail ?? undefined,
+                // Empty between two steps, so the last one named stays.
+                ...(fresh.progress?.current_step ? { step: fresh.progress.current_step } : {})
               })
             }
           }
