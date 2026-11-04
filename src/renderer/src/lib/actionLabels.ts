@@ -62,7 +62,7 @@ export const RESTART_NOTE =
   'A running server is restarted to do this: BinaryLane shuts it down, makes the change and starts it again, so everything running on it stops and starts again.'
 
 /** What the toast says while such a change is being applied. */
-export const RESTART_TOAST = 'The server is restarting to apply this change.'
+export const RESTART_TOAST = 'Applying this change. A running server is restarted to do it.'
 
 /** One honest sentence per power action, for the confirm dialog. */
 export function powerActionSummary(type: string): string {

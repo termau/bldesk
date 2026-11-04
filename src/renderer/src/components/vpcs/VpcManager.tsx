@@ -125,7 +125,7 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
 
       window.bldeskApi?.sendNotification?.({
         title: 'Attaching server to VPC',
-        body: `Moving "${targetServerName}" into VPC "${attachModalVpc.name}". The server is restarting to apply it.`
+        body: `Moving "${targetServerName}" into VPC "${attachModalVpc.name}". A running server is restarted to apply it.`
       })
 
       setAttachModalVpc(null)
@@ -169,7 +169,7 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
 
       window.bldeskApi?.sendNotification?.({
         title: 'Detaching server from VPC',
-        body: `Detaching "${serverName}" from its private network. The server is restarting to apply it.`
+        body: `Detaching "${serverName}" from its private network. A running server is restarted to apply it.`
       })
 
       queryClient.invalidateQueries({ queryKey: ['servers'] })

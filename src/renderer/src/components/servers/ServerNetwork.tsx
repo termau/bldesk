@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import {
   AlertTriangle,
   ArrowRightLeft,
@@ -230,7 +231,9 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
   const server: Server = serverQuery.data || initialServer
   const vpcsQuery = useVpcs(client)
   const action = useNetworkActionMutation(client, server.id)
-  const submitRestart = useServerActionMutation(client)
+  // Keyed like the blocking mutation, so `mutatingElsewhere` below counts a restarting change's request while it is unanswered too, in this
+  // mounted tab and in one that was left and reopened since.
+  const submitRestart = useServerActionMutation(client, { mutationKey: networkActionMutationKey(server.id) })
   const { track, tracked } = useTrackedActions()
 
   const [copied, setCopied] = useState<string | null>(null)
@@ -273,7 +276,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
       restartsServer(t.actionType) &&
       (t.state === 'running' || t.state === 'awaiting-interaction' || t.state === 'blocked-by-invoice')
   )
-  const busy = action.isPending || submitRestart.isPending || mutatingElsewhere > 0 || !!restarting
+  const busy = action.isPending || mutatingElsewhere > 0 || !!restarting
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text)
@@ -313,16 +316,21 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
       if (restarts) {
         let queued: ServerAction | undefined
         try {
-          queued = await submitRestart.mutateAsync({ serverId: server.id, actionPayload: payload })
+          queued = await submitRestart.mutateAsync({
+            serverId: server.id,
+            actionPayload: payload,
+            // Registered while the request still counts as pending, and committed before it stops counting: the lock never has a frame
+            // where it is neither. (The tracker's own `track` is a no-op for an account that is no longer shown.)
+            onQueued: (action) => flushSync(() => track(action, label, server.name, c.changeId))
+          })
         } catch (err) {
           void updateChange(c.changeId, { outcome: 'failed', detail: err instanceof Error ? err.message : String(err) })
           throw err
         }
-        if (queued) track(queued, label, server.name, c.changeId)
-        else void updateChange(c.changeId, { outcome: 'submitted', detail: ACCEPTED_WITHOUT_ACTION })
+        if (!queued) void updateChange(c.changeId, { outcome: 'submitted', detail: ACCEPTED_WITHOUT_ACTION })
         window.bldeskApi?.sendNotification?.({
           title: `Network: ${server.name}`,
-          body: `${label} started. The server is restarting to apply it.`,
+          body: `${label} started. A running server is restarted to apply it.`,
           kind: 'action'
         })
         if (!queued) setNotice(`${label} — accepted by BinaryLane, which returned no action to follow. Check this tab for the result.`)
@@ -446,7 +454,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
         >
           <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
           <span>
-            <span className="font-semibold">{restarting.label}</span> — the server is restarting to apply it. Controls are locked until BinaryLane
+            <span className="font-semibold">{restarting.label}</span> — being applied, and a running server is restarted to do it. Controls are locked until BinaryLane
             finishes.
           </span>
         </div>

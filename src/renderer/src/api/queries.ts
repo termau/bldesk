@@ -195,10 +195,15 @@ export type UnpublishedActionBody = { type: 'enable_rescue_mode' }
 /** What the action mutations accept: the spec's bodies plus the recorded exception. */
 export type SubmittableActionBody = ServerActionBody | UnpublishedActionBody
 
-export function useServerActionMutation(client: BinaryLaneClient | null) {
+export function useServerActionMutation(client: BinaryLaneClient | null, options?: { mutationKey?: readonly unknown[] }) {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: async ({ serverId, actionPayload }: { serverId: number; actionPayload: SubmittableActionBody }) => {
+    // A caller that must stay locked while its request is unanswered, even if its screen is left and reopened, passes a key that
+    // `useIsMutating` can count (the Network tab passes `networkActionMutationKey`). Most callers pass none.
+    mutationKey: options?.mutationKey,
+    // `onQueued` is called with the queued action before this mutation settles, so a caller that hands it to the action tracker leaves no
+    // moment when the request is neither pending nor followed.
+    mutationFn: async ({ serverId, actionPayload, onQueued }: { onQueued?: (action: ServerAction) => void; serverId: number; actionPayload: SubmittableActionBody }) => {
       if (!client) throw new Error('No client available')
       const { data, error, response } = await client.POST('/v2/servers/{server_id}/actions', {
         params: { path: { server_id: serverId } },
@@ -209,6 +214,7 @@ export function useServerActionMutation(client: BinaryLaneClient | null) {
       // describeApiError rather than JSON.stringify: the raw body was being shown
       // to users verbatim in a failure message.
       if (error || !response.ok) throw apiFailure(error, response)
+      if (data?.action) onQueued?.(data.action)
       return data?.action
     },
     onSuccess: (_, variables) => {

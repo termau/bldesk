@@ -74,6 +74,10 @@ function backgroundInterval(elapsedMs: number): number {
 /** Completed toasts clear themselves; failures stay until acknowledged. */
 const COMPLETED_TOAST_TTL_MS = 8000
 
+/** What History says about an action BLDesk stopped following because the account (or its token) it was started under is no longer the one in use. */
+const ACCOUNT_CHANGED_DETAIL =
+  "BLDesk stopped following this action when the account or its token changed. Its result is on BinaryLane: check the account's actions there."
+
 /** Server actions whose whole point is a power-state change. */
 const POWER_ACTION_TYPES = new Set(['power_on', 'power_off', 'shutdown', 'reboot', 'power_cycle'])
 
@@ -92,6 +96,9 @@ export function ActionTrackerProvider({
 }) {
   const [tracked, setTracked] = useState<TrackedAction[]>([])
   const queryClient = useQueryClient()
+  /** The client in use now, so a `track` made for an earlier one can tell it is stale. */
+  const clientRef = useRef(client)
+  clientRef.current = client
   /** One controller per tracked action, so teardown or a profile switch stops the polls. */
   const controllers = useRef(new Map<number, AbortController>())
   /**
@@ -135,6 +142,13 @@ export function ActionTrackerProvider({
       if (controllers.current.has(action.id)) return
       // The account the change was recorded in, which is not the active one if it was switched since the confirmation.
       const profileId = getChangeProfile(changeId) ?? getChangeLogProfile()
+      // This function was made for `client`. If the provider has moved to another since, the account that started the action is no longer
+      // shown, and the cleanup that closed its other actions has already run: registering now would put its action, and then its outcome,
+      // on the toasts of the account in use. Its History entry is closed the way that cleanup closes the rest.
+      if (clientRef.current !== client) {
+        void updateChange(changeId, { actionId: action.id, outcome: 'lost', detail: ACCOUNT_CHANGED_DETAIL }, profileId)
+        return
+      }
       followed.current.set(action.id, { changeId, profileId })
       void updateChange(changeId, { actionId: action.id }, profileId)
 
@@ -357,7 +371,7 @@ export function ActionTrackerProvider({
       controllers.current.clear()
       // Their History entries would otherwise stay at "submitted" for ever: nothing follows them now.
       followed.current.forEach(({ changeId, profileId }) => {
-        void updateChange(changeId, { outcome: 'lost', detail: 'BLDesk stopped following this action when the account or its token changed. Its result is on BinaryLane: check the account\'s actions there.' }, profileId)
+        void updateChange(changeId, { outcome: 'lost', detail: ACCOUNT_CHANGED_DETAIL }, profileId)
       })
       followed.current.clear()
       // The polls are gone, so their entries must go too: one left as "running" would never be updated again.
