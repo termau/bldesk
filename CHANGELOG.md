@@ -5,6 +5,21 @@ All notable changes to the **BLDesk** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [1.0.63-beta.5] - 2026-11-04
+
+**Threshold alerts on the heatmap and the server page, and a warning before network changes restart a server**
+
+### Added
+- **Exceeded threshold alerts show on the Fleet Heatmap and on the server's own page** (#365, #363). A bell marks each server BinaryLane lists as alerting. Hover over it to see which alert, or click or tap it for the detail and a link to the server's alert settings. The server page shows a yellow "alert triggered" pill under its name on every tab, and Settings → Alerts opens with a banner naming each alert in mPanel's words. BinaryLane says which servers are alerting but not which alert, so BLDesk works that out by comparing each enabled alert's latest reading with its threshold, and says so. The list is read again every minute and after any change to the server.
+
+### Changed
+- **Settings → Alerts lists all eight of a server's alert rules, and saving changes only what you edited** (#365). The tab showed four rules. Its Save could also turn every rule off if it was pressed before the rules had loaded. It now sends only the fields you changed on the rules you changed. It stays off until something has changed and while a box holds a value that isn't valid, and the confirmation lists each rule before and after.
+- **Moving a server between VPCs, switching its separate private interface, and changing its private address now say that a running server is restarted** (#367, #366). BinaryLane shuts the server down to apply these changes, but its status stays "active" throughout, so nothing on screen showed it. The confirmation, the hints and the VPCs page's Attach and Detach now say so. A toast follows the change through BinaryLane's steps ("Shutting down server", "Moving server to destination VPC", "Starting server") until it finishes, and the Network tab stays locked until then.
+
+### Fixed
+- **Pressing Enter in an inline editor no longer confirms the dialog it opens** (#369, #368). In the Network tab's Reverse DNS and Change address editors, the Enter that opened the confirmation also pressed its Confirm button, so the change was sent before the dialog could be read. The keystroke that opens a dialog is now ignored by it until the key is released. A second Enter confirms as before.
+- **Every History entry for a shared action follows it to the end** (#364, #362). When two places submitted the same action and both got the same action back, only the first History entry was updated, and the other stayed "Submitted" indefinitely. Every entry now receives the action's outcome. An entry that joins just after the action has finished still gets the result, and switching accounts closes each one as lost track rather than leaving it open.
+
 ## [1.0.63-beta.4] - 2026-11-03
 
 **Two accounts no longer trip over each other's actions, and Flush DNS Cache shows it is working**
