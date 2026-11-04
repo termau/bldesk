@@ -1,5 +1,6 @@
 import { AlertTriangle, CheckCircle2, HelpCircle, Loader2, Receipt, X } from 'lucide-react'
 import { TrackedAction, TrackedActionState, useTrackedActions } from '../../context/ActionTrackerContext'
+import { RESTART_TOAST, restartsServer } from '../../lib/actionLabels'
 import { FailureToastItems, useFailures } from './FailureToasts'
 
 /**
@@ -23,6 +24,8 @@ const TONE: Record<TrackedActionState, { icon: typeof Loader2; className: string
 function statusLine(action: TrackedAction): string {
   switch (action.state) {
     case 'running':
+      // The server goes down for part of these, and nothing else on screen says so: its status stays active.
+      if (restartsServer(action.actionType)) return RESTART_TOAST
       return typeof action.percentComplete === 'number' && action.percentComplete > 0
         ? `In progress — ${action.percentComplete}%`
         : 'In progress on BinaryLane…'
@@ -86,9 +89,9 @@ export function ActionToasts() {
                 )}
               </div>
               <div className="text-[11px] text-[#495057] dark:text-[#adb5bd] break-words">{statusLine(action)}</div>
-              {action.state === 'running' && action.stepDetail && (
+              {action.state === 'running' && (action.stepDetail || (restartsServer(action.actionType) && action.step)) && (
                 <div className="text-[11px] text-[#6c757d] dark:text-[#8b9299] break-words mt-0.5">
-                  {action.stepDetail}
+                  {action.stepDetail || action.step}
                 </div>
               )}
             </div>

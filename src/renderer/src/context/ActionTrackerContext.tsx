@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { components } from '@shared/api/schema'
 import { BinaryLaneClient } from '../api/client'
@@ -35,6 +35,11 @@ export interface TrackedAction {
    * `current_step`, which is only ever the bare step name.
    */
   stepDetail?: string
+  /**
+   * BinaryLane's name for the step it is on ("Shutting down server"), the last one it reported. For some actions it is
+   * all there is to say, because they report no `stepDetail`.
+   */
+  step?: string
   startedAt: number
   /**
    * The person closed the toast while the action was still being worked on. It is still followed, out of sight, so a
@@ -48,6 +53,7 @@ interface ActionTrackerValue {
   /**
    * Register a submitted action so its real outcome gets reported. Pass the
    * change-log id from `confirm()` and the log's outcome follows the action.
+   * Another History id for an existing watch joins that action and its result.
    */
   track: (action: ServerAction, label: string, resourceName?: string, changeId?: string) => void
   dismiss: (actionId: number) => void
@@ -71,6 +77,19 @@ const COMPLETED_TOAST_TTL_MS = 8000
 
 /** Server actions whose whole point is a power-state change. */
 const POWER_ACTION_TYPES = new Set(['power_on', 'power_off', 'shutdown', 'reboot', 'power_cycle'])
+/** What History says about an action BLDesk stopped following because the account (or its token) it was started under is no longer the one in use. */
+const TRACKING_STOPPED_DETAIL = 'BLDesk stopped following this action when the account or its token changed. Its result is on BinaryLane: check the account\'s actions there.'
+
+interface FollowedAction {
+  controller: AbortController
+  entries: { changeId: string; profileId: string }[]
+  result: Parameters<typeof updateChange>[1]
+}
+
+function updateHistory(watch: FollowedAction, patch: Parameters<typeof updateChange>[1]): void {
+  watch.result = { ...watch.result, ...patch }
+  for (const { changeId, profileId } of watch.entries) void updateChange(changeId, patch, profileId)
+}
 
 export function ActionTrackerProvider({
   client,
@@ -87,14 +106,14 @@ export function ActionTrackerProvider({
 }) {
   const [tracked, setTracked] = useState<TrackedAction[]>([])
   const queryClient = useQueryClient()
-  /** One controller per tracked action, so teardown or a profile switch stops the polls. */
-  const controllers = useRef(new Map<number, AbortController>())
   /**
-   * The History entry and account of each action being followed. An entry is written to the account that started the
-   * action, not to whichever is active when the answer arrives, and one still being followed when the account is
-   * switched is closed as `lost` rather than left at "submitted".
+   * One watch can own several confirmed History entries. Keep its settled result until the toast is dismissed so a
+   * caller arriving just after settlement can join without starting another poll. Each client owns its own watches;
+   * a callback retained by the previous account must never join a new account's action with the same id.
    */
-  const followed = useRef(new Map<number, { changeId?: string; profileId?: string }>())
+  const scope = useMemo(() => ({ watches: new Map<number, FollowedAction>(), active: true }), [client])
+  const currentScope = useRef(scope)
+  useLayoutEffect(() => { currentScope.current = scope }, [scope])
 
   const update = useCallback((actionId: number, patch: Partial<TrackedAction>) => {
     setTracked((prev) => prev.map((t) => (t.actionId === actionId ? { ...t, ...patch } : t)))
@@ -114,27 +133,37 @@ export function ActionTrackerProvider({
       setTracked((prev) => prev.map((t) => (t.actionId === actionId ? { ...t, dismissed: true } : t)))
       return
     }
-    controllers.current.get(actionId)?.abort()
-    controllers.current.delete(actionId)
+    scope.watches.get(actionId)?.controller.abort()
+    scope.watches.delete(actionId)
     const timer = dismissTimers.current.get(actionId)
     if (timer) {
       clearTimeout(timer)
       dismissTimers.current.delete(actionId)
     }
     setTracked((prev) => prev.filter((t) => t.actionId !== actionId))
-  }, [])
+  }, [scope])
 
   const track = useCallback(
     (action: ServerAction, label: string, resourceName?: string, changeId?: string) => {
       if (!client || !action?.id) return
-      if (controllers.current.has(action.id)) return
       // The account the change was recorded in, which is not the active one if it was switched since the confirmation.
       const profileId = getChangeProfile(changeId) ?? getChangeLogProfile()
-      followed.current.set(action.id, { changeId, profileId })
-      void updateChange(changeId, { actionId: action.id }, profileId)
-
-      const controller = new AbortController()
-      controllers.current.set(action.id, controller)
+      const existing = scope.watches.get(action.id)
+      const stopped = !scope.active || currentScope.current !== scope
+      const watch: FollowedAction = existing ?? {
+        controller: new AbortController(),
+        entries: [],
+        result: stopped
+          ? { actionId: action.id, outcome: 'lost', detail: TRACKING_STOPPED_DETAIL }
+          : { actionId: action.id }
+      }
+      if (changeId && profileId && !watch.entries.some(entry => entry.changeId === changeId && entry.profileId === profileId)) {
+        watch.entries.push({ changeId, profileId })
+        void updateChange(changeId, watch.result, profileId)
+      }
+      if (existing || stopped) return
+      scope.watches.set(action.id, watch)
+      const { controller } = watch
 
       setTracked((prev) => [
         ...prev.filter((t) => t.actionId !== action.id),
@@ -162,11 +191,15 @@ export function ActionTrackerProvider({
             // resumed watch does not drop back to the 3s opening cadence.
             intervalMs: () => backgroundInterval(Date.now() - trackingStartedAt),
             signal: controller.signal,
-            onProgress: (fresh: ServerAction) =>
+            onProgress: (fresh: ServerAction) => {
+              if (controller.signal.aborted || currentScope.current !== scope) return
               update(action.id, {
                 percentComplete: fresh.progress?.percent_complete,
-                stepDetail: fresh.progress?.current_step_detail ?? undefined
+                stepDetail: fresh.progress?.current_step_detail ?? undefined,
+                // Empty between two steps, so the last one named stays.
+                ...(fresh.progress?.current_step ? { step: fresh.progress.current_step } : {})
               })
+            }
           }
 
           let settled = await pollActionToSettled(client, action.id, { ...pollOptions, initial: action })
@@ -208,7 +241,7 @@ export function ActionTrackerProvider({
             settled = await pollActionToSettled(client, action.id, pollOptions)
           }
 
-          if (controller.signal.aborted) return
+          if (controller.signal.aborted || currentScope.current !== scope) return
 
           // The toast is only useful while the window is visible; the native
           // notification is what reaches someone who closed it to the tray.
@@ -223,7 +256,7 @@ export function ActionTrackerProvider({
               ? 'Shutdown signal sent. The server shows as off once its OS halts; if it stays running, the OS ignored the signal — use Power off for a hard stop.'
               : undefined
             update(action.id, { state: 'completed', percentComplete: 100, detail })
-            void updateChange(changeId, { outcome: 'completed', detail }, profileId)
+            updateHistory(watch, { outcome: 'completed', detail })
             void window.bldeskApi?.sendNotification?.({
               title: signalOnly ? `${subject}: signal sent` : `${subject} completed`,
               body: signalOnly ? 'Waiting for the OS to halt — you will be told when it is off.' : 'Finished on BinaryLane.',
@@ -237,11 +270,11 @@ export function ActionTrackerProvider({
             const resourceId = settled.action.resource_id
             if (confirmPowerState && resourceId && POWER_ACTION_TYPES.has(type)) {
               void confirmPowerState(resourceId).then((verdict) => {
-                if (controller.signal.aborted || verdict === 'unknown') return
+                if (controller.signal.aborted || currentScope.current !== scope || verdict === 'unknown') return
                 const wantedOff = type === 'power_off' || type === 'shutdown'
                 const asExpected = wantedOff ? verdict === 'off' : verdict === 'on'
                 const line = verdict === 'off' ? 'Server is off.' : 'Server is running.'
-                void updateChange(changeId, { detail: asExpected ? line : `${line} Not the expected state.` }, profileId)
+                updateHistory(watch, { detail: asExpected ? line : `${line} Not the expected state.` })
                 update(action.id, {
                   detail: asExpected
                     ? line
@@ -261,7 +294,7 @@ export function ActionTrackerProvider({
           } else if (settled.state === 'errored') {
             const detail = describeActionFailure(settled.action) ?? undefined
             update(action.id, { state: 'errored', detail, dismissed: false })
-            void updateChange(changeId, { outcome: 'errored', detail }, profileId)
+            updateHistory(watch, { outcome: 'errored', detail })
             void window.bldeskApi?.sendNotification?.({ title: `${subject} failed`, body: detail || 'BinaryLane reported an error.', kind: 'action' })
           } else {
             update(action.id, { state: 'running' })
@@ -297,20 +330,11 @@ export function ActionTrackerProvider({
             void queryClient.invalidateQueries({ queryKey: ['firewallRules', action.resource_id] })
             void queryClient.invalidateQueries({ queryKey: ['fleet-firewalls'] })
           }
-          void updateChange(changeId, { outcome: 'lost', detail: err instanceof Error ? err.message : String(err) }, profileId)
-        } finally {
-          // Only retire our own controller. `finally` runs on the aborted early
-          // returns above too, so an unconditional delete here would evict a
-          // newer controller that had since been registered for the same id —
-          // leaving it invisible to both `dismiss` and the duplicate guard.
-          if (controllers.current.get(action.id) === controller) {
-            controllers.current.delete(action.id)
-            followed.current.delete(action.id)
-          }
+          updateHistory(watch, { outcome: 'lost', detail: err instanceof Error ? err.message : String(err) })
         }
       })()
     },
-    [client, queryClient, update, confirmPowerState]
+    [client, scope, queryClient, update, confirmPowerState]
   )
 
   /**
@@ -326,14 +350,20 @@ export function ActionTrackerProvider({
   useEffect(() => {
     for (const action of tracked) {
       if (action.state !== 'completed') continue
+      const watch = scope.watches.get(action.actionId)
+      if (watch?.result.outcome !== 'completed') continue
       if (dismissTimers.current.has(action.actionId)) continue
       const timer = setTimeout(() => {
+        // These checks deliberately overlap: scope activity covers teardown, watch identity covers retirement or
+        // replacement of this action, and timer identity covers cancellation or rescheduling of this callback.
+        // Keep the queued callback tied to all three owners, even where one check currently implies another.
+        if (!scope.active || scope.watches.get(action.actionId) !== watch || dismissTimers.current.get(action.actionId) !== timer) return
         dismissTimers.current.delete(action.actionId)
         dismiss(action.actionId)
       }, COMPLETED_TOAST_TTL_MS)
       dismissTimers.current.set(action.actionId, timer)
     }
-  }, [tracked, dismiss])
+  }, [tracked, dismiss, scope])
 
   useEffect(() => {
     const timers = dismissTimers.current
@@ -345,20 +375,22 @@ export function ActionTrackerProvider({
 
   // Switching profile (or unmounting) must not leave polls running against the old token.
   useEffect(() => {
+    scope.active = true
     return () => {
-      controllers.current.forEach((c) => c.abort())
-      controllers.current.clear()
+      scope.active = false
       // Their History entries would otherwise stay at "submitted" for ever: nothing follows them now.
-      followed.current.forEach(({ changeId, profileId }) => {
-        void updateChange(changeId, { outcome: 'lost', detail: 'BLDesk stopped following this action when the account or its token changed. Its result is on BinaryLane: check the account\'s actions there.' }, profileId)
+      scope.watches.forEach(watch => {
+        watch.controller.abort()
+        if (!watch.result.outcome) updateHistory(watch, { outcome: 'lost', detail: TRACKING_STOPPED_DETAIL })
       })
-      followed.current.clear()
+      dismissTimers.current.forEach(clearTimeout)
+      dismissTimers.current.clear()
       // The polls are gone, so their entries must go too: one left as "running" would never be updated again.
       setTracked([])
       // A failure shown for one account must not sit over another's screens with nothing to say which it was.
       clearFailures()
     }
-  }, [client])
+  }, [scope])
 
   const value = useMemo<ActionTrackerValue>(() => ({ tracked, track, dismiss }), [tracked, track, dismiss])
 

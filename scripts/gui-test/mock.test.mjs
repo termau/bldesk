@@ -488,6 +488,46 @@ test('a server that already has more than 100 rules may keep, edit or reduce the
   assert.equal((await write(rules(101), 400)).message, 'Firewall rules are limited to 100 per server; 101 were submitted.')
   await request('/__mock/reset', {})
 })
+test('network changes that restart the server report BinaryLane\'s steps while they run, and land when they complete', async () => {
+  await request('/__mock/config', { actionMs: 900 })
+  const before = await server(8100)
+  assert.notEqual(before.vpc_id, 902)
+  const queued = await request('/v2/servers/8100/actions', { type: 'change_network', vpc_id: 902 })
+  assert.equal(queued.action.progress.current_step, 'Shutting down server')
+  await sleep(450)
+  const mid = (await request(`/v2/actions/${queued.action.id}`)).action
+  assert.equal(mid.status, 'in-progress')
+  assert.equal(mid.progress.current_step, 'Moving server to destination VPC')
+  assert.deepEqual(mid.progress.completed_steps, ['Shutting down server'])
+  assert.equal((await server(8100)).status, 'active', 'the status stays active while it restarts')
+  assert.equal((await server(8100)).vpc_id, before.vpc_id, 'the move lands when the action completes')
+  await sleep(600)
+  const done = await completed(queued)
+  assert.deepEqual(done.progress.completed_steps, ['Shutting down server', 'Moving server to destination VPC', 'Starting server'])
+  const moved = await server(8100)
+  assert.equal(moved.vpc_id, 902)
+  assert.match(moved.networks.v4.find((n) => n.type === 'private').ip_address, /^10\.21\./)
+  await request('/__mock/config', { actionMs: 15 })
+  await completed(await request('/v2/servers/8100/actions', { type: 'change_network', vpc_id: null }))
+  assert.equal((await server(8100)).vpc_id, null)
+})
+
+test('the separate private interface and the private IPv4 change restart the server too, in two steps', async () => {
+  const steps = async (body) => (await completed(await request('/v2/servers/8100/actions', body))).progress.completed_steps
+  assert.deepEqual(await steps({ type: 'change_separate_private_network_interface', enabled: true }), ['Shutting down server', 'Starting server'])
+  assert.equal((await server(8100)).networks.separate_private_network_interface, true)
+  const current = (await server(8100)).networks.v4.find((n) => n.type === 'private').ip_address
+  assert.deepEqual(await steps({ type: 'change_vpc_ipv4', current_ipv4_address: current, new_ipv4_address: '10.20.9.9' }), ['Shutting down server', 'Starting server'])
+  assert.equal((await server(8100)).networks.v4.find((n) => n.type === 'private').ip_address, '10.20.9.9')
+})
+
+test('a move into a VPC that does not exist fails and leaves the server where it was', async () => {
+  const before = (await server(8100)).vpc_id
+  const action = await completed(await request('/v2/servers/8100/actions', { type: 'change_network', vpc_id: 424242 }), 'errored')
+  assert.match(action.error_message, /not found/)
+  assert.equal((await server(8100)).vpc_id, before)
+})
+
 test('proceed replaces the original timer before applying an action', async () => {
   const before = await server()
   await request('/__mock/config', { actionMs: 30, interaction: 'continue-after-ping-failure' })
