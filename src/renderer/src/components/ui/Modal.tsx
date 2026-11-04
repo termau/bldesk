@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { X, type LucideIcon } from 'lucide-react'
 import { enterDialog, leaveDialog } from '../../lib/failures'
 import { DialogFailures } from '../actions/FailureToasts'
+import { enterKeyGuard, isEnterDown } from '../../lib/enterKey'
 
 /**
  * The one modal shell. Every dialog in the app — the confirm dialog, the
@@ -17,6 +18,7 @@ import { DialogFailures } from '../actions/FailureToasts'
  *
  * The shell also owns the keyboard while it is open: focus moves into the
  * dialog, Tab and Shift+Tab stay inside it, a held Enter key does not repeat,
+ * the Enter that opened it cannot also activate something in it (lib/enterKey.ts),
  * and focus goes back to what opened it. Where dialogs are stacked, only the
  * top one does this.
  *
@@ -107,6 +109,9 @@ export const Modal: React.FC<ModalProps> = ({
   // Read while rendering: by the time an effect runs, an autofocused field inside the dialog has already taken focus.
   const opener = useRef<Element | null | undefined>(undefined)
   if (opener.current === undefined) opener.current = document.activeElement
+  // Whether Enter was down when this dialog opened, read while rendering for the same reason: it is the key that opened it.
+  const enterGuard = useRef<ReturnType<typeof enterKeyGuard> | undefined>(undefined)
+  if (enterGuard.current === undefined) enterGuard.current = enterKeyGuard(isEnterDown())
 
   useEffect(() => {
     openModals.push(id)
@@ -155,6 +160,19 @@ export const Modal: React.FC<ModalProps> = ({
     }
     document.addEventListener('keydown', onKeyCapture, true)
 
+    // The key press of the Enter that opened this dialog arrives after the dialog has focused its button, and would
+    // activate it, or submit a form whose field it focused. It is cancelled, until that key is released.
+    const guard = enterGuard.current!
+    const onKeyPressCapture = (e: KeyboardEvent) => {
+      if (openModals[openModals.length - 1] !== id || !guard.cancelsKeyPress(e)) return
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    const onKeyUpCapture = (e: KeyboardEvent) => guard.keyUp(e)
+    document.addEventListener('keypress', onKeyPressCapture, true)
+    document.addEventListener('keyup', onKeyUpCapture, true)
+    window.addEventListener('blur', guard.reset)
+
     const onEscape = (e: KeyboardEvent) => {
       // Escape closes the dialog on top, not the ones beneath it, and not one that something else has already answered.
       if (e.key !== 'Escape' || e.defaultPrevented || openModals[openModals.length - 1] !== id) return
@@ -167,6 +185,9 @@ export const Modal: React.FC<ModalProps> = ({
 
     return () => {
       document.removeEventListener('keydown', onKeyCapture, true)
+      document.removeEventListener('keypress', onKeyPressCapture, true)
+      document.removeEventListener('keyup', onKeyUpCapture, true)
+      window.removeEventListener('blur', guard.reset)
       document.removeEventListener('keydown', onEscape)
       openModals.splice(openModals.indexOf(id), 1)
       leaveDialog(id)

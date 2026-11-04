@@ -1,5 +1,114 @@
 # Help verification
 
+## History: every caller follows a shared action (3 November 2026, #362, after 1.0.63-beta.4)
+
+Sources: `ActionTrackerContext.tsx`, `lib/changelog.ts`, `ServerList.tsx`,
+`CommandPalette.tsx`, `HistoryView.tsx` and `docs/help/history.md`.
+The History help's shared-action sentence describes the provider's registration
+and outcome updates, not an API guarantee or an account-wide audit log.
+
+Each client has one watch per action ID and each watch retains the distinct
+History IDs with their originating profiles. Joiners are linked while the action
+is pending; acceptance alone does not mark them Completed. Completion, error,
+lost tracking and power-state detail reach all registered entries. Settled results
+remain available until the toast is dismissed, including its normal eight-second
+success expiry, so a late joiner does not start another poll or notification.
+Client changes and unmount close pending entries as Lost track without rewriting
+already-settled outcomes. Old-client callbacks and progress cannot attach to a
+new client's watch. The current-client reference changes at layout commit, not
+during a potentially discarded render. Completed-toast timers require a completed
+watch in the current scope, and queued callbacks verify their watch and timer
+ownership. Old timers are cleared without re-arming from the previous tracked
+list during the same passive-effect commit. This does not change the
+mutation transport or address the separate Windows replay issue #360.
+
+Checks: `npm run test:action-history` has 31 passing tests and is included in
+`test:api-errors`, hence the normal typecheck/CI path. The tests execute the
+production provider and changelog with explicit layout/passive-effect turns,
+controlled poll promises and local storage. All changed-effect cleanups run
+before any bodies, matching React's passive-effect order. These are not React
+DOM mounts. Coverage includes
+pending and late joins, duplicate and absent History IDs, immediate completion,
+independent actions, stalled actions, dismissal, profile changes, old progress,
+unmount, StrictMode reactivation, discarded renders, the commit-to-passive-cleanup
+gap, queued old timers and power-state detail. In the original 30-case suite,
+against the base provider, 26 fail
+and four positive controls pass. Deliberate first-entry-only, wrong-profile and
+no-join controls fail 15, six and 19 tests respectively. Removing each of the
+active-scope guard, reactivation, completed-watch timer check, queued-timer owner
+check or current-client comparison fails a regression. Moving the reference write
+back into render also fails a regression. Positive timer tests check the
+eight-second delay, fire the current callback, and verify toast removal, watch
+retirement and a fresh watch on later registration. Other-action progress keeps
+the original timer instead of extending its expiry. A timer callback that simply
+returns fails three tests. Individual removals of the progress, post-await and
+power-observation ref comparisons fail one, two and one tests respectively.
+
+The commit-to-passive-cleanup tests model callbacks arriving after the new
+client's layout commit but before the old controller is aborted. Old progress
+and power observations cannot update the view, History or notifications. An old
+settlement in that interval is ignored; passive cleanup closes still-pending
+entries as Lost track, even if the old action has since finished. Entries settled
+before the switch retain their outcome. This is conservative client tracking,
+not a claim that the remote action failed.
+
+This also changes the case where the account switches before the mutation POST
+returns: a late action registration is recorded as Lost track in the originating
+profile, with no new poll or toast in the current profile. Previously that late
+registration could track the old account's action while showing its toast over
+the new account. The conservative behavior is retained rather than introducing
+History-only background tracking. It does not mean the remote action failed.
+
+Review follow-up: the fixture poll now rejects with AbortError on abort, matching
+the production poller's sleep. The switch/unmount cases assert that the
+stop-following detail survives that rejection; switch also asserts no tracked
+toast rows remain. A shutdown case checks signal-sent detail for both callers
+and a late joiner without claiming that the guest is off. The timer's three
+ownership checks deliberately overlap; the combined guard is covered, not a
+claim that each condition is independently necessary. Scope allocation remains
+useMemo keyed by client; replacing that with explicit state ownership is left
+as a non-blocking robustness consideration, not claimed fixed by this follow-up.
+All 31 follow-up cases pass. Removing the abort catch guard fails two cases;
+removing toast-row cleanup fails one, and omitting shutdown detail from the
+History update fails one. Provider output compiled without comments is identical
+to the initially reviewed head; this follow-up changes tests, comments and
+verification prose, not executable behavior. Earlier GUI/native evidence is
+retained with its original scope, not presented as a new device run.
+The follow-up Windows typecheck/guards run with Git Bash passes: 571 tests,
+562 passed, nine platform skips and zero failures. Build, terminal regression
+and the 32 existing mock tests also pass on this candidate.
+
+Real Windows Electron, using the production bundle and the isolated GUI mock:
+confirm Reboot from the Servers list, wait beyond the cooldown and confirm the
+same reboot in the palette while the first response is held. Release only after
+the transport reports that the second caller joined. Completion, action error
+and lost tracking each produce two linked, settled History entries for one
+received reboot POST and action ID. Switching to a second fixture account while
+pending closes both original entries as Lost track; its History remains empty,
+including after the old mock action completes. The History outcome badges were
+checked for completion, error and lost tracking. A separate real React timer
+check completes an action then changes client while its toast is visible: one
+completed-toast timer is set and cleared, with none re-armed on the new client.
+No page exceptions occurred.
+
+Android repeats all four shared-action cases in a separate native fixture build,
+with the API base redirected to loopback and a loopback-only network exception.
+The native build runs the candidate's provider and changelog source unmodified.
+Native Capacitor HTTP executions
+and received mock reboot requests are both counted: one each for two confirmed
+callers. This exercises the native app's local-storage History path, not the
+desktop IPC store. Touch-initiated list/palette flows show the expected History
+badges; the original profile's two pending entries become Lost track on a client
+change and the second profile stays empty after the old action completes. No
+page exceptions occurred. These are controlled HTTP/USB-loopback observations,
+not physical-network-loss or production TLS checks.
+
+Full Windows typecheck/guards before the review follow-up: 570 tests, 561 passed, nine platform skips, zero
+failures. Build, Android debug build, terminal regression and the 32 existing mock
+tests pass. No new layout or native transport code was introduced. Not run:
+macOS/Linux GUI, live BinaryLane operations or the installed release. The GUI
+checks are manual fixture coverage, not a new CI browser suite.
+
 ## Network changes that restart the server (4 November 2026, after 1.0.63-beta.4)
 
 Branch: `feat/vpc-move-reboot-warning`, based on main `b0d732c`. Fixes #366. Sources: `ServerNetwork.tsx` (Move server, Separate private interface and Change address, their hints, confirmations and lock), `VpcManager.tsx` (Attach Server form, Detach confirmation, notifications), `RESTART_NOTE`, `RESTART_TOAST` and `restartsServer` in `lib/actionLabels.ts`, `ActionToasts.tsx` and the `step` field in `ActionTrackerContext.tsx`.
@@ -27,6 +136,8 @@ Checks: `npm run typecheck` (599 tests), `npm run build` and the 35 mock tests p
 Not tested: a live run of the app itself against BinaryLane (the observation above was made through the API, not through BLDesk); what these actions do to a server that is already stopped (seen once: a move of a stopped server finished in about 2 seconds and left it stopped, so the confirmation says "a running server" and claims nothing more); Windows, macOS and Android builds. The inline editors answer their own confirmation when Enter is pressed in them (the same keystroke's key press lands on the confirmation's focused Confirm button), on unchanged main as well; that is not changed here, so the label of the Change address editor carries the warning on its own.
 
 Review follow-up (4 November 2026): two blocking findings, both reproduced in the real app before they were changed (a scripted Electron scenario that holds the move's POST response: on `b392edc` reopening Network left the controls enabled and a second `change_network` reached the mock, and a response that arrived after an account switch showed as a toast under the second account). (1) The request of a restarting change now carries the Network tab's `networkActionMutationKey(server.id)`, so `useIsMutating` counts it while it is unanswered in any view of the tab, and the action is handed to the tracker from inside the submission (`onQueued`, committed with `flushSync`), so there is no moment when it is neither pending nor followed. (2) `track` in `ActionTrackerContext.tsx` returns without registering when the provider's client is no longer the one it was made for, and closes the History entry of the account that started the action as `lost` with its action id and the same detail the client-change cleanup writes (now one constant); a tab remount and an account change are different cases and only the first keeps the lock. This guard is in shared code, so it also covers the Overview's and the VPCs page's calls. (3) The non-blocking point is taken: the toast, the strip on the Network tab and the notifications now say a running server is restarted, because a stopped server stayed stopped. The Electron scenarios (32 checks, and the layout one) pass again with the new wording; the new scenario that reproduced the findings passes. Tests for the submission run the production hook with a real `QueryClient` and `MutationObserver`; removing the key, the hand-over, or the hand-over's timing each fails at least one of them. The tracker guard itself is checked by the scenario only: the repository has no mounted-provider test on main. Second review of `f4b9e72` (non-blocking): the "started" notification came after the terminal one when the POST returned an action that was already completed or errored, because it was sent after the awaited mutation. It is now sent from `onQueued`, before `track`, and only for an action that is still in progress (reproduced and fixed with a scripted scenario that fulfils the POST with a finished action and reads the notification order from a build whose tray logs each call; the in-progress order is unchanged).
+
+Merged with #364 on main on 4 November 2026. #364 rewrote the action tracker's registration, so this branch's check for an answer that arrives after an account switch (`clientRef`) gave way to #364's scope check (`!scope.active || currentScope.current !== scope`), which closes the History entry as `lost` with the same detail. The step name shown in the restart toast is kept, inside #364's guarded `onProgress`.
 
 ## DNS: pending nameserver-cache refresh (2 November 2026, after 1.0.63-beta.3)
 
