@@ -3,10 +3,11 @@ import React, { useMemo, useState } from 'react'
 import { AlertTriangle, ArrowDown, ArrowUp, ChartNoAxesCombined, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
 import { components } from '@shared/api/schema'
 import { BinaryLaneClient } from '../../api/client'
-import { useFleetMetrics } from '../../api/queries'
+import { useFleetMetrics, useFleetThresholdAlerts } from '../../api/queries'
 import { buildHeatmapRows, formatRate, sortHeatmapRows, type HeatmapCell, type HeatmapMetric, type HeatmapSort } from '../../lib/heatmap'
 import { MEMORY_GRAPH_KB } from '../../lib/metrics'
 import { describeStatus } from '../../lib/serverStatus'
+import { ThresholdAlertMarker } from './ThresholdAlertMarker'
 
 type Server = components['schemas']['Server']
 
@@ -15,6 +16,8 @@ interface Props {
   servers: Server[]
   serversLoading: boolean
   onSelectServer: (server: Server) => void
+  /** Opens the server's alert settings, from the alert marker. */
+  onOpenAlerts: (server: Server) => void
 }
 
 const COLUMNS: Array<{ key: HeatmapMetric; label: string; kind: 'ratio' | 'rate' }> = [
@@ -63,9 +66,12 @@ function Cell({ cell, kind }: { cell: HeatmapCell; kind: 'ratio' | 'rate' }) {
   )
 }
 
-export const FleetHeatmap: React.FC<Props> = ({ client, servers, serversLoading, onSelectServer }) => {
+export const FleetHeatmap: React.FC<Props> = ({ client, servers, serversLoading, onSelectServer, onOpenAlerts }) => {
   const activeIds = useMemo(() => servers.filter((server) => server.status === 'active').map((server) => server.id), [servers])
   const fleet = useFleetMetrics(client, activeIds)
+  // BinaryLane can list a stopped server too (a locked backup slot alerts whatever the power state), so every row is asked about, not only the ones with metrics.
+  const allIds = useMemo(() => servers.map((server) => server.id), [servers])
+  const alerts = useFleetThresholdAlerts(client, allIds)
   const [sort, setSort] = useState<HeatmapSort>('name')
   const [direction, setDirection] = useState<'asc' | 'desc'>('asc')
   const rows = useMemo(
@@ -98,7 +104,7 @@ export const FleetHeatmap: React.FC<Props> = ({ client, servers, serversLoading,
           </div>
           <div className="flex items-center gap-3 text-xs text-[#6c757d] dark:text-slate-400">
             <span>Updated {fleet.dataUpdatedAt ? new Date(fleet.dataUpdatedAt).toLocaleTimeString() : 'not yet'}</span>
-            <button onClick={() => void fleet.refetch()} disabled={fleet.isFetching} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border border-[#ced4da] dark:border-[#495057] hover:border-[#017cb6] disabled:opacity-50 text-[#212529] dark:text-white">
+            <button onClick={() => void Promise.all([fleet.refetch(), alerts.refresh()])} disabled={fleet.isFetching} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border border-[#ced4da] dark:border-[#495057] hover:border-[#017cb6] disabled:opacity-50 text-[#212529] dark:text-white">
               <RefreshCw className={`h-3.5 w-3.5 ${fleet.isFetching ? 'animate-spin' : ''}`} /> Refresh
             </button>
             <HelpLink slug="heatmap" />
@@ -106,6 +112,7 @@ export const FleetHeatmap: React.FC<Props> = ({ client, servers, serversLoading,
         </div>
 
         {allFailed && <div className="flex items-center gap-2 rounded border border-rose-300 bg-rose-50 p-3 text-sm text-rose-700 dark:border-rose-700 dark:bg-rose-950/30 dark:text-rose-300"><AlertTriangle className="h-4 w-4" />Metrics could not be loaded for any server{firstError ? `: ${firstError}` : '.'}</div>}
+        {alerts.error && <div className="flex items-center gap-2 text-xs text-amber-700 dark:text-amber-300"><AlertTriangle className="h-3.5 w-3.5" />Threshold alert status could not be loaded ({alerts.error}), so a server without an alert marker may still have one.</div>}
         {(serversLoading || (hasPending && activeIds.length > 0)) && <div className="flex items-center gap-2 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" />Loading fleet metrics…</div>}
         {!serversLoading && (!client || (!fleet.isLoading && servers.length === 0)) && <div className="rounded border border-dashed border-slate-300 py-16 text-center text-sm text-slate-500 dark:border-slate-600">No servers to display.</div>}
 
@@ -143,6 +150,9 @@ export const FleetHeatmap: React.FC<Props> = ({ client, servers, serversLoading,
                         <span className={`mr-2 inline-block h-2 w-2 rounded-full ${status.dot}`} />{row.name}
                         <span className="ml-2 text-[10px] font-normal text-slate-400">{status.label}</span>
                       </button>
+                      {alerts.ids.includes(row.server.id) && (
+                        <ThresholdAlertMarker serverName={row.name} detail={alerts.details.get(row.server.id)} onOpenSettings={() => onOpenAlerts(row.server)} />
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-3 py-2 text-xs text-[#6c757d] dark:text-slate-400">{row.region}</td>
                     {spans

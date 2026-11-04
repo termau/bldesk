@@ -28,6 +28,7 @@ import {
   type ServerActionBody,
   networkActionMutationKey,
   actionFailureMessage,
+  describeApiError,
   ACCEPTED_WITHOUT_ACTION
 } from '../../api/queries'
 import { useTrackedActions } from '../../context/ActionTrackerContext'
@@ -35,11 +36,12 @@ import { useIsMutating } from '@tanstack/react-query'
 import { useConfirm, type ConfirmRequest } from '../../context/ConfirmContext'
 import { updateChange } from '../../lib/changelog'
 import { ServerTagsTab } from './ServerTagsTab'
+import { ServerAlertBanner, useServerAlertNotice } from './ServerAlertNotice'
+import { ServerAlertRules } from './ServerAlertRules'
+import type { AlertChange } from '../../lib/thresholdAlerts'
 
 type Server = components['schemas']['Server']
 type Disk = components['schemas']['Disk']
-type ThresholdAlertRequest = components['schemas']['ThresholdAlertRequest']
-type ThresholdAlertType = components['schemas']['ThresholdAlertType']
 type VmMachineType = components['schemas']['VmMachineType']
 import { visibleFeatures, mergeHiddenFeatures, formatMachineType } from '../../lib/advancedFeatures'
 type VideoDevice = components['schemas']['VideoDevice']
@@ -60,12 +62,22 @@ interface ServerSettingsProps {
   server: Server
   /** Tags are kept per account profile, on this device. */
   profileId?: string
+  /** The tab to open on, when something sends the user to one (the heatmap's alert marker opens Alerts). */
+  /** Open on this tab, now or when a later request comes in while Settings is already showing. */
+  start?: SettingsStart
 }
 
-type SettingsTab = 'hostname' | 'tags' | 'disks' | 'advanced' | 'alerts' | 'region' | 'partner' | 'danger'
+export type SettingsTab = 'hostname' | 'tags' | 'disks' | 'advanced' | 'alerts' | 'region' | 'partner' | 'danger'
 
-export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: initialServer, servers: allServers, profileId }) => {
-  const [activeTab, setActiveTab] = useState<SettingsTab>('hostname')
+/** A request to open Settings on one tab. Each request is a new object, so asking again for the same tab still counts. */
+export interface SettingsStart { tab: SettingsTab }
+
+export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: initialServer, servers: allServers, profileId, start }) => {
+  const [activeTab, setActiveTab] = useState<SettingsTab>(start?.tab ?? 'hostname')
+  // The alert pill can ask for the Alerts tab while Settings is already open on another one.
+  useEffect(() => {
+    if (start) setActiveTab(start.tab)
+  }, [start])
   const [notice, setNotice] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
@@ -75,6 +87,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
 
   const regionsQuery = useRegions(client)
   const alertsQuery = useServerThresholdAlerts(client, server.id)
+  const alertNotice = useServerAlertNotice(client, server.id)
   const advancedQuery = useAvailableAdvancedFeatures(client, server.id)
 
   const actionMutation = useServerActionWithHandoff(client, server.id)
@@ -121,35 +134,6 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
       }
     }
   }, [server.advanced_features])
-
-  // Threshold Alerts
-  const [alertForm, setAlertForm] = useState<Record<ThresholdAlertType, { enabled: boolean; value: number }>>({
-    cpu: { enabled: false, value: 90 },
-    'memory-used': { enabled: false, value: 90 },
-    'storage-used': { enabled: false, value: 90 },
-    'network-incoming': { enabled: false, value: 100 },
-    'network-outgoing': { enabled: false, value: 100 },
-    'data-transfer-used': { enabled: false, value: 80 },
-    'storage-requests': { enabled: false, value: 1000 },
-    'locked-backup-slots': { enabled: false, value: 1 }
-  })
-
-  useEffect(() => {
-    if (alertsQuery.data && alertsQuery.data.length > 0) {
-      setAlertForm((prev) => {
-        const next = { ...prev }
-        alertsQuery.data.forEach((alert) => {
-          if (alert.alert_type) {
-            next[alert.alert_type] = {
-              enabled: !!alert.enabled,
-              value: alert.value ?? prev[alert.alert_type]?.value ?? 90
-            }
-          }
-        })
-        return next
-      })
-    }
-  }, [alertsQuery.data])
 
   // Region
   const [selectedRegion, setSelectedRegion] = useState(server.region?.slug || '')
@@ -320,19 +304,13 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
     )
   }
 
-  const handleSaveAlerts = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const requests: ThresholdAlertRequest[] = (Object.keys(alertForm) as ThresholdAlertType[]).map((type) => ({
-      alert_type: type,
-      enabled: alertForm[type].enabled,
-      value: alertForm[type].value
-    }))
-    await executeAction(
+  // Only the rules the user changed are sent: the request keeps the status and value of anything left out.
+  const handleSaveAlerts = (changes: AlertChange[]) =>
+    executeAction(
       'Update Threshold Alerts',
-      { type: 'change_threshold_alerts', threshold_alerts: requests },
-      { summary: 'Saves the monitoring thresholds BinaryLane alerts on.', changes: requests.map((r) => ({ label: r.alert_type, to: r.enabled ? `on at ${r.value}` : 'off' })) }
+      { type: 'change_threshold_alerts', threshold_alerts: changes.map((c) => c.request) },
+      { summary: 'Saves the monitoring thresholds BinaryLane alerts on. Only the rules you changed are sent.', changes: changes.map((c) => ({ label: c.name, from: c.from, to: c.to })) }
     )
-  }
 
   const handleMigrateRegion = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -858,189 +836,16 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
 
 
       {/* 4. ALERTS TAB */}
+      {activeTab === 'alerts' && alertNotice && <ServerAlertBanner notice={alertNotice} />}
       {activeTab === 'alerts' && (
-        <div className="bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm overflow-hidden">
-          <div className="p-3.5 bg-[#f1f1f1] dark:bg-[#262a2e] border-b border-[#ced4da] dark:border-[#373b3e] flex items-center justify-between">
-            <div>
-              <h3 className="font-bold text-xs text-[#495057] dark:text-[#ced4da] flex items-center gap-2">
-                <Bell className="w-4 h-4 text-[#017cb6]" />
-                <span>Monitoring & Threshold Alert Rules</span>
-              </h3>
-              <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-0.5">
-                BinaryLane automatically sends email notifications when sustained resource usage crosses these limits.
-              </p>
-            </div>
-          </div>
-
-          <form onSubmit={handleSaveAlerts} className="p-5 space-y-4">
-            <div className="divide-y divide-[#ced4da]/60 dark:divide-[#373b3e]">
-              {/* CPU */}
-              <div className="py-3 flex items-center justify-between gap-4">
-                <div>
-                  <span className="text-xs font-semibold text-[#212529] dark:text-white">CPU Utilization Alert</span>
-                  <span className="block text-[11px] text-[#6c757d] dark:text-slate-400">Triggered on sustained high processor load</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={alertForm.cpu.value}
-                    disabled={busy || !alertForm.cpu.enabled}
-                    onChange={(e) =>
-                      setAlertForm({
-                        ...alertForm,
-                        cpu: { ...alertForm.cpu, value: parseInt(e.target.value, 10) || 0 }
-                      })
-                    }
-                    className={`${inputClass} w-20 text-right`}
-                  />
-                  <span className="text-xs text-[#6c757d]">%</span>
-                  <input
-                    type="checkbox"
-                    checked={alertForm.cpu.enabled}
-                    disabled={busy}
-                    onChange={(e) =>
-                      setAlertForm({
-                        ...alertForm,
-                        cpu: { ...alertForm.cpu, enabled: e.target.checked }
-                      })
-                    }
-                    className="rounded border-[#ced4da] text-[#017cb6]"
-                  />
-                </div>
-              </div>
-
-              {/* Memory */}
-              <div className="py-3 flex items-center justify-between gap-4">
-                <div>
-                  <span className="text-xs font-semibold text-[#212529] dark:text-white">Memory Usage Alert</span>
-                  <span className="block text-[11px] text-[#6c757d] dark:text-slate-400">Triggered on sustained RAM exhaustion</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={alertForm['memory-used'].value}
-                    disabled={busy || !alertForm['memory-used'].enabled}
-                    onChange={(e) =>
-                      setAlertForm({
-                        ...alertForm,
-                        'memory-used': {
-                          ...alertForm['memory-used'],
-                          value: parseInt(e.target.value, 10) || 0
-                        }
-                      })
-                    }
-                    className={`${inputClass} w-20 text-right`}
-                  />
-                  <span className="text-xs text-[#6c757d]">%</span>
-                  <input
-                    type="checkbox"
-                    checked={alertForm['memory-used'].enabled}
-                    disabled={busy}
-                    onChange={(e) =>
-                      setAlertForm({
-                        ...alertForm,
-                        'memory-used': { ...alertForm['memory-used'], enabled: e.target.checked }
-                      })
-                    }
-                    className="rounded border-[#ced4da] text-[#017cb6]"
-                  />
-                </div>
-              </div>
-
-              {/* Storage */}
-              <div className="py-3 flex items-center justify-between gap-4">
-                <div>
-                  <span className="text-xs font-semibold text-[#212529] dark:text-white">Primary Storage Used Alert</span>
-                  <span className="block text-[11px] text-[#6c757d] dark:text-slate-400">Triggered when disk capacity is nearly full</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={alertForm['storage-used'].value}
-                    disabled={busy || !alertForm['storage-used'].enabled}
-                    onChange={(e) =>
-                      setAlertForm({
-                        ...alertForm,
-                        'storage-used': {
-                          ...alertForm['storage-used'],
-                          value: parseInt(e.target.value, 10) || 0
-                        }
-                      })
-                    }
-                    className={`${inputClass} w-20 text-right`}
-                  />
-                  <span className="text-xs text-[#6c757d]">%</span>
-                  <input
-                    type="checkbox"
-                    checked={alertForm['storage-used'].enabled}
-                    disabled={busy}
-                    onChange={(e) =>
-                      setAlertForm({
-                        ...alertForm,
-                        'storage-used': { ...alertForm['storage-used'], enabled: e.target.checked }
-                      })
-                    }
-                    className="rounded border-[#ced4da] text-[#017cb6]"
-                  />
-                </div>
-              </div>
-
-              {/* Data Transfer */}
-              <div className="py-3 flex items-center justify-between gap-4">
-                <div>
-                  <span className="text-xs font-semibold text-[#212529] dark:text-white">Monthly Data Transfer Used Alert</span>
-                  <span className="block text-[11px] text-[#6c757d] dark:text-slate-400">Triggered when monthly bandwidth quota reaches threshold</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="number"
-                    min="1"
-                    max="100"
-                    value={alertForm['data-transfer-used'].value}
-                    disabled={busy || !alertForm['data-transfer-used'].enabled}
-                    onChange={(e) =>
-                      setAlertForm({
-                        ...alertForm,
-                        'data-transfer-used': {
-                          ...alertForm['data-transfer-used'],
-                          value: parseInt(e.target.value, 10) || 0
-                        }
-                      })
-                    }
-                    className={`${inputClass} w-20 text-right`}
-                  />
-                  <span className="text-xs text-[#6c757d]">%</span>
-                  <input
-                    type="checkbox"
-                    checked={alertForm['data-transfer-used'].enabled}
-                    disabled={busy}
-                    onChange={(e) =>
-                      setAlertForm({
-                        ...alertForm,
-                        'data-transfer-used': {
-                          ...alertForm['data-transfer-used'],
-                          enabled: e.target.checked
-                        }
-                      })
-                    }
-                    className="rounded border-[#ced4da] text-[#017cb6]"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <button type="submit" disabled={busy} className={primaryBtn}>
-              <Bell className="w-3.5 h-3.5" />
-              <span>Save Alert Thresholds</span>
-            </button>
-          </form>
-        </div>
+        <ServerAlertRules
+          alerts={alertsQuery.data}
+          status={alertsQuery.isError ? 'error' : alertsQuery.isPending ? 'loading' : 'ready'}
+          error={alertsQuery.isError ? describeApiError(alertsQuery.error) : null}
+          onRetry={() => void alertsQuery.refetch()}
+          busy={busy}
+          onSave={handleSaveAlerts}
+        />
       )}
 
       {/* 5. REGION TAB */}
