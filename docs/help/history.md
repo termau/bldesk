@@ -12,6 +12,8 @@ The History labels are Submitted, Completed, Errored, Failed and Lost track. Sub
 
 The separate running-action tracker can show an action waiting for an answer or blocked by an invoice. Those are not extra History labels: its History entry remains Submitted until a final outcome is recorded. Resolve the prompt or payment and check the eventual result before repeating the action.
 
+When BLDesk combines identical confirmed changes while the first request is awaiting a response, History still keeps each confirmation. Expand those entries to see their shared action ID; each entry is updated with that action's outcome.
+
 A change BinaryLane accepts without returning an action to follow (an HTTP 202 reply with no content) also stays Submitted, with a note saying so: there is no action from which BLDesk could report a final outcome. Check the server for the result before repeating the change.
 
 Firewalls copied across several targets produce separate results. One target's success does not imply that every target succeeded.
