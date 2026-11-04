@@ -315,25 +315,33 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
       setPending(label)
       if (restarts) {
         let queued: ServerAction | undefined
+        const saidStarted = () =>
+          window.bldeskApi?.sendNotification?.({
+            title: `Network: ${server.name}`,
+            body: `${label} started. A running server is restarted to apply it.`,
+            kind: 'action'
+          })
         try {
           queued = await submitRestart.mutateAsync({
             serverId: server.id,
             actionPayload: payload,
             // Registered while the request still counts as pending, and committed before it stops counting: the lock never has a frame
-            // where it is neither. (The tracker's own `track` is a no-op for an account that is no longer shown.)
-            onQueued: (action) => flushSync(() => track(action, label, server.name, c.changeId))
+            // where it is neither. (The tracker's own `track` is a no-op for an account that is no longer shown.) "Started" is said first,
+            // before the tracker can say how it ended, and not at all for an action that came back already finished.
+            onQueued: (action) => {
+              if (action.status === 'in-progress') saidStarted()
+              flushSync(() => track(action, label, server.name, c.changeId))
+            }
           })
         } catch (err) {
           void updateChange(c.changeId, { outcome: 'failed', detail: err instanceof Error ? err.message : String(err) })
           throw err
         }
-        if (!queued) void updateChange(c.changeId, { outcome: 'submitted', detail: ACCEPTED_WITHOUT_ACTION })
-        window.bldeskApi?.sendNotification?.({
-          title: `Network: ${server.name}`,
-          body: `${label} started. A running server is restarted to apply it.`,
-          kind: 'action'
-        })
-        if (!queued) setNotice(`${label} — accepted by BinaryLane, which returned no action to follow. Check this tab for the result.`)
+        if (!queued) {
+          void updateChange(c.changeId, { outcome: 'submitted', detail: ACCEPTED_WITHOUT_ACTION })
+          saidStarted()
+          setNotice(`${label} — accepted by BinaryLane, which returned no action to follow. Check this tab for the result.`)
+        }
         return false
       }
       let accepted = false
