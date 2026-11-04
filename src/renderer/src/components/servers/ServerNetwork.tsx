@@ -23,13 +23,17 @@ import {
   networkActionMutationKey,
   useNetworkActionMutation,
   useServer,
+  useServerActionMutation,
   useVpcs
 } from '../../api/queries'
+import { useTrackedActions } from '../../context/ActionTrackerContext'
 import { useConfirm } from '../../context/ConfirmContext'
+import { RESTART_NOTE, restartsServer } from '../../lib/actionLabels'
 import { updateChange } from '../../lib/changelog'
 
 type Server = components['schemas']['Server']
 type Network = components['schemas']['Network']
+type ServerAction = components['schemas']['Action']
 
 interface ServerNetworkProps {
   client: BinaryLaneClient | null
@@ -226,6 +230,8 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
   const server: Server = serverQuery.data || initialServer
   const vpcsQuery = useVpcs(client)
   const action = useNetworkActionMutation(client, server.id)
+  const submitRestart = useServerActionMutation(client)
+  const { track, tracked } = useTrackedActions()
 
   const [copied, setCopied] = useState<string | null>(null)
   const [pending, setPending] = useState<string | null>(null)
@@ -259,7 +265,15 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
   // Count from the mutation cache, not just this hook instance: an action started before a
   // tab switch is still running when the tab remounts, and must still block new submissions.
   const mutatingElsewhere = useIsMutating({ mutationKey: networkActionMutationKey(server.id) })
-  const busy = action.isPending || mutatingElsewhere > 0
+  // A change that restarts the server is followed by the action tracker, not by the mutation above, so the lock reads the tracker as
+  // well: a second network write over one that is still being applied is the hazard the mutation lock exists for.
+  const restarting = tracked.find(
+    (t) =>
+      t.resourceId === server.id &&
+      restartsServer(t.actionType) &&
+      (t.state === 'running' || t.state === 'awaiting-interaction' || t.state === 'blocked-by-invoice')
+  )
+  const busy = action.isPending || submitRestart.isPending || mutatingElsewhere > 0 || !!restarting
 
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text)
@@ -275,21 +289,45 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
   /**
    * Confirm, run, poll, and report — every mutation on this tab goes through here.
    * Resolves true when BinaryLane reported the action completed, or accepted it with no action to follow.
+   *
+   * A change that restarts the server is not waited for here. Like the Overview's Reboot it is handed to the action tracker once
+   * BinaryLane has queued it, so a toast follows it until it finishes and History records how it ended, and this resolves false
+   * (not applied yet): the form keeps what was picked until the server's own data catches up.
    */
   const run = async (label: string, payload: NetworkActionPayload, confirmText: string): Promise<boolean> => {
     if (inFlight.current || busy) return false
     inFlight.current = true
     try {
+      const restarts = restartsServer(payload.type)
       const c = await confirmAction({
         title: label,
         target: { kind: 'server', id: server.id, name: server.name },
         summary: confirmText,
-        severity: 'normal'
+        severity: 'normal',
+        notes: restarts ? [RESTART_NOTE] : undefined
       })
       if (!c.ok) return false
       setError(null)
       setNotice(null)
       setPending(label)
+      if (restarts) {
+        let queued: ServerAction | undefined
+        try {
+          queued = await submitRestart.mutateAsync({ serverId: server.id, actionPayload: payload })
+        } catch (err) {
+          void updateChange(c.changeId, { outcome: 'failed', detail: err instanceof Error ? err.message : String(err) })
+          throw err
+        }
+        if (queued) track(queued, label, server.name, c.changeId)
+        else void updateChange(c.changeId, { outcome: 'submitted', detail: ACCEPTED_WITHOUT_ACTION })
+        window.bldeskApi?.sendNotification?.({
+          title: `Network: ${server.name}`,
+          body: `${label} started. The server is restarting to apply it.`,
+          kind: 'action'
+        })
+        if (!queued) setNotice(`${label} — accepted by BinaryLane, which returned no action to follow. Check this tab for the result.`)
+        return false
+      }
       let accepted = false
       try {
         const done = await action.mutateAsync(payload)
@@ -336,7 +374,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
           </div>
           {isPrivate && family === 'v4' && server.vpc_id && (
             <div className="mt-1 text-[10px] text-[#6c757d] dark:text-slate-500 flex items-center gap-1">
-              <span>Change address:</span>
+              <span>Change address (restarts a running server):</span>
               <InlineEdit
                 value=""
                 placeholder="new private IPv4"
@@ -400,7 +438,20 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
           </span>
         </div>
       )}
-      {!pending && mutatingElsewhere > 0 && (
+      {!pending && restarting && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="p-3 bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 text-sky-800 dark:text-sky-300 text-xs rounded flex items-center gap-2"
+        >
+          <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
+          <span>
+            <span className="font-semibold">{restarting.label}</span> — the server is restarting to apply it. Controls are locked until BinaryLane
+            finishes.
+          </span>
+        </div>
+      )}
+      {!pending && !restarting && mutatingElsewhere > 0 && (
         <div
           role="status"
           aria-live="polite"
@@ -668,7 +719,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
               <span className="text-[#6c757d] dark:text-slate-400">Default public network for {server.region?.name || 'this region'}</span>
             )}
           </Row>
-          <Row label="Move server" hint="Moves the private interface to another VPC, or back to the public network. Brief connectivity loss.">
+          <Row label="Move server" hint="Moves the private interface to another VPC, or back to the public network. A running server is restarted to do this.">
             <select
               value={vpcChoice}
               disabled={busy || vpcsQuery.isLoading}
@@ -710,7 +761,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
           {server.vpc_id && (
             <Row
               label="Separate private interface"
-              hint="Adds a second NIC dedicated to VPC traffic instead of sharing the primary interface."
+              hint="Adds a second NIC dedicated to VPC traffic instead of sharing the primary interface. A running server is restarted when this changes."
             >
               <span className="text-[#6c757d] dark:text-slate-400">
                 {networks?.separate_private_network_interface ? 'Enabled' : 'Disabled'}

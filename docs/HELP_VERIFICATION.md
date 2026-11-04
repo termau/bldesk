@@ -1,5 +1,31 @@
 # Help verification
 
+## Network changes that restart the server (4 November 2026, after 1.0.63-beta.4)
+
+Branch: `feat/vpc-move-reboot-warning`, based on main `b0d732c`. Fixes #366. Sources: `ServerNetwork.tsx` (Move server, Separate private interface and Change address, their hints, confirmations and lock), `VpcManager.tsx` (Attach Server form, Detach confirmation, notifications), `RESTART_NOTE`, `RESTART_TOAST` and `restartsServer` in `lib/actionLabels.ts`, `ActionToasts.tsx` and the `step` field in `ActionTrackerContext.tsx`.
+
+That these three actions restart the server is not in the public reference (`ChangeNetwork`, `ChangeSeparatePrivateNetworkInterface` and `ChangeVpcIpv4` describe only what they change). Two sources stand behind it instead: mPanel's own Change Network dialog, which on 4 November 2026 showed "Shutting down server" under Technical Details while the same test server's network was changed, and the live observation below. The person who ran the mPanel change confirmed it needs a restart both ways, into a VPC and out of one. The maintainer may still want to check it with BinaryLane, as for any behaviour the reference leaves out.
+
+Live observation, 4 November 2026, one test server in Adelaide, through the public API only. Every change was one action, and the server's action list showed no second `reboot` action. The action's own `progress` reported its steps, and `uptime` read 2 minutes just before the first move and 0 minutes after it. The server's `status` stayed `active` throughout.
+
+| Change | Steps the action reported | Start to finish |
+| --- | --- | --- |
+| `change_network` into a VPC, between two VPCs, and back to the public network | Shutting down server, Moving server to destination VPC, Starting server | 10 to 30 s |
+| `change_separate_private_network_interface`, on and off | Shutting down server, Starting server | about 30 s |
+| `change_vpc_ipv4` | Shutting down server, Starting server | about 30 s |
+
+| Help or control | Source and verification |
+| --- | --- |
+| `server-network.md`, Changes that restart the server | The three actions and their steps are the observation above. "The controls on this tab stay locked" is `restarting` in `ServerNetwork.tsx`, read from the action tracker and counted into `busy`. "History records how it ended" is `track(queued, label, server.name, c.changeId)`: the tracker writes the outcome. "Changes that do not restart the server ... are unchanged" is the unchanged `useNetworkActionMutation` path in `run()`, taken when `restartsServer(payload.type)` is false. |
+| Quoted text on both pages | “A running server is restarted to do this: ...” is `RESTART_NOTE`, and “The server is restarting to apply this change.” is `RESTART_TOAST`, both in `actionLabels.ts`. The Move confirmation is the unchanged `run()` text for `change_network`. The Detach text is unchanged in `handleDetachServer`; the note is in its `notes`. |
+| The hints beside Move server and Separate private interface, and the label of the Change address editor | Read from the `Row` hints and the `Change address (restarts a running server):` label in `ServerNetwork.tsx`; not curly-quoted in the help, which describes them in prose. |
+| `vpcs.md`, Attaching and detaching restart the server | The note in the Attach Server form is `RESTART_NOTE` under the server picker in `VpcManager.tsx`, shown when there is a server to attach. Both handlers already passed the action to `track`, so the toast is the same one. The two notifications no longer say "Moved" or "Detached" at the moment a request is only queued. |
+| The step shown on the toast | `ActionTrackerContext.tsx` keeps the last non-empty `progress.current_step`; `ActionToasts.tsx` shows it for these actions only, where there is no `current_step_detail`. |
+
+Checks: `npm run typecheck` (595 tests), `npm run build` and the 35 mock tests pass (three are new: the restart steps while an action runs and the move landing when it completes, the two-step actions, and a refused move). `scripts/test-restart-actions.mjs` has four tests; the last scans the source for every file that names one of the three actions and fails unless it carries `RESTART_NOTE`, so a new entry point cannot leave the warning out. The real Electron app against the mock (Ubuntu VM, Node 22) passes a 32-check scenario: the Move hint and confirmation, a toast as soon as BinaryLane queues the move, its three steps in turn and then Completed, the Move row locked meanwhile and still showing the pick, one `change_network` request and no `reboot`, History, the interface switch, the private address, reverse DNS unchanged (no warning, no toast, "done" on the tab), a failed move (toast, controls unlocked, History `errored`), the Attach Server form and its toast, and the Detach confirmation. A second scenario checks the confirmation and toast at 1280x860, 1024x680 at 100%, 125% and 150%, and 390 px: buttons on screen, note not clipped, no sideways scroll.
+
+Not tested: a live run of the app itself against BinaryLane (the observation above was made through the API, not through BLDesk); what these actions do to a server that is already stopped (seen once: a move of a stopped server finished in about 2 seconds and left it stopped, so the confirmation says "a running server" and claims nothing more); Windows, macOS and Android builds. The inline editors answer their own confirmation when Enter is pressed in them (the same keystroke's key press lands on the confirmation's focused Confirm button), on unchanged main as well; that is not changed here, so the label of the Change address editor carries the warning on its own.
+
 ## DNS: pending nameserver-cache refresh (2 November 2026, after 1.0.63-beta.3)
 
 Branch: `fix/dns-cache-refresh-355`. Sources: `DnsManager.tsx`, `useDnsCacheRefreshMutation` and `dnsCacheRefreshMutationKey` in `api/queries.ts`, and the profile-switch cache clear in `App.tsx`. The vendored `openapi.json` is updated from 0.46.0 to 0.47.0 with matching generated types: only the version, nameserver-cache refresh description and its 400/429 response declarations change. No component schemas change.

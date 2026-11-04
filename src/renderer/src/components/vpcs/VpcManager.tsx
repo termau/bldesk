@@ -18,6 +18,7 @@ import { components } from '@shared/api/schema'
 import { BinaryLaneClient } from '../../api/client'
 import { useVpcs } from '../../api/queries'
 import { useConfirm } from '../../context/ConfirmContext'
+import { RESTART_NOTE } from '../../lib/actionLabels'
 import { recordChange, updateChange } from '../../lib/changelog'
 import { useTrackedActions } from '../../context/ActionTrackerContext'
 import { apiFailure } from '../../api/queries'
@@ -123,8 +124,8 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
       else void updateChange(changeId, { outcome: 'completed' })
 
       window.bldeskApi?.sendNotification?.({
-        title: 'Server Attached to VPC',
-        body: `Moved "${targetServerName}" into VPC "${attachModalVpc.name}".`
+        title: 'Attaching server to VPC',
+        body: `Moving "${targetServerName}" into VPC "${attachModalVpc.name}". The server is restarting to apply it.`
       })
 
       setAttachModalVpc(null)
@@ -149,6 +150,7 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
       target: { kind: 'server', id: serverId, name: serverName },
       summary: 'The server leaves its private network and reverts to the default public network. Anything reaching it over its VPC address will stop working.',
       severity: 'destructive',
+      notes: [RESTART_NOTE],
       confirmLabel: 'Detach'
     })
     if (!c.ok) return
@@ -166,8 +168,8 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
       if (data?.action) track(data.action, 'Detach from VPC', serverName, c.changeId)
 
       window.bldeskApi?.sendNotification?.({
-        title: 'Server Detached from VPC',
-        body: `Detached "${serverName}" from private network.`
+        title: 'Detaching server from VPC',
+        body: `Detaching "${serverName}" from its private network. The server is restarting to apply it.`
       })
 
       queryClient.invalidateQueries({ queryKey: ['servers'] })
@@ -521,6 +523,11 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
                 </select>
               )}
             </div>
+            {getAttachableServers(attachModalVpc.id).length > 0 && (
+              <p className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs rounded leading-relaxed">
+                {RESTART_NOTE}
+              </p>
+            )}
           </div>
         </Modal>
       )}

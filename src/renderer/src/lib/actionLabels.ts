@@ -45,6 +45,25 @@ export function unpublishedActionNotes(type: string): string[] | undefined {
   return UNPUBLISHED_ACTIONS.has(type) ? [UNPUBLISHED_ACTION_NOTE] : undefined
 }
 
+/**
+ * Network changes BinaryLane carries out by restarting the server. The action reports the steps "Shutting down server" and
+ * "Starting server" (a move between networks adds "Moving server to destination VPC" between them), and the server's uptime
+ * starts again from zero. Seen on a live server on 4 November 2026 for all three; the reference describes only what each
+ * one changes, and the server's `status` stays `active` throughout, so nothing else on screen says it is down.
+ */
+const RESTARTING_ACTIONS = new Set(['change_network', 'change_separate_private_network_interface', 'change_vpc_ipv4'])
+
+export function restartsServer(type: string | undefined): boolean {
+  return !!type && RESTARTING_ACTIONS.has(type)
+}
+
+/** The warning in a confirmation for a change that restarts the server. */
+export const RESTART_NOTE =
+  'A running server is restarted to do this: BinaryLane shuts it down, makes the change and starts it again, so everything running on it stops and starts again.'
+
+/** What the toast says while such a change is being applied. */
+export const RESTART_TOAST = 'The server is restarting to apply this change.'
+
 /** One honest sentence per power action, for the confirm dialog. */
 export function powerActionSummary(type: string): string {
   switch (type) {

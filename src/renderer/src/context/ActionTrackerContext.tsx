@@ -35,6 +35,11 @@ export interface TrackedAction {
    * `current_step`, which is only ever the bare step name.
    */
   stepDetail?: string
+  /**
+   * BinaryLane's name for the step it is on ("Shutting down server"), the last one it reported. For some actions it is
+   * all there is to say, because they report no `stepDetail`.
+   */
+  step?: string
   startedAt: number
   /**
    * The person closed the toast while the action was still being worked on. It is still followed, out of sight, so a
@@ -165,7 +170,9 @@ export function ActionTrackerProvider({
             onProgress: (fresh: ServerAction) =>
               update(action.id, {
                 percentComplete: fresh.progress?.percent_complete,
-                stepDetail: fresh.progress?.current_step_detail ?? undefined
+                stepDetail: fresh.progress?.current_step_detail ?? undefined,
+                // Empty between two steps, so the last one named stays.
+                ...(fresh.progress?.current_step ? { step: fresh.progress.current_step } : {})
               })
           }
 

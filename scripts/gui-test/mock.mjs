@@ -329,6 +329,32 @@ function applyAction(a, server) {
   if (a.type === 'attach_backup') server.attached_backup = { id: b.image, disk_identifiers: ['sdb'], attached_at: nowIso(), attachment_expires: null }
   if (a.type === 'detach_backup') server.attached_backup = null
   if (a.type === 'change_advanced_firewall_rules') fwOverride.set(server.id, b.firewall_rules || [])
+  if (a.type === 'change_network') {
+    const vpc = b.vpc_id == null ? null : vpcs.find((v) => v.id === b.vpc_id)
+    if (b.vpc_id != null && !vpc) { a.outcome = 'errored'; a.error = `VPC ${b.vpc_id} was not found.`; return }
+    server.vpc_id = vpc ? vpc.id : null
+    const priv = server.networks.v4.find((n) => n.type === 'private')
+    if (priv) priv.ip_address = vpc ? `${vpc.ip_range.split('.').slice(0, 3).join('.')}.${server.id % 200}` : `172.26.0.${server.id % 200}`
+  }
+  if (a.type === 'change_separate_private_network_interface') server.networks.separate_private_network_interface = !!b.enabled
+  if (a.type === 'change_vpc_ipv4') {
+    const priv = server.networks.v4.find((n) => n.type === 'private' && n.ip_address === b.current_ipv4_address)
+    if (priv) priv.ip_address = b.new_ipv4_address
+  }
+}
+// Network changes: BinaryLane restarts the server to apply them. The action reports these steps one after another (a move between networks adds
+// the middle one) and the server's `status` stays `active` throughout. Seen on a live server on 4 November 2026; the reference states none of it.
+const RESTART_STEPS = {
+  change_network: ['Shutting down server', 'Moving server to destination VPC', 'Starting server'],
+  change_separate_private_network_interface: ['Shutting down server', 'Starting server'],
+  change_vpc_ipv4: ['Shutting down server', 'Starting server']
+}
+function stepsFor(a, done) {
+  const steps = RESTART_STEPS[a.type]
+  if (!steps) return { current_step: done ? '' : 'Working', completed_steps: done ? ['Working'] : [] }
+  if (done) return { current_step: '', completed_steps: steps }
+  const at = Math.min(steps.length - 1, Math.floor((Date.now() - a.startedAt) / Math.max(1, a.ms) * steps.length))
+  return { current_step: steps[at], completed_steps: steps.slice(0, at) }
 }
 function actionView(a) {
   const done = !a.waiting && a.completedAt != null, server = servers.find((s) => s.id === a.server_id)
@@ -336,7 +362,7 @@ function actionView(a) {
   const base = mk('ActionsResponse', 'actions', {
     id: a.id, status, type: a.type, started_at: new Date(a.startedAt).toISOString(), completed_at: done ? new Date(a.completedAt).toISOString() : null,
     resource_type: 'server', resource_id: a.server_id ?? 0, region: server?.region, region_slug: server?.region?.slug, title: a.type.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase()),
-    reason: 'Your request is being processed', progress: { current_step: done ? '' : 'Working', current_step_detail: null, percent_complete: done ? 100 : Math.min(90, Math.round((Date.now() - a.startedAt) / Math.max(1, a.ms) * 100)), completed_steps: done ? ['Working'] : [] },
+    reason: 'Your request is being processed', progress: { ...stepsFor(a, done), current_step_detail: null, percent_complete: done ? 100 : RESTART_STEPS[a.type] ? 0 : Math.min(90, Math.round((Date.now() - a.startedAt) / Math.max(1, a.ms) * 100)) },
     error_message: done && a.outcome === 'errored' ? a.error || 'The simulated action failed (mock server).' : null, result_data: null, blocking_invoice_id: null, user_interaction_required: a.waiting ? { interaction_type: a.waiting } : null
   })
   return base
