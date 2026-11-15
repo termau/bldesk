@@ -13,8 +13,9 @@ export const DarkModeToggle: React.FC<DarkModeToggleProps> = ({ collapsed = fals
     return (
       <button
         onClick={toggleTheme}
-        className="w-full flex items-center justify-center py-2 text-slate-400 hover:text-white transition"
+        className="w-full flex items-center justify-center py-2 text-slate-400 hover:text-white transition focus-ring"
         title={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+        aria-label={isDark ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
       >
         {isDark ? <Moon className="w-4 h-4 text-brand-gold" /> : <Sun className="w-4 h-4 text-amber-400" />}
       </button>
@@ -29,7 +30,8 @@ export const DarkModeToggle: React.FC<DarkModeToggleProps> = ({ collapsed = fals
         role="switch"
         aria-checked={isDark}
         onClick={toggleTheme}
-        className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors duration-200 focus:outline-none ${
+        aria-label="Dark mode"
+        className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors duration-200 focus-ring ${
           isDark ? 'bg-brand' : 'bg-slate-600'
         }`}
         title="Toggle dark mode"

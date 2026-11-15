@@ -1,5 +1,5 @@
 import { HelpLink } from '../ui/HelpLink'
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useId } from 'react'
 import { Key, Plus, Trash2, Copy, Check, Loader2, Sparkles, Pencil, RefreshCw, KeyRound } from 'lucide-react'
 import { BinaryLaneClient } from '../../api/client'
 import { useSshKeys, useAddSshKeyMutation, useUpdateSshKeyMutation, useDeleteSshKeyMutation } from '../../api/queries'
@@ -15,6 +15,7 @@ interface SshKeysManagerProps {
 }
 
 export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
+  const uid = useId()
   const [isAdding, setIsAdding] = useState(false)
   const [keyName, setKeyName] = useState('')
   const [publicKey, setPublicKey] = useState('')
@@ -171,10 +172,10 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-[#212529] dark:text-white flex items-center gap-2.5">
-            <Key className="w-5 h-5 text-[#017cb6]" />
+            <Key className="w-5 h-5 text-fg-link" />
             <span>SSH Public Keys</span>
           </h1>
-          <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-0.5">
+          <p className="text-xs text-fg-muted dark:text-slate-400 mt-0.5">
             Manage your SSH public keys for passwordless authentication to your cloud servers.
           </p>
         </div>
@@ -228,19 +229,19 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
                 >
                   <div className="truncate mr-2">
                     <div className="text-xs font-semibold text-[#212529] dark:text-white truncate">{lk.name}</div>
-                    <div className="text-[10px] text-[#6c757d] font-mono truncate">{lk.publicKey.substring(0, 24)}...</div>
+                    <div className="text-[0.625rem] text-fg-muted font-mono truncate">{lk.publicKey.substring(0, 24)}...</div>
                   </div>
                   {!keysKnown ? (
-                    <span className="text-[10px] text-[#6c757d] px-2 py-0.5">{sshKeysQuery.isError ? 'Keys not read' : 'Checking…'}</span>
+                    <span className="text-[0.625rem] text-fg-muted px-2 py-0.5">{sshKeysQuery.isError ? 'Keys not read' : 'Checking…'}</span>
                   ) : alreadyImported ? (
-                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold px-2 py-0.5 bg-emerald-500/10 rounded">
+                    <span className="text-[0.625rem] text-emerald-600 dark:text-emerald-400 font-semibold px-2 py-0.5 bg-emerald-500/10 rounded">
                       Linked
                     </span>
                   ) : (
                     <button
                       onClick={() => handleImportLocalKey(lk)}
                       disabled={addKeyMutation.isPending}
-                      className="px-2.5 py-1 text-[11px] font-medium bg-[#017cb6] hover:bg-[#016594] text-white rounded transition shadow-sm"
+                      className="px-2.5 py-1 text-[0.6875rem] font-medium bg-[#017cb6] hover:bg-[#016594] text-white rounded transition shadow-sm"
                     >
                       Import
                     </button>
@@ -259,7 +260,7 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
         </div>
 
         {sshKeysQuery.isLoading && (
-          <div className="p-8 text-center text-xs text-[#6c757d]">Loading keys...</div>
+          <div className="p-8 text-center text-xs text-fg-muted">Loading keys...</div>
         )}
 
         {sshKeysQuery.isError && (
@@ -269,7 +270,7 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
         )}
 
         {!sshKeysQuery.isLoading && !sshKeysQuery.isError && keys.length === 0 && (
-          <div className="p-8 text-center text-xs text-[#6c757d]">No SSH keys registered in BinaryLane.</div>
+          <div className="p-8 text-center text-xs text-fg-muted">No SSH keys registered in BinaryLane.</div>
         )}
 
         {!sshKeysQuery.isLoading && keys.length > 0 && (
@@ -279,7 +280,7 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
           <div className="overflow-x-auto">
             <table className="w-full min-w-max text-left text-xs border-collapse">
             <thead>
-              <tr className="bg-[#f8f9fa] dark:bg-[#212529] border-b border-[#ced4da] dark:border-[#373b3e] text-[#6c757d]">
+              <tr className="bg-[#f8f9fa] dark:bg-[#212529] border-b border-[#ced4da] dark:border-[#373b3e] text-fg-muted">
                 <th className="py-2.5 px-4">Name</th>
                 <th className="py-2.5 px-4">Fingerprint</th>
                 <th className="py-2.5 px-4">Public Key</th>
@@ -290,11 +291,11 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
             <tbody className="divide-y divide-[#ced4da]/60 dark:divide-[#373b3e]">
               {keys.map((k) => (
                 <tr key={k.id} className="hover:bg-[#f8f9fa] dark:hover:bg-[#32383e] transition">
-                  <td className="py-3 px-4 font-bold text-[#017cb6]">{k.name}</td>
-                  <td className="py-3 px-4 font-mono text-[#6c757d] dark:text-slate-300 text-[11px]">
+                  <td className="py-3 px-4 font-bold text-fg-link">{k.name}</td>
+                  <td className="py-3 px-4 font-mono text-fg-muted dark:text-slate-300 text-[0.6875rem]">
                     {k.fingerprint || '—'}
                   </td>
-                  <td className="py-3 px-4 font-mono text-[#6c757d] text-[11px] truncate max-w-xs">
+                  <td className="py-3 px-4 font-mono text-fg-muted text-[0.6875rem] truncate max-w-xs">
                     {k.public_key?.substring(0, 32)}...
                   </td>
                   <td className="py-3 px-4 text-[#495057] dark:text-[#ced4da]">{k.default ? 'Yes' : 'No'}</td>
@@ -302,14 +303,14 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
                     <div className="flex items-center justify-end gap-1">
                       <button
                         onClick={() => handleCopyKey(k.id, k.public_key ?? "")}
-                        className="text-[#6c757d] hover:text-[#017cb6] p-1 rounded"
+                        className="text-fg-muted hover:text-fg-link p-1 rounded"
                         title="Copy Public Key"
                       >
                         {copiedId === k.id ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                       </button>
                       <button
                         onClick={() => setEditingKey({ id: k.id, name: k.name || '', isDefault: !!k.default })}
-                        className="text-[#6c757d] hover:text-[#017cb6] p-1 rounded"
+                        className="text-fg-muted hover:text-fg-link p-1 rounded"
                         title="Edit Key"
                         aria-label="Edit key"
                       >
@@ -317,7 +318,7 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
                       </button>
                       <button
                         onClick={() => handleDeleteKey(k.id, k.name || "SSH Key")}
-                        className="text-[#6c757d] hover:text-rose-500 p-1 rounded"
+                        className="text-fg-muted hover:text-rose-500 p-1 rounded"
                         title="Delete Key"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -346,7 +347,7 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
               <button
                 type="button"
                 onClick={() => setIsAdding(false)}
-                className="px-3 py-1.5 text-xs text-[#6c757d] hover:text-[#212529] dark:hover:text-white"
+                className="px-3 py-1.5 text-xs text-fg-muted hover:text-[#212529] dark:hover:text-white"
               >
                 Cancel
               </button>
@@ -364,10 +365,11 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
           <div className="p-5 space-y-4">
 
             <div>
-              <label className="block text-xs font-medium text-[#495057] dark:text-[#ced4da] mb-1">
+              <label htmlFor={`${uid}-name`} className="block text-xs font-medium text-[#495057] dark:text-[#ced4da] mb-1">
                 Key Name
               </label>
               <input
+                id={`${uid}-name`}
                 type="text"
                 required
                 placeholder="e.g. MacBook Pro M3"
@@ -378,10 +380,11 @@ export const SshKeysManager: React.FC<SshKeysManagerProps> = ({ client }) => {
             </div>
 
             <div>
-              <label className="block text-xs font-medium text-[#495057] dark:text-[#ced4da] mb-1">
+              <label htmlFor={`${uid}-key`} className="block text-xs font-medium text-[#495057] dark:text-[#ced4da] mb-1">
                 Public Key (ssh-ed25519 or ssh-rsa)
               </label>
               <textarea
+                id={`${uid}-key`}
                 required
                 rows={4}
                 placeholder="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5..."
@@ -460,7 +463,7 @@ const EditSshKeyDialog: React.FC<{
     >
       <div className="p-4 space-y-3 text-xs">
         <label className="block space-y-1">
-          <span className="text-[#6c757d] dark:text-[#adb5bd]">Name</span>
+          <span className="text-fg-muted dark:text-[#adb5bd]">Name</span>
           <input
             autoFocus
             required

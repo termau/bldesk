@@ -1,13 +1,13 @@
 ---
 title: Settings
-summary: Mute notifications from BLDesk, and export or import your local tags as a JSON file.
-keywords: [settings, notifications, mute, alerts, preferences, tray, tags, export, import, json, backup]
+summary: Mute notifications from BLDesk, choose a light or dark theme, and export or import your local tags as a JSON file.
+keywords: [settings, notifications, mute, alerts, preferences, tray, theme, dark mode, light mode, appearance, tags, export, import, json, backup]
 ---
 
 # Settings
 Settings holds preferences for this device. Open it with the gear button in the title bar. On a phone the title bar has no room for it, so open More and choose Settings instead. Nothing here is saved to your BinaryLane account or changes anything on it; the choices stay on this device.
 
-It holds the notification switches and the export and import of local tags. Other preferences are not on this page yet.
+It holds the notification switches, the theme, and the export and import of local tags. Other preferences are not on this page yet.
 
 ## Notifications
 The Notifications card has two controls. “Show notifications” is the master switch: turn it off to mute every notification. Under it, “Notify me about” says how many kinds are on, and “Choose kinds” opens a dialog, also titled “Notify me about”, with a switch for each kind:
@@ -25,6 +25,9 @@ Muting only stops notifications sent through your operating system. Action progr
 On Android BLDesk does not show notifications at the moment, so these switches have no effect there yet.
 
 If a change cannot be saved on the device, BLDesk shows a failure card saying so. The change still applies until BLDesk is closed, and then goes back to what was saved.
+
+## Appearance
+The “Appearance” card has one choice, “Theme”, with three buttons: “System”, “Light” and “Dark”. “System” follows your operating system's light or dark setting and changes with it while BLDesk is open; it is what BLDesk uses until you choose otherwise. “Light” and “Dark” keep that theme whatever the operating system says. The sun and moon switch at the bottom of the navigation also changes the theme: it chooses “Light” or “Dark”, so after using it the theme no longer follows the system until you choose “System” here again. The choice is kept on this device.
 
 ## Tags
 The “Tags” card, headed “Export and import tags”, copies this account profile's [tags](help:servers#tags) to a JSON file and reads them back from one. Tags are local labels kept on this device for the active account profile and BinaryLane does not store them, so a file is how you keep a copy or bring them to another device. Under the heading the card says how many tags are on how many servers, or that no server has a tag yet, or that the account has no servers listed. It has two buttons, “Export tags” and “Import tags”, and neither sends a request to BinaryLane.

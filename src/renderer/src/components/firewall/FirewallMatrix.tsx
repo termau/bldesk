@@ -51,11 +51,8 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
   const phone = usePhoneLayout()
   const [groupId, setGroupId] = useState<string>('all')
   const [isNewGroupOpen, setIsNewGroupOpen] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newPattern, setNewPattern] = useState('')
   /** Row whose tag editor is open. */
   const [tagEditId, setTagEditId] = useState<number | null>(null)
-  const [tagInput, setTagInput] = useState('')
   useEffect(() => {
     setGroups(loadGroups(profileId))
     setTags(loadTags(profileId))
@@ -237,14 +234,12 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
   }
 
   // --- Groups CRUD
-  const handleCreateGroup = () => {
-    if (!profileId || !newName.trim()) return
-    const g = newGroup(newName, newPattern)
+  const handleCreateGroup = (name: string, pattern: string) => {
+    if (!profileId || !name.trim()) return
+    const g = newGroup(name, pattern)
     saveGroups(profileId, [...groups, g])
     setGroupId(g.id)
     setIsNewGroupOpen(false)
-    setNewName('')
-    setNewPattern('')
   }
   const handleDeleteGroup = async (g: ServerGroup) => {
     if (!profileId) return
@@ -260,7 +255,6 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
     saveGroups(profileId, groups.filter((x) => x.id !== g.id))
     setGroupId('all')
   }
-  const previewCount = newPattern.trim() ? matchServers(servers, newPattern).matches.length : 0
 
   const scroller = useRef<HTMLDivElement>(null)
   const scrollBy = (dir: -1 | 1) => scroller.current?.scrollBy({ left: dir * Math.max(240, scroller.current.clientWidth * 0.6), behavior: 'smooth' })
@@ -275,15 +269,16 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
           : 'text-[#ced4da] dark:text-[#495057]'
 
   return (
-    <div className="space-y-4">
+    // Fills the rest of the Firewall page so the matrix below scrolls in its own box, header row and server columns pinned.
+    <div className="flex-1 min-h-0 flex flex-col space-y-4">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-2 bg-white dark:bg-[#2b3035] px-3 py-1.5 border border-[#ced4da] dark:border-[#373b3e] rounded shadow-sm">
-          <Users className="w-3.5 h-3.5 text-[#017cb6]" />
+          <Users className="w-3.5 h-3.5 text-fg-link" />
           <select
             value={groupId}
             onChange={(e) => setGroupId(e.target.value)}
-            className="bg-transparent text-xs text-[#212529] dark:text-white focus:outline-none cursor-pointer max-w-[200px]"
+            className="bg-transparent text-xs text-[#212529] dark:text-white focus-ring rounded cursor-pointer max-w-[200px]"
           >
             <option value="all" className="bg-white dark:bg-[#2b3035]">
               All servers ({servers.length})
@@ -295,7 +290,7 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
             ))}
           </select>
           {activeGroup && !activeGroup.id.startsWith('tag_') && (
-            <button onClick={() => handleDeleteGroup(activeGroup)} title="Delete this group" className="text-[#6c757d] hover:text-rose-500">
+            <button onClick={() => handleDeleteGroup(activeGroup)} title="Delete this group" className="text-fg-muted hover:text-rose-500">
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           )}
@@ -331,39 +326,7 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
       </div>
 
       {/* New group */}
-      {isNewGroupOpen && (
-        <div className="flex flex-wrap items-end gap-2 p-3 bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded text-xs">
-          <label className="space-y-1">
-            <span className="block text-[#6c757d]">Name</span>
-            <input
-              value={newName}
-              onChange={(e) => setNewName(e.target.value.replace(/[@,\s]/g, ''))}
-              placeholder="web"
-              className="px-2 py-1.5 font-mono bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded focus:outline-none focus:border-[#017cb6] w-36"
-            />
-          </label>
-          <label className="space-y-1 flex-1 min-w-[220px]">
-            <span className="block text-[#6c757d]">Members (palette targets: glob, #id, IP prefix, comma list). Servers tagged with the group's name are members too.</span>
-            <input
-              value={newPattern}
-              onChange={(e) => setNewPattern(e.target.value)}
-              placeholder="wp-web-*,wp-ha-lb"
-              className="w-full px-2 py-1.5 font-mono bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded focus:outline-none focus:border-[#017cb6]"
-            />
-          </label>
-          <span className="text-[#6c757d] pb-2">{newPattern.trim() ? `${previewCount} match` : ''}</span>
-          <button
-            onClick={handleCreateGroup}
-            disabled={!newName.trim() || (previewCount === 0 && !Object.values(tags).some((l) => l.includes(newName.trim().toLowerCase())))}
-            className="px-3 py-1.5 rounded bg-[#017cb6] hover:bg-[#016594] text-white font-semibold disabled:opacity-40"
-          >
-            Save @{newName || 'group'}
-          </button>
-          <button onClick={() => setIsNewGroupOpen(false)} className="p-1.5 text-[#6c757d] hover:text-[#212529] dark:hover:text-white">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+      {isNewGroupOpen && <NewGroupForm servers={servers} tags={tags} onSave={handleCreateGroup} onClose={() => setIsNewGroupOpen(false)} />}
 
       {/* Summary chips */}
       <div className="flex flex-wrap gap-2 text-xs">
@@ -387,7 +350,7 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
           <span className={`px-2.5 py-1 rounded border ${LEVEL_CLASS.amber}`}>{summary.unreadable} could not be read</span>
         )}
         {fleet.isLoading && (
-          <span className="px-2.5 py-1 text-[#6c757d] flex items-center gap-1">
+          <span className="px-2.5 py-1 text-fg-muted flex items-center gap-1">
             <Loader2 className="w-3.5 h-3.5 animate-spin" /> Reading rules…
           </span>
         )}
@@ -397,11 +360,11 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
       {copyOpen && (
         <div className="p-3 bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded text-xs space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[#6c757d]">Copy the rules of</span>
+            <span className="text-fg-muted">Copy the rules of</span>
             <select
               value={sourceId ?? ''}
               onChange={(e) => setSourceId(Number(e.target.value) || null)}
-              className="px-2 py-1.5 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded focus:outline-none"
+              className="px-2 py-1.5 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded focus-ring"
             >
               <option value="">choose a source…</option>
               {scoped.map((s) => {
@@ -414,11 +377,11 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
                 )
               })}
             </select>
-            <span className="text-[#6c757d]">to:</span>
-            <button onClick={() => setTargetIds(new Set(scoped.filter((s) => s.id !== sourceId && readable(s.id)).map((s) => s.id)))} className="underline text-[#017cb6]">
+            <span className="text-fg-muted">to:</span>
+            <button onClick={() => setTargetIds(new Set(scoped.filter((s) => s.id !== sourceId && readable(s.id)).map((s) => s.id)))} className="underline text-fg-link">
               everyone {activeGroup ? `in @${activeGroup.name}` : ''}
             </button>
-            <button onClick={() => setTargetIds(new Set())} className="underline text-[#6c757d]">
+            <button onClick={() => setTargetIds(new Set())} className="underline text-fg-muted">
               none
             </button>
           </div>
@@ -435,7 +398,7 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
                   <input type="checkbox" className={readable(s.id) ? '' : 'opacity-60'} checked={targets.includes(s)} disabled={!readable(s.id)} onChange={() => toggleTarget(s.id)} />
                   <span className={`font-mono ${readable(s.id) ? '' : 'opacity-60'}`}>{s.name}</span>
                   {/* Not dimmed with the rest: it is the only explanation for the disabled box. */}
-                  {rulesByServer.get(s.id) === null && <span className="text-[#6c757d]">unreadable</span>}
+                  {rulesByServer.get(s.id) === null && <span className="text-fg-muted">unreadable</span>}
                 </label>
               ))}
           </div>
@@ -456,11 +419,11 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
         </div>
       )}
 
-      {/* Matrix — the container owns the horizontal scroll; the scrollbar is
+      {/* Matrix — the container owns both scrolls; the horizontal scrollbar is
           forced visible because macOS hides overlay scrollbars until you move,
           which made 47 columns look like 12. */}
       {matrix.columns.length > 0 && (
-        <div className="flex items-center gap-2 text-[11px] text-[#6c757d] dark:text-slate-400 -mb-2">
+        <div className="flex items-center gap-2 text-[0.6875rem] text-fg-muted dark:text-slate-400 -mb-2">
           <span>{matrix.columns.length} rule columns — Shift + wheel, drag the bar, or</span>
           <button onClick={() => scrollBy(-1)} className="p-0.5 rounded border border-[#ced4da] dark:border-[#373b3e] hover:bg-white dark:hover:bg-[#32383e]" title="Scroll left">
             <ChevronLeft className="w-3.5 h-3.5" />
@@ -471,26 +434,26 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
           <span>Server and Audit stay put.</span>
         </div>
       )}
-      <div ref={scroller} className="bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg overflow-x-scroll [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar-track]:bg-[#f1f1f1] dark:[&::-webkit-scrollbar-track]:bg-[#212529] [&::-webkit-scrollbar-thumb]:bg-[#adb5bd] dark:[&::-webkit-scrollbar-thumb]:bg-[#495057] [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-[#017cb6]">
+      <div ref={scroller} className={`${rows.length > 3 ? 'flex-initial min-h-[12rem]' : 'flex-shrink-0'} bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg overflow-x-scroll overflow-y-auto [&::-webkit-scrollbar]:h-3 [&::-webkit-scrollbar]:w-3 [&::-webkit-scrollbar-track]:bg-[#f1f1f1] dark:[&::-webkit-scrollbar-track]:bg-[#212529] [&::-webkit-scrollbar-thumb]:bg-[#adb5bd] dark:[&::-webkit-scrollbar-thumb]:bg-[#495057] [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-[#017cb6]`}>
         <table className="text-xs border-collapse min-w-full">
           <thead>
             <tr className="bg-[#f8f9fa] dark:bg-[#212529]">
-              <th className="sticky left-0 z-10 bg-[#f8f9fa] dark:bg-[#212529] text-left px-3 py-2 font-semibold border-b border-r border-[#ced4da] dark:border-[#373b3e] min-w-[220px]">
+              <th className="sticky left-0 top-0 z-30 bg-[#f8f9fa] dark:bg-[#212529] shadow-[inset_0_-1px_0_#ced4da] dark:shadow-[inset_0_-1px_0_#373b3e] text-left px-3 py-2 font-semibold border-b border-r border-[#ced4da] dark:border-[#373b3e] min-w-[220px]">
                 Server
               </th>
-              <th className="sticky left-[220px] z-10 bg-[#f8f9fa] dark:bg-[#212529] px-3 py-2 font-semibold border-b border-r border-[#ced4da] dark:border-[#373b3e] text-left min-w-[260px] max-w-[340px]">
+              <th className="sticky left-[220px] top-0 z-30 bg-[#f8f9fa] dark:bg-[#212529] shadow-[inset_0_-1px_0_#ced4da] dark:shadow-[inset_0_-1px_0_#373b3e] px-3 py-2 font-semibold border-b border-r border-[#ced4da] dark:border-[#373b3e] text-left min-w-[260px] max-w-[340px]">
                 Audit
               </th>
               {matrix.columns.map((c) => (
                 <th
                   key={c.sig}
                   title={`${c.sig}${c.description ? ` — ${c.description}` : ''} · on ${c.count} server${c.count === 1 ? '' : 's'}`}
-                  className="px-2 py-2 font-medium border-b border-[#ced4da] dark:border-[#373b3e] text-center align-bottom whitespace-nowrap"
+                  className="sticky top-0 z-20 bg-[#f8f9fa] dark:bg-[#212529] shadow-[inset_0_-1px_0_#ced4da] dark:shadow-[inset_0_-1px_0_#373b3e] px-2 py-2 font-medium border-b border-[#ced4da] dark:border-[#373b3e] text-center align-bottom whitespace-nowrap"
                 >
-                  <div className="font-mono text-[11px] text-[#212529] dark:text-white">
+                  <div className="font-mono text-[0.6875rem] text-[#212529] dark:text-white">
                     {c.protocol} {c.ports}
                   </div>
-                  <div className="text-[10px] text-[#6c757d] font-normal">← {c.source}</div>
+                  <div className="text-[0.625rem] text-fg-muted font-normal">← {c.source}</div>
                 </th>
               ))}
             </tr>
@@ -508,7 +471,7 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
                       <span className={`inline-block w-1.5 h-1.5 rounded-full mr-2 ${level === 'red' ? 'bg-rose-500' : level === 'amber' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
                       <span className="font-semibold">{s.name}</span>
                     </button>
-                    <div className="text-[10px] text-[#6c757d] font-mono pl-3.5">
+                    <div className="text-[0.625rem] text-fg-muted font-mono pl-3.5">
                       {primaryIpv4(s) ?? '—'} · {rules === null ? 'unreadable' : rules === undefined ? 'loading' : ruleCount(rules.length)}
                     </div>
                     <div className="flex flex-wrap items-center gap-1 pl-3.5 mt-1">
@@ -523,31 +486,12 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
                         />
                       ))}
                       {phone ? null : tagEditId === s.id ? (
-                        <input
-                          autoFocus
-                          value={tagInput}
-                          onChange={(e) => setTagInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && tagInput.trim()) {
-                              setServerTag(s.id, tagInput, true)
-                              setTagInput('')
-                            } else if (e.key === 'Escape') {
-                              setTagEditId(null)
-                              setTagInput('')
-                            }
-                          }}
-                          onBlur={() => {
-                            setTagEditId(null)
-                            setTagInput('')
-                          }}
-                          placeholder="tag ↵"
-                          className="w-20 px-1.5 py-0.5 text-[10px] font-mono bg-[#f8f9fa] dark:bg-[#212529] border border-[#017cb6] rounded focus:outline-none"
-                        />
+                        <TagInput onAdd={(tag) => setServerTag(s.id, tag, true)} onClose={() => setTagEditId(null)} />
                       ) : (
                         <button
                           onClick={() => setTagEditId(s.id)}
                           title="Add a tag"
-                          className="text-[10px] px-1.5 py-0.5 rounded border border-dashed border-[#ced4da] dark:border-[#495057] text-[#6c757d] hover:border-[#017cb6] hover:text-[#017cb6] flex items-center gap-0.5"
+                          className="text-[0.625rem] px-1.5 py-0.5 rounded border border-dashed border-[#ced4da] dark:border-[#495057] text-fg-muted hover:border-[#017cb6] hover:text-fg-link flex items-center gap-0.5"
                         >
                           <Tag className="w-2.5 h-2.5" />+
                         </button>
@@ -556,9 +500,9 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
                   </td>
                   <td className="sticky left-[220px] z-10 bg-white dark:bg-[#2b3035] px-3 py-1.5 border-r border-[#ced4da] dark:border-[#373b3e] min-w-[260px] max-w-[340px] align-top">
                     <div className="flex flex-wrap gap-1">
-                      {flags.length === 0 && rules && rules.length > 0 && <span className="text-[10px] text-emerald-600 dark:text-emerald-400">no findings</span>}
+                      {flags.length === 0 && rules && rules.length > 0 && <span className="text-[0.625rem] text-emerald-600 dark:text-emerald-400">no findings</span>}
                       {flags.map((f, i) => (
-                        <span key={i} className={`text-[10px] px-1.5 py-0.5 rounded border ${LEVEL_CLASS[f.level]} flex items-center gap-1 whitespace-nowrap`}>
+                        <span key={i} className={`text-[0.625rem] px-1.5 py-0.5 rounded border ${LEVEL_CLASS[f.level]} flex items-center gap-1 whitespace-nowrap`}>
                           {f.level === 'info' ? <Info className="w-3 h-3" /> : f.level === 'red' ? <ShieldAlert className="w-3 h-3" /> : <AlertTriangle className="w-3 h-3" />}
                           {f.text}
                         </span>
@@ -578,7 +522,7 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={matrix.columns.length + 2} className="px-3 py-8 text-center text-[#6c757d]">
+                <td colSpan={matrix.columns.length + 2} className="px-3 py-8 text-center text-fg-muted">
                   {onlyFlagged ? (fleet.isLoading ? 'Reading rules…' : 'Nothing flagged.') : 'No servers in this group.'}
                 </td>
               </tr>
@@ -587,11 +531,80 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
         </table>
       </div>
 
-      <p className="text-[11px] text-[#6c757d] dark:text-slate-400 flex items-center gap-1.5">
+      <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400 flex items-center gap-1.5">
         <Grid3x3 className="w-3.5 h-3.5" /> Columns are rule signatures (protocol, ports, source). <Check className="w-3 h-3 text-emerald-500" /> accept ·{' '}
         <X className="w-3 h-3 text-rose-500" /> drop · ± both · dot absent. Rules evaluate first-match, so order still matters inside a server; the single-server view shows it.
       </p>
       {tagEditor.element}
     </div>
+  )
+}
+
+// The two text inputs keep their own state, so typing re-renders the input and not every cell of the matrix.
+const NewGroupForm: React.FC<{
+  servers: ServerResponse[]
+  tags: TagMap
+  onSave: (name: string, pattern: string) => void
+  onClose: () => void
+}> = ({ servers, tags, onSave, onClose }) => {
+  const [newName, setNewName] = useState('')
+  const [newPattern, setNewPattern] = useState('')
+  const previewCount = useMemo(() => (newPattern.trim() ? matchServers(servers, newPattern).matches.length : 0), [servers, newPattern])
+  return (
+    <div className="flex flex-wrap items-end gap-2 p-3 bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded text-xs">
+      <label className="space-y-1">
+        <span className="block text-fg-muted">Name</span>
+        <input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value.replace(/[@,\s]/g, ''))}
+          placeholder="web"
+          className="px-2 py-1.5 font-mono bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded focus:outline-none focus:border-[#017cb6] w-36"
+        />
+      </label>
+      <label className="space-y-1 flex-1 min-w-[220px]">
+        <span className="block text-fg-muted">Members (palette targets: glob, #id, IP prefix, comma list). Servers tagged with the group's name are members too.</span>
+        <input
+          value={newPattern}
+          onChange={(e) => setNewPattern(e.target.value)}
+          placeholder="wp-web-*,wp-ha-lb"
+          className="w-full px-2 py-1.5 font-mono bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded focus:outline-none focus:border-[#017cb6]"
+        />
+      </label>
+      <span className="text-fg-muted pb-2">{newPattern.trim() ? `${previewCount} match` : ''}</span>
+      <button
+        onClick={() => onSave(newName, newPattern)}
+        disabled={!newName.trim() || (previewCount === 0 && !Object.values(tags).some((l) => l.includes(newName.trim().toLowerCase())))}
+        className="px-3 py-1.5 rounded bg-[#017cb6] hover:bg-[#016594] text-white font-semibold disabled:opacity-40"
+      >
+        Save @{newName || 'group'}
+      </button>
+      <button onClick={onClose} className="p-1.5 text-fg-muted hover:text-[#212529] dark:hover:text-white">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  )
+}
+
+const TagInput: React.FC<{ onAdd: (tag: string) => void; onClose: () => void }> = ({ onAdd, onClose }) => {
+  const [tagInput, setTagInput] = useState('')
+  return (
+    <input
+      autoFocus
+      value={tagInput}
+      onChange={(e) => setTagInput(e.target.value)}
+      onKeyDown={(e) => {
+        // Enter that confirms an IME composition is not a submit.
+        if (e.nativeEvent.isComposing) return
+        if (e.key === 'Enter' && tagInput.trim()) {
+          onAdd(tagInput)
+          setTagInput('')
+        } else if (e.key === 'Escape') {
+          onClose()
+        }
+      }}
+      onBlur={onClose}
+      placeholder="tag ↵"
+      className="w-20 px-1.5 py-0.5 text-[0.625rem] font-mono bg-[#f8f9fa] dark:bg-[#212529] border border-[#017cb6] rounded focus-ring"
+    />
   )
 }

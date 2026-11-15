@@ -9,6 +9,10 @@ export { ApiError, apiFailure, describeApiError, isFinalFailure }
 
 type ServerResponse = components['schemas']['Server']
 
+// The polls behind the tray and its notifications keep running while the window is hidden to the tray (see
+// src/main/index.ts), so TanStack Query is told not to pause them. Hidden, nothing on screen waits on them.
+const pollPriority = (): RequestPriority => (document.visibilityState === 'hidden' ? 'low' : 'auto')
+
 // --- SERVERS & COMPUTE ---
 
 // What the first render reads from a cached server: `id` and `name` (keys, sorting, search), and the nested fields
@@ -36,7 +40,8 @@ export function useServers(client: BinaryLaneClient | null, profileId?: string) 
 
       while (hasMore && page <= 10) {
         const { data, error, response } = await client.GET('/v2/servers', {
-          params: { query: { per_page: 200, page } }
+          params: { query: { per_page: 200, page } },
+          priority: pollPriority()
         })
         if (error || !response.ok) {
           console.warn('[useServers] Query error:', error)
@@ -81,6 +86,7 @@ export function useServers(client: BinaryLaneClient | null, profileId?: string) 
     },
     enabled: !!client,
     refetchInterval: 15000,
+    refetchIntervalInBackground: true,
     staleTime: 10000
   })
 }
@@ -246,14 +252,15 @@ export function useBalance(client: BinaryLaneClient | null) {
     queryKey: ['balance'],
     queryFn: async () => {
       if (!client) return null
-      const { data, error, response } = await client.GET('/v2/customers/my/balance')
+      const { data, error, response } = await client.GET('/v2/customers/my/balance', { priority: 'low' })
       // A failure with an empty body leaves `error` unset (openapi-fetch), so the status counts too: a failed refresh must
       // keep the last balance on screen, not replace it with nothing.
       if (error || !response.ok) throw new Error(error ? describeApiError(error) : `HTTP ${response.status}`)
       return data?.balance || null
     },
     enabled: !!client,
-    refetchInterval: 60000
+    refetchInterval: 60000,
+    refetchIntervalInBackground: true
   })
 }
 
@@ -1132,7 +1139,8 @@ export function useServerActions(client: BinaryLaneClient | null, serverId: numb
       return data?.actions || []
     },
     enabled: !!client && !!serverId,
-    refetchInterval: 3000
+    // Fast only while something on this server is running; a take or restore started here invalidates the query.
+    refetchInterval: (query) => (query.state.data?.some((a) => a.status === 'in-progress') ? 3000 : 30000)
   })
 }
 
@@ -1908,7 +1916,8 @@ async function fetchActionsPage(
   page: number
 ): Promise<{ actions: ServerAction[]; total: number }> {
   const { data, error, response } = await client.GET('/v2/actions', {
-    params: { query: { page, per_page: INTERACTION_PAGE_SIZE } }
+    params: { query: { page, per_page: INTERACTION_PAGE_SIZE } },
+    priority: 'low'
   })
   if (error || !response.ok) throw apiFailure(error, response)
   return { actions: data?.actions ?? [], total: data?.meta?.total ?? 0 }
@@ -1958,6 +1967,7 @@ export function useActionsAwaitingInteraction(client: BinaryLaneClient | null, p
     },
     enabled: !!client,
     refetchInterval: INTERACTION_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: true,
     // The interval is the retry: a failed poll should wait its turn rather than
     // stack extra requests on an API that may already be unhappy.
     retry: 0,

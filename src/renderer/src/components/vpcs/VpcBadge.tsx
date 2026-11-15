@@ -22,7 +22,7 @@ export const VpcBadge: React.FC<{
   const vpc = (vpcsQuery.data ?? []).find((v) => v.id === vpcId)
   return (
     <span className={`inline-flex items-center gap-1.5 min-w-0 ${className}`}>
-      <Network className="w-3.5 h-3.5 shrink-0 text-[#017cb6]" />
+      <Network className="w-3.5 h-3.5 shrink-0 text-fg-link" />
       <span className="truncate">{vpc?.name ?? `VPC #${vpcId}`}</span>
     </span>
   )

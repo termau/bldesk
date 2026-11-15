@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useId } from 'react'
 import {
   Tag,
   Tags,
@@ -73,6 +73,7 @@ export type SettingsTab = 'hostname' | 'tags' | 'disks' | 'advanced' | 'alerts' 
 export interface SettingsStart { tab: SettingsTab }
 
 export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: initialServer, servers: allServers, profileId, start }) => {
+  const uid = useId()
   const [activeTab, setActiveTab] = useState<SettingsTab>(start?.tab ?? 'hostname')
   // The alert pill can ask for the Alerts tab while Settings is already open on another one.
   useEffect(() => {
@@ -428,7 +429,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
         <div
           role="status"
           aria-live="polite"
-          className="p-3 bg-[#e7f1f6] dark:bg-[#1a2d3d] border border-[#b6d4e7] dark:border-[#24455f] text-[#017cb6] dark:text-[#5bc0de] text-xs rounded flex items-center gap-2"
+          className="p-3 bg-[#e7f1f6] dark:bg-[#1a2d3d] border border-[#b6d4e7] dark:border-[#24455f] text-fg-link dark:text-[#5bc0de] text-xs rounded flex items-center gap-2"
         >
           <Loader2 className="w-4 h-4 animate-spin flex-shrink-0" />
           <span>Applying changes to BinaryLane server... Controls will unlock once verified.</span>
@@ -470,15 +471,15 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
 
       {/* Mobile Sub-tab Dropdown Selector (Android & Mobile Viewports) */}
       <div className="md:hidden">
-        <label className="block text-[10px] font-bold uppercase tracking-wider text-[#6c757d] dark:text-slate-400 mb-1.5">
+        <label htmlFor={`${uid}-section`} className="block text-[0.625rem] font-bold uppercase tracking-wider text-fg-muted dark:text-slate-400 mb-1.5">
           Settings Section
         </label>
         <div className="relative">
           <select
+            id={`${uid}-section`}
             value={activeTab}
             onChange={(e) => setActiveTab(e.target.value as SettingsTab)}
-            aria-label="Settings section"
-            className="w-full py-2.5 pl-3 pr-9 text-xs font-semibold bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg shadow-sm text-[#017cb6] dark:text-[#5bc0de] focus:outline-none focus:border-[#017cb6] appearance-none cursor-pointer"
+            className="focus-ring w-full py-2.5 pl-3 pr-9 text-xs font-semibold bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg shadow-sm text-fg-link dark:text-[#5bc0de] focus:border-[#017cb6] appearance-none cursor-pointer"
           >
             {navTabs.map((tab) => (
               <option key={tab.id} value={tab.id} className="text-[#212529] dark:text-white bg-white dark:bg-[#212529]">
@@ -486,7 +487,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
               </option>
             ))}
           </select>
-          <ChevronDown className="w-4 h-4 text-[#6c757d] absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <ChevronDown className="w-4 h-4 text-fg-muted absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
         </div>
       </div>
 
@@ -500,8 +501,8 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
               onClick={() => setActiveTab(tab.id)}
               className={`px-4 py-2.5 text-xs font-semibold flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
                 isActive
-                  ? 'border-[#017cb6] text-[#017cb6] dark:text-[#5bc0de]'
-                  : 'border-transparent text-[#6c757d] hover:text-[#212529] dark:hover:text-slate-200'
+                  ? 'border-[#017cb6] text-fg-link dark:text-[#5bc0de]'
+                  : 'border-transparent text-fg-muted hover:text-[#212529] dark:hover:text-slate-200'
               }`}
             >
               {tab.icon}
@@ -518,7 +519,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
             <h3 className="text-xs font-bold text-[#212529] dark:text-white uppercase tracking-wider">
               Server Display Name
             </h3>
-            <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-1 leading-relaxed">
+            <p className="text-xs text-fg-muted dark:text-slate-400 mt-1 leading-relaxed">
               Your Cloud Server has two distinct names: the name displayed within mPanel (currently{' '}
               <span className="font-semibold text-[#212529] dark:text-slate-200">{server.name}</span>) and the
               hostname configured inside the operating system. With this interface you may change the display label.
@@ -527,10 +528,11 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
 
           <form onSubmit={handleRename} className="max-w-md space-y-3 pt-2">
             <div>
-              <label className="block text-[11px] font-semibold text-[#495057] dark:text-slate-300 mb-1">
+              <label htmlFor={`${uid}-name`} className="block text-[0.6875rem] font-semibold text-[#495057] dark:text-slate-300 mb-1">
                 mPanel Name
               </label>
               <input
+                id={`${uid}-name`}
                 type="text"
                 value={hostnameInput}
                 onChange={(e) => setHostnameInput(e.target.value)}
@@ -561,7 +563,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
           <div className="bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm overflow-hidden">
             <div className="p-3.5 bg-[#f1f1f1] dark:bg-[#262a2e] border-b border-[#ced4da] dark:border-[#373b3e] flex items-center justify-between">
               <h3 className="font-bold text-xs text-[#495057] dark:text-[#ced4da] flex items-center gap-2">
-                <HardDrive className="w-4 h-4 text-[#017cb6]" />
+                <HardDrive className="w-4 h-4 text-fg-link" />
                 <span>Attached Block Storage Disks ({server.disks?.length || 0})</span>
               </h3>
             </div>
@@ -569,7 +571,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-[#f8f9fa] dark:bg-[#212529] border-b border-[#ced4da] dark:border-[#373b3e] text-[#6c757d] dark:text-slate-400 font-semibold">
+                  <tr className="bg-[#f8f9fa] dark:bg-[#212529] border-b border-[#ced4da] dark:border-[#373b3e] text-fg-muted dark:text-slate-400 font-semibold">
                     <th className="py-2.5 px-4">Disk</th>
                     <th className="py-2.5 px-4">Type</th>
                     <th className="py-2.5 px-4">Size</th>
@@ -584,16 +586,16 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                         <td className="py-3 px-4 font-medium text-[#212529] dark:text-white">
                           <div>
                             <span>{disk.description || `Disk #${disk.id}`}</span>
-                            <span className="block text-[11px] font-mono text-[#6c757d] dark:text-slate-400">
+                            <span className="block text-[0.6875rem] font-mono text-fg-muted dark:text-slate-400">
                               ID: {disk.id}
                             </span>
                           </div>
                         </td>
                         <td className="py-3 px-4">
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider ${
+                            className={`px-2 py-0.5 rounded text-[0.625rem] font-semibold uppercase tracking-wider ${
                               disk.primary
-                                ? 'bg-[#017cb6]/10 text-[#017cb6] dark:text-[#5bc0de] border border-[#017cb6]/20'
+                                ? 'bg-[#017cb6]/10 text-fg-link dark:text-[#5bc0de] border border-[#017cb6]/20'
                                 : 'bg-slate-500/10 text-slate-600 dark:text-slate-300 border border-slate-500/20'
                             }`}
                           >
@@ -609,10 +611,11 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                                 max="2000"
                                 value={resizeDiskSize}
                                 onChange={(e) => setResizeDiskSize(e.target.value)}
+                                aria-label={`New size of ${disk.description || `Disk #${disk.id}`} in GB`}
                                 className={`${inputClass} w-24`}
                                 disabled={busy}
                               />
-                              <span className="text-xs text-[#6c757d]">GB</span>
+                              <span className="text-xs text-fg-muted">GB</span>
                             </div>
                           ) : (
                             <span>{disk.size_gigabytes} GB</span>
@@ -631,7 +634,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                               <button
                                 onClick={() => setResizeDiskId(null)}
                                 disabled={busy}
-                                className="px-2.5 py-1 text-xs text-[#6c757d] hover:text-[#212529] dark:hover:text-white"
+                                className="px-2.5 py-1 text-xs text-fg-muted hover:text-[#212529] dark:hover:text-white"
                               >
                                 Cancel
                               </button>
@@ -644,7 +647,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                                   setResizeDiskSize(String(disk.size_gigabytes))
                                 }}
                                 disabled={busy}
-                                className="px-2.5 py-1 text-xs text-[#017cb6] hover:underline font-medium"
+                                className="px-2.5 py-1 text-xs text-fg-link hover:underline font-medium"
                               >
                                 Resize
                               </button>
@@ -666,7 +669,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                   })}
                   {(!server.disks || server.disks.length === 0) && (
                     <tr>
-                      <td colSpan={4} className="py-6 px-4 text-center text-[#6c757d] dark:text-slate-500">
+                      <td colSpan={4} className="py-6 px-4 text-center text-fg-muted dark:text-slate-500">
                         No disks reported for this server.
                       </td>
                     </tr>
@@ -679,10 +682,10 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
           {/* Add Secondary Disk Form */}
           <div className="bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e] p-5 shadow-sm space-y-3">
             <h4 className="text-xs font-bold text-[#212529] dark:text-white flex items-center gap-2">
-              <Plus className="w-4 h-4 text-[#017cb6]" />
+              <Plus className="w-4 h-4 text-fg-link" />
               <span>Attach New Secondary Disk</span>
             </h4>
-            <p className="text-xs text-[#6c757d] dark:text-slate-400">
+            <p className="text-xs text-fg-muted dark:text-slate-400">
               Attach an additional block device for databases, partitions, or bulk storage.
             </p>
             <form onSubmit={handleAddDisk} className="flex flex-wrap items-center gap-3 pt-2">
@@ -693,12 +696,13 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                   max="2000"
                   value={newDiskSize}
                   onChange={(e) => setNewDiskSize(e.target.value)}
+                  aria-label="Size in GB"
                   disabled={busy}
                   className={`${inputClass} w-28`}
                   placeholder="Size in GB"
                   required
                 />
-                <span className="text-xs text-[#6c757d] dark:text-slate-400">GB</span>
+                <span className="text-xs text-fg-muted dark:text-slate-400">GB</span>
               </div>
               <button type="submit" disabled={busy || !newDiskSize} className={primaryBtn}>
                 <Plus className="w-3.5 h-3.5" />
@@ -716,7 +720,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
             <h3 className="text-xs font-bold text-[#212529] dark:text-white uppercase tracking-wider">
               Hypervisor & CPU Features
             </h3>
-            <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-1">
+            <p className="text-xs text-fg-muted dark:text-slate-400 mt-1">
               Configure low-level virtualization parameters, CPU instruction flags, and display adapters.
             </p>
           </div>
@@ -725,10 +729,11 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
             {/* Machine Type */}
             {advancedQuery.data?.machine_types && advancedQuery.data.machine_types.length > 0 && (
               <div>
-                <label className="block text-[11px] font-semibold text-[#495057] dark:text-slate-300 mb-1">
+                <label htmlFor={`${uid}-machine`} className="block text-[0.6875rem] font-semibold text-[#495057] dark:text-slate-300 mb-1">
                   VM Machine Type
                 </label>
                 <select
+                  id={`${uid}-machine`}
                   value={machineType}
                   onChange={(e) => setMachineType(e.target.value as VmMachineType)}
                   disabled={busy}
@@ -747,10 +752,11 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
             {/* Processor Model */}
             {advancedQuery.data?.processor_models && advancedQuery.data.processor_models.length > 0 && (
               <div>
-                <label className="block text-[11px] font-semibold text-[#495057] dark:text-slate-300 mb-1">
+                <label htmlFor={`${uid}-processor`} className="block text-[0.6875rem] font-semibold text-[#495057] dark:text-slate-300 mb-1">
                   Processor Model
                 </label>
                 <select
+                  id={`${uid}-processor`}
                   value={processorModel}
                   onChange={(e) => setProcessorModel(parseInt(e.target.value, 10))}
                   disabled={busy}
@@ -768,10 +774,11 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
 
             {/* Video Device */}
             <div>
-              <label className="block text-[11px] font-semibold text-[#495057] dark:text-slate-300 mb-1">
+              <label htmlFor={`${uid}-video`} className="block text-[0.6875rem] font-semibold text-[#495057] dark:text-slate-300 mb-1">
                 Virtual Video Device Driver
               </label>
               <select
+                id={`${uid}-video`}
                 value={videoDevice}
                 onChange={(e) => setVideoDevice(e.target.value as VideoDevice)}
                 disabled={busy}
@@ -790,10 +797,10 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                 switches (local-rtc, qemu-guest-agent, uefi-boot); those stay
                 hidden but are preserved on save, see mergeHiddenFeatures. */}
             {shownFeatures.length > 0 && (
-              <div className="space-y-2 pt-2">
-                <label className="block text-[11px] font-semibold text-[#495057] dark:text-slate-300">
+              <div role="group" aria-labelledby={`${uid}-features`} className="space-y-2 pt-2">
+                <div id={`${uid}-features`} className="block text-[0.6875rem] font-semibold text-[#495057] dark:text-slate-300">
                   Features
-                </label>
+                </div>
                 <div className="space-y-2">
                   {shownFeatures.map((feat) => {
                     const isChecked = selectedFeatures.includes(feat.slug)
@@ -813,11 +820,11 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                               setSelectedFeatures(selectedFeatures.filter((f) => f !== feat.slug))
                             }
                           }}
-                          className="mt-0.5 shrink-0 rounded border-[#ced4da] text-[#017cb6] focus:ring-0"
+                          className="mt-0.5 shrink-0 rounded border-[#ced4da] text-fg-link focus:ring-0"
                         />
                         <span>
                           <span className="block">{feat.label}</span>
-                          <span className="block text-[11px] text-[#6c757d] dark:text-slate-400">{feat.hint}</span>
+                          <span className="block text-[0.6875rem] text-fg-muted dark:text-slate-400">{feat.hint}</span>
                         </span>
                       </label>
                     )
@@ -855,7 +862,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
             <h3 className="text-xs font-bold text-[#212529] dark:text-white uppercase tracking-wider">
               Data Center Region Migration
             </h3>
-            <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-1 leading-relaxed">
+            <p className="text-xs text-fg-muted dark:text-slate-400 mt-1 leading-relaxed">
               Move this server and its storage to another BinaryLane geographic data center. Your server will be
               live-migrated.
             </p>
@@ -863,11 +870,11 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
 
           <form onSubmit={handleMigrateRegion} className="max-w-md space-y-4 pt-2">
             <div>
-              <label className="block text-[11px] font-semibold text-[#495057] dark:text-slate-300 mb-1">
+              <div className="block text-[0.6875rem] font-semibold text-[#495057] dark:text-slate-300 mb-1">
                 Current Region
-              </label>
+              </div>
               <div className="flex items-center gap-2">
-                <MapPin className="w-4 h-4 text-[#017cb6]" />
+                <MapPin className="w-4 h-4 text-fg-link" />
                 <span className="font-semibold text-xs text-[#212529] dark:text-white">
                   {server.region?.name} ({server.region?.slug?.toUpperCase()})
                 </span>
@@ -875,10 +882,11 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
             </div>
 
             <div>
-              <label className="block text-[11px] font-semibold text-[#495057] dark:text-slate-300 mb-1">
+              <label htmlFor={`${uid}-region`} className="block text-[0.6875rem] font-semibold text-[#495057] dark:text-slate-300 mb-1">
                 Destination Data Center Region
               </label>
               <select
+                id={`${uid}-region`}
                 value={selectedRegion}
                 onChange={(e) => setSelectedRegion(e.target.value)}
                 disabled={busy || regionsQuery.isLoading}
@@ -911,7 +919,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
             <h3 className="text-xs font-bold text-[#212529] dark:text-white uppercase tracking-wider">
               High Availability Partner Anti-Affinity
             </h3>
-            <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-1 leading-relaxed">
+            <p className="text-xs text-fg-muted dark:text-slate-400 mt-1 leading-relaxed">
               A server&apos;s partner is a second server with the same core purpose (e.g. two web servers behind a load
               balancer). BinaryLane guarantees that partner servers are hosted on separate physical hardware hosts to
               ensure high availability during node maintenance.
@@ -920,10 +928,11 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
 
           <form onSubmit={handleSavePartner} className="max-w-md space-y-4 pt-2">
             <div>
-              <label className="block text-[11px] font-semibold text-[#495057] dark:text-slate-300 mb-1">
+              <label htmlFor={`${uid}-partner`} className="block text-[0.6875rem] font-semibold text-[#495057] dark:text-slate-300 mb-1">
                 Partner Server Selection (Same Region: {server.region?.name})
               </label>
               <select
+                id={`${uid}-partner`}
                 value={selectedPartnerId}
                 onChange={(e) => setSelectedPartnerId(e.target.value)}
                 disabled={busy}
@@ -960,7 +969,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                   <span className="font-semibold text-xs text-[#212529] dark:text-white block">
                     Reset Root/Administrator Password
                   </span>
-                  <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-1">
+                  <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-1">
                     {passwordResetWording.card}
                   </p>
                 </div>
@@ -975,7 +984,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                   <span className="font-semibold text-xs text-[#212529] dark:text-white block">
                     Hard Power Cycle
                   </span>
-                  <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-1">
+                  <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-1">
                     Force an immediate hardware power reset on the physical hypervisor.
                   </p>
                 </div>
@@ -993,7 +1002,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
               <AlertTriangle className="w-4 h-4" />
               <span>Danger Zone — OS Rebuild</span>
             </h3>
-            <p className="text-xs text-[#6c757d] dark:text-slate-400">
+            <p className="text-xs text-fg-muted dark:text-slate-400">
               Rebuilding completely destroys all existing data, disks, and partitions on this virtual machine and installs a clean operating system.
             </p>
             <form onSubmit={handleRebuild} className="flex flex-wrap items-center gap-3 pt-2">
@@ -1001,6 +1010,7 @@ export const ServerSettings: React.FC<ServerSettingsProps> = ({ client, server: 
                 type="text"
                 value={rebuildImage}
                 onChange={(e) => setRebuildImage(e.target.value)}
+                aria-label="Image slug"
                 disabled={busy}
                 className={`${inputClass} w-64`}
                 placeholder="Image slug (e.g. ubuntu-24-04-x64)"

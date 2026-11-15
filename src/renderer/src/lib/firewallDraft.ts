@@ -139,6 +139,16 @@ export function problemsOf(row: DraftRow): RowProblems {
   return problems
 }
 
+/**
+ * The problems a row shows. One in the field being typed in waits until the field is left, so "10.0." is not called wrong
+ * halfway through an address. Only what is shown waits: saving is still stopped by every problem (`rowsWithProblems`).
+ */
+export function shownProblems(problems: RowProblems, typing?: keyof RowProblems): RowProblems {
+  if (!typing || !problems[typing]) return problems
+  const { [typing]: _waiting, ...rest } = problems
+  return rest
+}
+
 /** The number of rows that cannot be saved as they are. */
 export function rowsWithProblems(rows: readonly DraftRow[]): number {
   return rows.filter((r) => Object.keys(problemsOf(r)).length > 0).length

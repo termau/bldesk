@@ -331,7 +331,7 @@ export const TagColourPicker: React.FC<Props> = ({ value, onChange, previewTag }
               clearPending()
               setOpen((o) => !o)
             }}
-            className="inline-flex items-center gap-1 text-[#017cb6] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#017cb6] rounded"
+            className="inline-flex items-center gap-1 text-fg-link hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#017cb6] rounded"
           >
             Custom colour
             <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -362,7 +362,7 @@ export const TagColourPicker: React.FC<Props> = ({ value, onChange, previewTag }
             )
           )}
         </ul>
-        {phone && saved.length > 0 && <p className="mt-1.5 text-[11px] text-[#6c757d] dark:text-slate-400">Hold a saved colour to remove it</p>}
+        {phone && saved.length > 0 && <p className="mt-1.5 text-[0.6875rem] text-fg-muted dark:text-slate-400">Hold a saved colour to remove it</p>}
       </div>
 
       {/* The wheel, the slider and the fields */}
@@ -403,7 +403,7 @@ export const TagColourPicker: React.FC<Props> = ({ value, onChange, previewTag }
                 <TagChip tag={previewTag || '…'} color={hex} size="md" className="max-w-full" />
               </div>
               <div>
-                <label htmlFor={ids.hex} className="block text-[11px] text-[#495057] dark:text-[#adb5bd] mb-0.5">
+                <label htmlFor={ids.hex} className="block text-[0.6875rem] text-[#495057] dark:text-[#adb5bd] mb-0.5">
                   Hex
                 </label>
                 <input
@@ -426,11 +426,11 @@ export const TagColourPicker: React.FC<Props> = ({ value, onChange, previewTag }
               </div>
             </div>
           </div>
-          <p id={ids.hexNote} role={problem ? 'alert' : undefined} className={`text-[11px] ${problem ? 'text-red-700 dark:text-red-300' : 'text-[#6c757d] dark:text-slate-400'}`}>
+          <p id={ids.hexNote} role={problem ? 'alert' : undefined} className={`text-[0.6875rem] ${problem ? 'text-red-700 dark:text-red-300' : 'text-fg-muted dark:text-slate-400'}`}>
             {problem ?? '3 or 6 hex digits, with or without #.'}
           </p>
           <div>
-            <label htmlFor={ids.brightness} className="block text-[11px] text-[#495057] dark:text-[#adb5bd] mb-0.5">
+            <label htmlFor={ids.brightness} className="block text-[0.6875rem] text-[#495057] dark:text-[#adb5bd] mb-0.5">
               Brightness
             </label>
             <input
@@ -457,7 +457,7 @@ export const TagColourPicker: React.FC<Props> = ({ value, onChange, previewTag }
           </div>
           <div className="grid grid-cols-3 gap-2">
             {(['R', 'G', 'B'] as const).map((label, i) => (
-              <label key={label} className="flex items-center gap-1 text-[11px] text-[#495057] dark:text-[#adb5bd]">
+              <label key={label} className="flex items-center gap-1 text-[0.6875rem] text-[#495057] dark:text-[#adb5bd]">
                 {label}
                 <input
                   type="number"
@@ -481,14 +481,14 @@ export const TagColourPicker: React.FC<Props> = ({ value, onChange, previewTag }
               Save as custom colour
             </button>
             {warning && (
-              <span role="alert" className="text-[11px] text-amber-800 dark:text-amber-300 flex-1 min-w-[10rem]">
+              <span role="alert" className="text-[0.6875rem] text-amber-800 dark:text-amber-300 flex-1 min-w-[10rem]">
                 {warning}
               </span>
             )}
           </div>
         </div>
       )}
-      <p role="status" aria-live="polite" className={message ? 'text-[11px] text-[#495057] dark:text-[#adb5bd]' : 'sr-only'}>
+      <p role="status" aria-live="polite" className={message ? 'text-[0.6875rem] text-[#495057] dark:text-[#adb5bd]' : 'sr-only'}>
         {message}
       </p>
     </div>

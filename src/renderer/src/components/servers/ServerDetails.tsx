@@ -71,7 +71,7 @@ const AddressValue: React.FC<{ ip: string; copied: boolean; onCopy: (v: string) 
 }) => (
   <div className="flex items-center gap-2">
     <span className="font-mono text-[#212529] dark:text-white font-medium">{ip}</span>
-    <button onClick={() => onCopy(ip)} aria-label={`Copy ${ip}`} className="text-[#6c757d] hover:text-[#017cb6]">
+    <button onClick={() => onCopy(ip)} aria-label={`Copy ${ip}`} className="text-fg-muted hover:text-fg-link">
       {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
     </button>
   </div>
@@ -133,7 +133,7 @@ const DiagnosticButton: React.FC<{
     aria-busy={active}
     className="flex items-center gap-1.5 px-3 py-1.5 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] hover:border-[#017cb6] text-xs font-medium rounded transition disabled:opacity-50"
   >
-    {active && <Loader2 className="w-3.5 h-3.5 animate-spin text-[#017cb6]" />}
+    {active && <Loader2 className="w-3.5 h-3.5 animate-spin text-fg-link" />}
     {active ? busyLabel : label}
   </button>
 )
@@ -474,7 +474,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                 onClick={onBack}
                 aria-label="All servers"
                 title="All servers"
-                className="md:hidden shrink-0 -ml-1 p-1 text-[#017cb6] hover:text-[#016594]"
+                className="md:hidden shrink-0 -ml-1 p-1 text-fg-link hover:text-[#016594]"
               >
                 <ArrowLeft className="w-4 h-4" />
               </button>
@@ -487,7 +487,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                   * as it did. The name truncates with the full value on hover
                   * rather than pushing the pill off the row.
                   */}
-                <span className="hidden shrink-0 font-normal text-[#6c757d] dark:text-slate-400 sm:inline">
+                <span className="hidden shrink-0 font-normal text-fg-muted dark:text-slate-400 sm:inline">
                   Server:
                 </span>
                 <span className="min-w-0 truncate" title={server.name}>
@@ -497,7 +497,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                   title={state.hint ?? ((server as any)._power
                         ? `Power state from ${(server as any)._power.source === 'diagnostic' ? 'a hypervisor check' : 'performance samples'}${(server as any)._apiStatus !== server.status ? ` (API says ${(server as any)._apiStatus})` : ''}`
                         : 'From the API status field, which may not reflect power state')}
-                  className={`shrink-0 px-2 py-0.5 text-[10px] font-semibold rounded-full inline-flex items-center gap-1 ${state.pill}`}
+                  className={`shrink-0 px-2 py-0.5 text-[0.625rem] font-semibold rounded-full inline-flex items-center gap-1 ${state.pill}`}
                 >
                   {state.busy && <Loader2 className="w-2.5 h-2.5 animate-spin" />}
                   {state.label}
@@ -506,13 +506,13 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
             </div>
 
             {/* Breadcrumb Specs */}
-            <div className="flex flex-wrap items-center gap-2 text-xs text-[#6c757d] dark:text-slate-400 mt-1">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-fg-muted dark:text-slate-400 mt-1">
               <span className="font-mono text-[#212529] dark:text-slate-200">{primaryV4}</span>
               <span>•</span>
               <span className="font-mono">#{server.id}</span>
               <button
                 onClick={handleCopyLink}
-                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[#6c757d] hover:text-[#017cb6] hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition"
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.6875rem] text-fg-muted hover:text-fg-link hover:bg-black/[0.05] dark:hover:bg-white/[0.06] transition"
                 title="Copy bldesk:// link to this server"
               >
                 {linkCopied ? <Check className="w-3 h-3 text-emerald-500" /> : <Link2 className="w-3 h-3" />}
@@ -544,7 +544,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                 value={selectedKeyPath}
                 aria-label="Server SSH key"
                 onChange={(e) => chooseKey(e.target.value)}
-                className="bg-transparent text-xs text-[#212529] dark:text-slate-200 focus:outline-none cursor-pointer max-w-[84px] sm:max-w-[120px]"
+                className="focus-ring rounded-sm bg-transparent text-xs text-[#212529] dark:text-slate-200 cursor-pointer max-w-[84px] sm:max-w-[120px]"
               >
                 <option value="">Use default</option>
                 {selectedKeyPath && !localKeys.some((k) => k.privateKeyPath === selectedKeyPath) && <option value={selectedKeyPath}>Key missing</option>}
@@ -587,7 +587,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                 <button
                   onClick={() => handleAction({ type: 'reboot' })}
                   disabled={!!actionInProgress}
-                  className="p-1.5 text-[#6c757d] hover:text-amber-500 hover:bg-[#e9ecef] dark:hover:bg-[#343a40] rounded transition border border-[#ced4da] dark:border-[#373b3e]"
+                  className="p-1.5 text-fg-muted hover:text-amber-500 hover:bg-[#e9ecef] dark:hover:bg-[#343a40] rounded transition border border-[#ced4da] dark:border-[#373b3e]"
                   title="Reboot"
                 >
                   <RotateCw className="w-3.5 h-3.5" />
@@ -595,7 +595,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                 <button
                   onClick={() => handleAction({ type: 'shutdown' })}
                   disabled={!!actionInProgress}
-                  className="p-1.5 text-[#6c757d] hover:text-rose-500 hover:bg-[#e9ecef] dark:hover:bg-[#343a40] rounded transition border border-[#ced4da] dark:border-[#373b3e]"
+                  className="p-1.5 text-fg-muted hover:text-rose-500 hover:bg-[#e9ecef] dark:hover:bg-[#343a40] rounded transition border border-[#ced4da] dark:border-[#373b3e]"
                   title="Graceful Shutdown"
                 >
                   <Power className="w-3.5 h-3.5" />
@@ -626,7 +626,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
           }`}
         >
           <span>{diagnosticResult.text}</span>
-          <button onClick={() => setDiagnosticResult(null)} className="text-[#017cb6] hover:underline text-xs">
+          <button onClick={() => setDiagnosticResult(null)} className="text-fg-link hover:underline text-xs">
             Dismiss
           </button>
         </div>
@@ -640,22 +640,22 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
             {/* Real-time Summary Cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-white dark:bg-[#2b3035] p-4 rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm">
-                <div className="flex items-center justify-between text-xs text-[#6c757d] dark:text-slate-400">
+                <div className="flex items-center justify-between text-xs text-fg-muted dark:text-slate-400">
                   <span>CPU Usage</span>
-                  <Cpu className="w-4 h-4 text-[#017cb6]" />
+                  <Cpu className="w-4 h-4 text-fg-link" />
                 </div>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="text-2xl font-bold text-[#212529] dark:text-white">
                     {sample ? `${sample.cpu_usage_percent.toFixed(1)}%` : '—'}
                   </span>
-                  <span className="text-xs text-[#6c757d] dark:text-slate-400">{server.vcpus} vCPU</span>
+                  <span className="text-xs text-fg-muted dark:text-slate-400">{server.vcpus} vCPU</span>
                 </div>
               </div>
 
               <div className="bg-white dark:bg-[#2b3035] p-4 rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm">
-                <div className="flex items-center justify-between text-xs text-[#6c757d] dark:text-slate-400">
+                <div className="flex items-center justify-between text-xs text-fg-muted dark:text-slate-400">
                   <span>Memory</span>
-                  <Activity className="w-4 h-4 text-[#017cb6]" />
+                  <Activity className="w-4 h-4 text-fg-link" />
                 </div>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="text-2xl font-bold text-[#212529] dark:text-white">
@@ -663,14 +663,14 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                       ? `${((sample.memory_usage_bytes / (server.memory * 1024 * 1024)) * 100).toFixed(1)}%`
                       : '—'}
                   </span>
-                  <span className="text-xs text-[#6c757d] dark:text-slate-400">{ramGB} GB allocated</span>
+                  <span className="text-xs text-fg-muted dark:text-slate-400">{ramGB} GB allocated</span>
                 </div>
               </div>
 
               <div className="bg-white dark:bg-[#2b3035] p-4 rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm">
-                <div className="flex items-center justify-between text-xs text-[#6c757d] dark:text-slate-400">
+                <div className="flex items-center justify-between text-xs text-fg-muted dark:text-slate-400">
                   <span>Disk Storage</span>
-                  <HardDrive className="w-4 h-4 text-[#017cb6]" />
+                  <HardDrive className="w-4 h-4 text-fg-link" />
                 </div>
                 <div className="mt-2 flex items-baseline gap-2">
                   <span className="text-2xl font-bold text-[#212529] dark:text-white">
@@ -678,14 +678,14 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                       ? `${((sample.storage_usage_megabytes / (server.disk * 1024)) * 100).toFixed(1)}%`
                       : '—'}
                   </span>
-                  <span className="text-xs text-[#6c757d] dark:text-slate-400">{server.disk} GB NVMe High IOPS</span>
+                  <span className="text-xs text-fg-muted dark:text-slate-400">{server.disk} GB NVMe High IOPS</span>
                 </div>
               </div>
 
               <div className="bg-white dark:bg-[#2b3035] p-4 rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm">
-                <div className="flex items-center justify-between text-xs text-[#6c757d] dark:text-slate-400">
+                <div className="flex items-center justify-between text-xs text-fg-muted dark:text-slate-400">
                   <span>Network Status</span>
-                  <Globe className="w-4 h-4 text-[#017cb6]" />
+                  <Globe className="w-4 h-4 text-fg-link" />
                 </div>
                 {/*
                   * This was the literal string "Online", shown for every server in
@@ -702,12 +702,12 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                         ? 'text-emerald-600 dark:text-emerald-400'
                         : server.status === 'new'
                           ? 'text-amber-600 dark:text-amber-400'
-                          : 'text-[#6c757d] dark:text-slate-400'
+                          : 'text-fg-muted dark:text-slate-400'
                     }`}
                   >
                     {server.status === 'active' ? 'Online' : state.label}
                   </span>
-                  <span className="text-xs text-[#6c757d] dark:text-slate-400">
+                  <span className="text-xs text-fg-muted dark:text-slate-400">
                     {primaryV4 ? '1 Gbps uplink' : 'no public address'}
                   </span>
                 </div>
@@ -723,27 +723,27 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                 </div>
                 <div className="divide-y divide-[#ced4da]/60 dark:divide-[#373b3e] text-xs">
                   <div className="flex py-2.5 px-4">
-                    <span className="w-32 text-[#6c757d] dark:text-slate-400">Server ID</span>
+                    <span className="w-32 text-fg-muted dark:text-slate-400">Server ID</span>
                     <span className="font-mono text-[#212529] dark:text-white font-medium">#{server.id}</span>
                   </div>
                   <div className="flex py-2.5 px-4">
-                    <span className="w-32 text-[#6c757d] dark:text-slate-400">Hostname</span>
+                    <span className="w-32 text-fg-muted dark:text-slate-400">Hostname</span>
                     <span className="text-[#212529] dark:text-white font-medium">{server.name}</span>
                   </div>
                   <div className="flex py-2.5 px-4">
-                    <span className="w-32 text-[#6c757d] dark:text-slate-400">Data Centre</span>
+                    <span className="w-32 text-fg-muted dark:text-slate-400">Data Centre</span>
                     <span className="text-[#212529] dark:text-white font-medium">
                       {server.region?.name} ({server.region?.slug?.toUpperCase()})
                     </span>
                   </div>
                   <div className="flex py-2.5 px-4">
-                    <span className="w-32 text-[#6c757d] dark:text-slate-400">Operating System</span>
+                    <span className="w-32 text-fg-muted dark:text-slate-400">Operating System</span>
                     <span className="text-[#212529] dark:text-white font-medium">
                       {server.image?.full_name || server.image?.name}
                     </span>
                   </div>
                   <div className="flex py-2.5 px-4">
-                    <span className="w-32 text-[#6c757d] dark:text-slate-400">Created At</span>
+                    <span className="w-32 text-fg-muted dark:text-slate-400">Created At</span>
                     <span className="text-[#212529] dark:text-white">
                       {server.created_at ? new Date(server.created_at).toLocaleDateString() : '—'}
                     </span>
@@ -765,7 +765,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                     */}
                   {publicV4.length > 0 && (
                     <div className="flex items-center justify-between py-2.5 px-4">
-                      <span className="w-32 text-[#6c757d] dark:text-slate-400">Public IPv4</span>
+                      <span className="w-32 text-fg-muted dark:text-slate-400">Public IPv4</span>
                       <AddressValue ip={publicV4[0]} copied={copiedText === publicV4[0]} onCopy={handleCopy} />
                     </div>
                   )}
@@ -778,7 +778,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                     */}
                   {secondaryV4.length > 0 && (
                     <div className="flex items-start justify-between gap-3 py-2.5 px-4">
-                      <span className="w-32 shrink-0 text-[#6c757d] dark:text-slate-400">
+                      <span className="w-32 shrink-0 text-fg-muted dark:text-slate-400">
                         {secondaryV4.length > 1 ? 'Secondary IPv4s' : 'Secondary IPv4'}
                       </span>
                       <div className="flex min-w-0 flex-col items-end gap-1.5">
@@ -791,7 +791,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
 
                   {privateV4.length > 0 && (
                     <div className="flex items-start justify-between gap-3 py-2.5 px-4">
-                      <span className="w-32 shrink-0 text-[#6c757d] dark:text-slate-400">
+                      <span className="w-32 shrink-0 text-fg-muted dark:text-slate-400">
                         {privateV4.length > 1 ? 'Private IPv4s' : 'Private IPv4'}
                       </span>
                       <div className="flex min-w-0 flex-col items-end gap-1.5">
@@ -806,7 +806,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                       to push the row wide on a phone. */}
                   {primaryV6 && (
                     <div className="flex items-center justify-between gap-3 py-2.5 px-4">
-                      <span className="w-32 shrink-0 text-[#6c757d] dark:text-slate-400">Public IPv6</span>
+                      <span className="w-32 shrink-0 text-fg-muted dark:text-slate-400">Public IPv6</span>
                       <div className="flex min-w-0 items-center gap-2">
                         <span className="font-mono text-xs text-[#212529] dark:text-white truncate" title={primaryV6}>
                           {primaryV6}
@@ -814,7 +814,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                         <button
                           onClick={() => handleCopy(primaryV6)}
                           aria-label={`Copy ${primaryV6}`}
-                          className="shrink-0 text-[#6c757d] hover:text-[#017cb6]"
+                          className="shrink-0 text-fg-muted hover:text-fg-link"
                         >
                           {copiedText === primaryV6 ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
                         </button>
@@ -823,17 +823,17 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
                   )}
 
                   <div className="flex items-center justify-between py-2.5 px-4">
-                    <span className="w-32 text-[#6c757d] dark:text-slate-400">VPC Network</span>
+                    <span className="w-32 text-fg-muted dark:text-slate-400">VPC Network</span>
                     <span className="text-[#212529] dark:text-white font-medium">
                       {server.vpc_id ? <VpcBadge vpcId={server.vpc_id} client={client} /> : 'Default Public Bridge'}
                     </span>
                   </div>
 
                   <div className="flex items-center justify-between py-2.5 px-4">
-                    <span className="w-32 text-[#6c757d] dark:text-slate-400">SSH Connect</span>
+                    <span className="w-32 text-fg-muted dark:text-slate-400">SSH Connect</span>
                     <button
                       onClick={() => handleCopy(`ssh root@${primaryV4}`)}
-                      className="flex items-center gap-1.5 text-xs text-[#017cb6] hover:underline font-mono"
+                      className="flex items-center gap-1.5 text-xs text-fg-link hover:underline font-mono"
                     >
                       <span>ssh root@{primaryV4}</span>
                       <Copy className="w-3 h-3" />
@@ -854,16 +854,16 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
                 <div>
                   <h3 className="text-sm font-bold text-[#212529] dark:text-white">Cloud-init user data</h3>
-                  <p className="text-xs text-[#6c757d] dark:text-slate-400">Image support: {imageSupportsUserData(server.image) ? 'Yes' : 'No'}</p>
+                  <p className="text-xs text-fg-muted dark:text-slate-400">Image support: {imageSupportsUserData(server.image) ? 'Yes' : 'No'}</p>
                 </div>
                 <div className="flex gap-2">
                   <button disabled={!userDataQuery.data} onClick={() => userDataQuery.data && handleCopy(userDataQuery.data)} className="flex items-center gap-1.5 px-3 py-1.5 rounded border text-xs disabled:opacity-40"><Copy className="w-3.5 h-3.5" />Copy</button>
                   <button disabled={capturing || !onSaveAsTemplate} onClick={() => void captureTemplate()} className="px-3 py-1.5 rounded bg-[#017cb6] text-white text-xs disabled:opacity-40">{capturing ? 'Capturing…' : 'Save server as template'}</button>
                 </div>
               </div>
-              <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mb-3">A template captures this server’s plan, image, region, VPC, firewall rules and user data, so the next one is a fill-in-the-blanks. It opens in the Templates tab for you to review and name. User data is copied exactly as it is on the server, including any passwords, keys or tokens in it: remove those before saving or sharing the template.</p>
+              <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400 mb-3">A template captures this server’s plan, image, region, VPC, firewall rules and user data, so the next one is a fill-in-the-blanks. It opens in the Templates tab for you to review and name. User data is copied exactly as it is on the server, including any passwords, keys or tokens in it: remove those before saving or sharing the template.</p>
               {captureError && <p className="text-xs text-rose-600 mb-3">{captureError}</p>}
-              {userDataQuery.isLoading ? <p className="text-xs text-[#6c757d]">Loading…</p> : userDataQuery.isError ? <p className="text-xs text-rose-600">Could not read stored user data.</p> : userDataQuery.data ? <textarea readOnly value={userDataQuery.data} rows={20} spellCheck={false} className="w-full px-3 py-2 text-xs font-mono rounded border bg-[#f8f9fa] dark:bg-[#212529] border-[#ced4da] dark:border-[#495057]" /> : <p className="text-xs text-[#6c757d]">This server has no stored user data.</p>}
+              {userDataQuery.isLoading ? <p className="text-xs text-fg-muted">Loading…</p> : userDataQuery.isError ? <p className="text-xs text-rose-600">Could not read stored user data.</p> : userDataQuery.data ? <textarea readOnly aria-label="Cloud-init user data" value={userDataQuery.data} rows={20} spellCheck={false} className="w-full px-3 py-2 text-xs font-mono rounded border bg-[#f8f9fa] dark:bg-[#212529] border-[#ced4da] dark:border-[#495057]" /> : <p className="text-xs text-fg-muted">This server has no stored user data.</p>}
             </div>
           </div>
         )}
@@ -873,7 +873,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
           <div className="space-y-6">
             <div className="bg-white dark:bg-[#2b3035] p-5 rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm">
               <h3 className="text-sm font-bold text-[#212529] dark:text-white mb-2">SSH Terminal & Local Keys</h3>
-              <p className="text-xs text-[#6c757d] dark:text-slate-400 mb-4">
+              <p className="text-xs text-fg-muted dark:text-slate-400 mb-4">
                 Open SSH using the selected local key. Desktop sessions open in BLDesk unless you prefer a native terminal; Android hands off to an SSH app.
               </p>
               {window.bldeskApi?.pty && <div className="mb-4 space-y-2 text-xs">
@@ -955,7 +955,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
             <div className="bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e] p-4 sm:p-5 shadow-sm space-y-4">
               <div>
                 <h3 className="text-xs font-bold text-[#212529] dark:text-white uppercase tracking-wider">Change Plan</h3>
-                <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-1">
+                <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-1">
                   Moves the server to a different plan. The server restarts to apply the change.
                 </p>
               </div>
@@ -1002,7 +1002,7 @@ export const ServerDetails: React.FC<ServerDetailsProps> = ({
         {activeSubTab === 'recovery' && (
           <div className="bg-white dark:bg-[#2b3035] p-5 rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm space-y-4">
             <h3 className="text-sm font-bold text-[#212529] dark:text-white">Emergency Recovery & Rescue</h3>
-            <p className="text-xs text-[#6c757d] dark:text-slate-400">
+            <p className="text-xs text-fg-muted dark:text-slate-400">
               Run diagnostics against the VPS or reboot into safe rescue mode.
             </p>
 

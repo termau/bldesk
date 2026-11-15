@@ -157,14 +157,14 @@ const AlertPopup: React.FC<{
       <div className="flex shrink-0 items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 text-sm font-semibold"><BellRing aria-hidden="true" className="h-4 w-4 shrink-0 text-rose-600 dark:text-rose-400" />Threshold alert</div>
-          <div className="truncate text-[11px] text-[#6c757d] dark:text-slate-400">{serverName}</div>
+          <div className="truncate text-[0.6875rem] text-fg-muted dark:text-slate-400">{serverName}</div>
         </div>
         <button
           ref={closeRef}
           type="button"
           aria-label="Close"
           onClick={() => onClose(true)}
-          className="-mr-1 -mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded text-[#6c757d] hover:bg-[#e9ecef] dark:text-slate-400 dark:hover:bg-white/10"
+          className="-mr-1 -mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded text-fg-muted hover:bg-[#e9ecef] dark:text-slate-400 dark:hover:bg-white/10"
         >
           <X aria-hidden="true" className="h-4 w-4" />
         </button>
@@ -172,13 +172,13 @@ const AlertPopup: React.FC<{
 
       <div className="mt-2 min-h-0 space-y-1.5 overflow-y-auto overscroll-contain">
         {detail?.status === 'failed' && <p className="text-rose-700 dark:text-rose-300">BinaryLane reports a threshold alert on this server, but its alert details could not be loaded{detail.error ? `: ${detail.error}` : '.'}</p>}
-        {!detail || (detail.status === 'loading') ? <p className="text-[#6c757d] dark:text-slate-400">BinaryLane reports a threshold alert on this server. Loading its alert details…</p> : null}
+        {!detail || (detail.status === 'loading') ? <p className="text-fg-muted dark:text-slate-400">BinaryLane reports a threshold alert on this server. Loading its alert details…</p> : null}
         {raised && raised.length > 0 && (
           <ul className="space-y-1.5">
             {raised.map((alert) => (
               <li key={alert.type} className="rounded bg-rose-50 px-2 py-1.5 dark:bg-rose-500/10">
                 <div className="font-semibold">{describeRaisedAlert(alert)}</div>
-                {alert.lastRaised && <div className="text-[11px] text-[#6c757d] dark:text-slate-400">Last raised {new Date(alert.lastRaised).toLocaleString()}</div>}
+                {alert.lastRaised && <div className="text-[0.6875rem] text-fg-muted dark:text-slate-400">Last raised {new Date(alert.lastRaised).toLocaleString()}</div>}
               </li>
             ))}
           </ul>
@@ -186,7 +186,7 @@ const AlertPopup: React.FC<{
         {raised && raised.length === 0 && <p>BinaryLane reports a threshold alert on this server, but none of its enabled alerts is at its threshold in the latest reading. Its alert settings show each rule.</p>}
       </div>
 
-      <p className="mt-2 shrink-0 text-[10px] leading-snug text-[#6c757d] dark:text-slate-400">BinaryLane lists the server; BLDesk compares the latest reading with each enabled threshold to show which alert.</p>
+      <p className="mt-2 shrink-0 text-[0.625rem] leading-snug text-fg-muted dark:text-slate-400">BinaryLane lists the server; BLDesk compares the latest reading with each enabled threshold to show which alert.</p>
 
       <button
         type="button"

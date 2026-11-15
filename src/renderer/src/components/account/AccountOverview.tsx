@@ -55,11 +55,11 @@ export const AccountOverview: React.FC<AccountOverviewProps> = ({ client }) => {
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-[#212529] dark:text-white flex items-center gap-2.5">
-          <UserCircle className="w-5 h-5 text-[#017cb6]" />
+          <UserCircle className="w-5 h-5 text-fg-link" />
           <span className="flex-1">Account Details</span>
           <HelpLink slug="account" />
         </h1>
-        <p className="text-xs text-[#6c757d] dark:text-[#adb5bd] mt-1">
+        <p className="text-xs text-fg-muted dark:text-[#adb5bd] mt-1">
           Account status and security, as reported by the BinaryLane API.
         </p>
       </div>
@@ -95,7 +95,7 @@ export const AccountOverview: React.FC<AccountOverviewProps> = ({ client }) => {
             <span>
               {account?.tax_code?.name ?? <Muted>—</Muted>}
               {account?.tax_code?.fixed_percent != null && (
-                <span className="text-[#6c757d] dark:text-[#adb5bd]"> ({account.tax_code.fixed_percent}%)</span>
+                <span className="text-fg-muted dark:text-[#adb5bd]"> ({account.tax_code.fixed_percent}%)</span>
               )}
             </span>
           </Row>
@@ -154,7 +154,7 @@ export const AccountOverview: React.FC<AccountOverviewProps> = ({ client }) => {
                 {paymentMethods.map((m) => (
                   <span
                     key={m}
-                    className="px-2 py-0.5 rounded bg-[#017cb6]/10 text-[#017cb6] dark:text-[#4db2e0] text-[11px] font-semibold"
+                    className="px-2 py-0.5 rounded bg-[#017cb6]/10 text-fg-link dark:text-[#4db2e0] text-[0.6875rem] font-semibold"
                   >
                     {m === 'paypal' ? 'PayPal' : m === 'credit-card' ? 'Credit card' : m}
                   </span>
@@ -195,7 +195,7 @@ const Card: React.FC<{ title: string; icon: React.FC<{ className?: string }>; ch
 }) => (
   <div className="bg-white dark:bg-[#2b3035] border border-[#dee2e6] dark:border-[#373b3e] rounded-lg shadow-sm">
     <div className="px-4 py-2.5 border-b border-[#dee2e6] dark:border-[#373b3e] flex items-center gap-2">
-      <Icon className="w-4 h-4 text-[#017cb6]" />
+      <Icon className="w-4 h-4 text-fg-link" />
       <h3 className="font-semibold text-xs text-[#495057] dark:text-[#ced4da]">{title}</h3>
     </div>
     <div className="p-4 space-y-2.5 text-xs">{children}</div>
@@ -204,7 +204,7 @@ const Card: React.FC<{ title: string; icon: React.FC<{ className?: string }>; ch
 
 const Row: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => (
   <div className="flex items-start justify-between gap-3">
-    <span className="text-[#6c757d] dark:text-[#adb5bd] flex-shrink-0">{label}</span>
+    <span className="text-fg-muted dark:text-[#adb5bd] flex-shrink-0">{label}</span>
     <span className="text-right">{children}</span>
   </div>
 )
@@ -224,7 +224,7 @@ const Pill: React.FC<{ tone: 'good' | 'warn' | 'bad'; icon: React.FC<{ className
     bad: 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
   }
   return (
-    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold ${tones[tone]}`}>
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.625rem] font-semibold ${tones[tone]}`}>
       <Icon className="w-3 h-3" />
       {children}
     </span>
@@ -254,7 +254,7 @@ const ActionLink: React.FC<{ icon: React.FC<{ className?: string }>; onClick: ()
 }) => (
   <button
     onClick={onClick}
-    className="w-full flex items-center gap-2 px-2 py-1.5 -mx-2 rounded text-left text-xs text-[#017cb6] dark:text-[#4db2e0] hover:bg-[#017cb6]/10 transition"
+    className="w-full flex items-center gap-2 px-2 py-1.5 -mx-2 rounded text-left text-xs text-fg-link dark:text-[#4db2e0] hover:bg-[#017cb6]/10 transition"
   >
     <Icon className="w-3.5 h-3.5 flex-shrink-0" />
     <span className="flex-1">{children}</span>
@@ -263,7 +263,7 @@ const ActionLink: React.FC<{ icon: React.FC<{ className?: string }>; onClick: ()
 )
 
 const MpanelNote: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="pt-2.5 mt-1 border-t border-[#dee2e6] dark:border-[#373b3e] text-[11px] text-[#6c757d] dark:text-[#adb5bd] leading-relaxed">
+  <div className="pt-2.5 mt-1 border-t border-[#dee2e6] dark:border-[#373b3e] text-[0.6875rem] text-fg-muted dark:text-[#adb5bd] leading-relaxed">
     {children}
   </div>
 )
@@ -271,7 +271,7 @@ const MpanelNote: React.FC<{ children: React.ReactNode }> = ({ children }) => (
 const MpanelLink: React.FC<{ onClick: () => void; children: React.ReactNode }> = ({ onClick, children }) => (
   <button
     onClick={onClick}
-    className="inline-flex items-center gap-1 ml-1 text-[#017cb6] dark:text-[#4db2e0] hover:underline font-medium"
+    className="inline-flex items-center gap-1 ml-1 text-fg-link dark:text-[#4db2e0] hover:underline font-medium"
   >
     {children}
     <ExternalLink className="w-3 h-3" />

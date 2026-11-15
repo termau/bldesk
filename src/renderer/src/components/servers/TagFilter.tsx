@@ -136,12 +136,12 @@ export const TagFilter: React.FC<Props> = ({ options, selected, onChange, mode, 
           className="!m-0 z-50 flex flex-col rounded-lg border border-[#ced4da] dark:border-[#495057] bg-white dark:bg-[#2b3035] text-[#212529] dark:text-[#f8f9fa] shadow-xl text-xs"
         >
           <div className="flex items-center justify-between gap-2 px-3 pt-3 pb-2">
-            <span className="font-semibold text-[13px]">Filter by tag</span>
+            <span className="font-semibold text-[0.8125rem]">Filter by tag</span>
             <button
               type="button"
               onClick={() => onChange([])}
               disabled={selected.length === 0}
-              className={`text-[#017cb6] hover:underline disabled:opacity-40 disabled:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#017cb6] rounded ${phone ? 'min-h-[40px] min-w-[48px] px-2 -my-2 -mr-2 inline-flex items-center justify-center' : ''}`}
+              className={`text-fg-link hover:underline disabled:opacity-40 disabled:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#017cb6] rounded ${phone ? 'min-h-[40px] min-w-[48px] px-2 -my-2 -mr-2 inline-flex items-center justify-center' : ''}`}
             >
               Clear
             </button>
@@ -164,13 +164,13 @@ export const TagFilter: React.FC<Props> = ({ options, selected, onChange, mode, 
                 </button>
               ))}
             </div>
-            <p className="mt-1 text-[11px] text-[#6c757d] dark:text-slate-400">
+            <p className="mt-1 text-[0.6875rem] text-fg-muted dark:text-slate-400">
               {mode === 'any' ? 'Servers with at least one ticked tag.' : 'Servers with every ticked tag.'}
             </p>
           </div>
 
           {options.length === 0 ? (
-            <p className="px-3 pb-3 text-[#6c757d] dark:text-slate-400">No server has a tag yet.</p>
+            <p className="px-3 pb-3 text-fg-muted dark:text-slate-400">No server has a tag yet.</p>
           ) : (
             <ul className="min-h-0 overflow-y-auto border-t border-[#ced4da] dark:border-[#495057] py-1">
               {options.map((o) => (
@@ -179,7 +179,7 @@ export const TagFilter: React.FC<Props> = ({ options, selected, onChange, mode, 
                     <input type="checkbox" checked={selected.includes(o.tag)} onChange={() => toggle(o.tag)} className={`${phone ? 'w-5 h-5' : 'w-3.5 h-3.5'} accent-[#017cb6]`} />
                     <TagDot color={o.color} />
                     <span className="truncate flex-1 min-w-0">@{o.tag}</span>
-                    <span className="text-[#6c757d] dark:text-slate-400 shrink-0">{o.count}</span>
+                    <span className="text-fg-muted dark:text-slate-400 shrink-0">{o.count}</span>
                   </label>
                 </li>
               ))}

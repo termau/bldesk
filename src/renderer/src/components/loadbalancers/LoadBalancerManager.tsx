@@ -223,10 +223,10 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-[#212529] dark:text-white flex items-center gap-2.5">
-            <Layers className="w-5 h-5 text-[#017cb6]" />
+            <Layers className="w-5 h-5 text-fg-link" />
             <span>High-Availability Load Balancers</span>
           </h1>
-          <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-0.5">
+          <p className="text-xs text-fg-muted dark:text-slate-400 mt-0.5">
             Distribute incoming HTTP/HTTPS/TCP traffic across backend virtual servers with health checks.
           </p>
         </div>
@@ -246,8 +246,8 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
       {/* Loading State */}
       {lbsQuery.isLoading && (
         <div className="flex flex-col items-center justify-center p-12 space-y-3 bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e]">
-          <Loader2 className="w-8 h-8 text-[#017cb6] animate-spin" />
-          <p className="text-xs text-[#6c757d] dark:text-slate-400">Loading load balancers...</p>
+          <Loader2 className="w-8 h-8 text-fg-link animate-spin" />
+          <p className="text-xs text-fg-muted dark:text-slate-400">Loading load balancers...</p>
         </div>
       )}
 
@@ -258,9 +258,9 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
       {/* Empty State */}
       {!lbsQuery.isLoading && !lbsQuery.isError && loadBalancers.length === 0 && (
         <div className="flex flex-col items-center justify-center p-12 text-center bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e]">
-          <Layers className="w-10 h-10 text-[#6c757d] dark:text-slate-500 mb-3" />
+          <Layers className="w-10 h-10 text-fg-muted dark:text-slate-500 mb-3" />
           <h3 className="text-sm font-semibold text-[#212529] dark:text-white">No Load Balancers Deployed</h3>
-          <p className="text-xs text-[#6c757d] dark:text-slate-400 max-w-sm mt-1 mb-4">
+          <p className="text-xs text-fg-muted dark:text-slate-400 max-w-sm mt-1 mb-4">
             Create high-availability reverse proxy endpoints to distribute load and perform health monitoring across multiple servers.
           </p>
           <button
@@ -289,13 +289,13 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
               <div className="p-4 border-b border-[#ced4da] dark:border-[#373b3e] bg-[#f1f1f1] dark:bg-[#262a2e] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded bg-[#017cb6]/10 flex items-center justify-center">
-                    <Layers className="w-4 h-4 text-[#017cb6]" />
+                    <Layers className="w-4 h-4 text-fg-link" />
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
                       <h3 className="font-bold text-sm text-[#212529] dark:text-white font-mono">{lb.name}</h3>
                       <span
-                        className={`px-2 py-0.5 text-[10px] font-semibold rounded-full ${
+                        className={`px-2 py-0.5 text-[0.625rem] font-semibold rounded-full ${
                           isActive
                             ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
                             : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30'
@@ -304,7 +304,7 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
                         {lb.status || 'Active'}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 text-[11px] text-[#6c757d] dark:text-slate-400 mt-0.5">
+                    <div className="flex items-center gap-2 text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-0.5">
                       <span>#{lb.id}</span>
                       <span>•</span>
                       <span>Region: {lb.region?.name || lb.region?.slug?.toUpperCase() || 'Global Anycast'}</span>
@@ -316,11 +316,11 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
                 <div className="flex items-center gap-3">
                   {lb.ip && (
                     <div className="flex items-center gap-1.5 bg-white dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] px-2.5 py-1 rounded text-xs">
-                      <span className="text-[10px] text-[#6c757d] uppercase font-bold">VIP</span>
+                      <span className="text-[0.625rem] text-fg-muted uppercase font-bold">VIP</span>
                       <span className="font-mono text-[#212529] dark:text-slate-200">{lb.ip}</span>
                       <button
                         onClick={() => handleCopy(lb.ip!)}
-                        className="text-[#6c757d] hover:text-[#017cb6] ml-1"
+                        className="text-fg-muted hover:text-fg-link ml-1"
                         title="Copy VIP IP"
                       >
                         {copiedIp === lb.ip ? <Check className="w-3 h-3 text-emerald-500" /> : <Copy className="w-3 h-3" />}
@@ -330,7 +330,7 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
 
                   <button
                     onClick={() => handleDeleteLb(lb.id, lb.name)}
-                    className="p-1.5 text-[#6c757d] hover:text-rose-500 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                    className="p-1.5 text-fg-muted hover:text-rose-500 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
                     title="Delete Load Balancer"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -343,16 +343,16 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
                 {/* Forwarding Rules */}
                 <div className="space-y-2">
                   <h4 className="text-xs font-semibold text-[#495057] dark:text-[#ced4da] flex items-center gap-1.5">
-                    <ArrowRightLeft className="w-3.5 h-3.5 text-[#017cb6]" />
+                    <ArrowRightLeft className="w-3.5 h-3.5 text-fg-link" />
                     <span>Forwarding Rules</span>
                   </h4>
                   <div className="bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded p-3 text-xs space-y-1.5">
                     {(lb.forwarding_rules || []).map((rule: any, idx: number) => (
-                      <div key={idx} className="flex items-center justify-between font-mono text-[11px]">
-                        <span className="text-[#017cb6] uppercase font-bold">
+                      <div key={idx} className="flex items-center justify-between font-mono text-[0.6875rem]">
+                        <span className="text-fg-link uppercase font-bold">
                           {rule.entry_protocol}:{rule.entry_port || (rule.entry_protocol === 'https' ? 443 : 80)}
                         </span>
-                        <span className="text-[#6c757d]">➔</span>
+                        <span className="text-fg-muted">➔</span>
                         <span className="text-[#212529] dark:text-slate-200 uppercase font-medium">
                           {rule.target_protocol || rule.entry_protocol}:{rule.target_port || (rule.target_protocol === 'https' ? 443 : 80)}
                         </span>
@@ -365,7 +365,7 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-semibold text-[#495057] dark:text-[#ced4da] flex items-center gap-1.5">
-                      <Activity className="w-3.5 h-3.5 text-[#017cb6]" />
+                      <Activity className="w-3.5 h-3.5 text-fg-link" />
                       <span>Backend Target Pool ({memberServers.length})</span>
                     </h4>
                     <button
@@ -375,7 +375,7 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
                           setSelectedServerToAttach(attachableServers[0].id)
                         }
                       }}
-                      className="text-xs text-[#017cb6] hover:underline font-medium flex items-center gap-1"
+                      className="text-xs text-fg-link hover:underline font-medium flex items-center gap-1"
                     >
                       <UserPlus className="w-3 h-3" />
                       <span>Add Target</span>
@@ -383,7 +383,7 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
                   </div>
 
                   {memberServers.length === 0 ? (
-                    <div className="p-3 bg-[#f8f9fa] dark:bg-[#212529] border border-dashed border-[#ced4da] dark:border-[#373b3e] rounded text-center text-xs text-[#6c757d]">
+                    <div className="p-3 bg-[#f8f9fa] dark:bg-[#212529] border border-dashed border-[#ced4da] dark:border-[#373b3e] rounded text-center text-xs text-fg-muted">
                       No servers in pool. Traffic will fail health checks.
                     </div>
                   ) : (
@@ -401,18 +401,18 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
                               onClick={() => onSelectServer && onSelectServer(s)}
                               className="flex items-center gap-2 cursor-pointer flex-1"
                             >
-                              <Server className="w-3 h-3 text-[#017cb6]" />
-                              <span className="text-xs font-medium text-[#017cb6] hover:underline">{s.name}</span>
-                              <span className="text-[10px] text-[#6c757d] font-mono">({sIp})</span>
+                              <Server className="w-3 h-3 text-fg-link" />
+                              <span className="text-xs font-medium text-fg-link hover:underline">{s.name}</span>
+                              <span className="text-[0.625rem] text-fg-muted font-mono">({sIp})</span>
                             </div>
 
                             <button
                               onClick={() => handleRemoveServer(lb.id, lb.name, s.id, s.name)}
                               disabled={isRemoving}
-                              className="text-[#6c757d] hover:text-rose-500 p-1 rounded"
+                              className="text-fg-muted hover:text-rose-500 p-1 rounded"
                               title="Remove from pool"
                             >
-                              {isRemoving ? <Loader2 className="w-3 h-3 animate-spin text-[#017cb6]" /> : <Unlink className="w-3 h-3" />}
+                              {isRemoving ? <Loader2 className="w-3 h-3 animate-spin text-fg-link" /> : <Unlink className="w-3 h-3" />}
                             </button>
                           </div>
                         )
@@ -439,7 +439,7 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
               <button
                 type="button"
                 onClick={() => setIsCreating(false)}
-                className="px-3 py-1.5 text-xs text-[#6c757d] hover:text-[#212529] dark:hover:text-white"
+                className="px-3 py-1.5 text-xs text-fg-muted hover:text-[#212529] dark:hover:text-white"
               >
                 Cancel
               </button>
@@ -525,10 +525,10 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
                       type="checkbox"
                       checked={selectedServerIds.includes(s.id)}
                       onChange={() => handleToggleCreateServer(s.id)}
-                      className="rounded border-[#ced4da] text-[#017cb6] focus:ring-0"
+                      className="rounded border-[#ced4da] text-fg-link focus:ring-0"
                     />
                     <span className="font-medium text-[#212529] dark:text-white">{s.name}</span>
-                    <span className="text-[10px] text-[#6c757d] font-mono">#{s.id}</span>
+                    <span className="text-[0.625rem] text-fg-muted font-mono">#{s.id}</span>
                   </label>
                 ))}
               </div>
@@ -552,7 +552,7 @@ export const LoadBalancerManager: React.FC<LoadBalancerManagerProps> = ({
               <button
                 type="button"
                 onClick={() => setAttachModalLb(null)}
-                className="px-3 py-1.5 text-xs text-[#6c757d] hover:text-[#212529] dark:hover:text-white"
+                className="px-3 py-1.5 text-xs text-fg-muted hover:text-[#212529] dark:hover:text-white"
               >
                 Cancel
               </button>

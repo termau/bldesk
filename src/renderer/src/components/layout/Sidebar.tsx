@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useRef } from 'react'
 import {
   Server,
   Network,
@@ -21,6 +21,7 @@ import { DarkModeToggle } from './DarkModeToggle'
 import logoFull from '../../assets/logo-binarylane.png'
 import iconLogo from '../../assets/icon-logo-binarylane.png'
 import { MPANEL_URL } from '../ui/LinkOut'
+import { holdLayer, isTopLayer } from '../../lib/dialogLayer'
 
 export type ActiveTab =
   | 'servers'
@@ -172,9 +173,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     key={item.id}
                     onClick={() => handleItemClick(item.id)}
                     title={hasSubNav ? item.label : undefined}
+                    aria-label={hasSubNav ? item.label : undefined}
                     className={`w-full flex items-center ${
                       hasSubNav ? 'justify-center px-0 py-3' : 'justify-between px-3.5 py-2.5'
-                    } rounded-md text-[13px] font-normal transition duration-150 ${
+                    } rounded-md text-[0.8125rem] font-normal transition duration-150 ${
                       isActive
                         ? 'text-[#f1ca00] bg-white/[0.09] font-medium'
                         : 'text-[#f8f9fa] hover:bg-white/[0.06]'
@@ -186,7 +188,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </div>
                     {!hasSubNav && item.badge !== undefined && (
                       <span
-                        className={`px-1.5 py-0.2 text-[11px] rounded font-semibold ${
+                        className={`px-1.5 py-0.2 text-[0.6875rem] rounded font-semibold ${
                           isActive ? 'bg-[#f1ca00]/20 text-[#f1ca00]' : 'bg-black/30 text-slate-300'
                         }`}
                       >
@@ -205,7 +207,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
             {!hasSubNav && (
               <>
-                <div className="flex items-center justify-between px-3 py-1.5 bg-black/20 rounded text-[11px] text-slate-300">
+                <div className="flex items-center justify-between px-3 py-1.5 bg-black/20 rounded text-[0.6875rem] text-slate-300">
                   <div className="flex items-center gap-2">
                     <span className="relative flex h-2 w-2">
                       {apiStatus === 'online' && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}
@@ -224,7 +226,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <ExternalLink className="w-3 h-3 text-slate-400" />
                 </button>
 
-                <div className="flex items-center justify-between px-2 pt-1 text-[10px] text-slate-400">
+                <div className="flex items-center justify-between px-2 pt-1 text-[0.625rem] text-slate-400">
                   <span>BLDesk</span>
                   <span className="font-mono text-slate-300">v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.28'}</span>
                 </div>
@@ -241,7 +243,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <div className="p-3 border-b border-[#ced4da] dark:border-[#373b3e]">
                 <button
                   onClick={onBackToServers}
-                  className="flex items-center gap-1.5 text-xs text-[#017cb6] hover:underline font-medium mb-1.5"
+                  className="flex items-center gap-1.5 text-xs text-fg-link hover:underline font-medium mb-1.5"
                 >
                   <ChevronLeft className="w-3.5 h-3.5" />
                   <span>All Servers</span>
@@ -277,7 +279,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* 2. Mobile Slide-Over Drawer (< 768px) */}
       {isMobileDrawerOpen && (
-        <div className="md:hidden fixed inset-0 z-50 flex">
+        <MobileDrawer onClose={() => onCloseMobileDrawer?.()}>
           <div
             onClick={onCloseMobileDrawer}
             className="fixed inset-0 bg-black/60 backdrop-blur-sm transition-opacity"
@@ -289,6 +291,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <img src={logoFull} alt="BinaryLane" className="h-6 w-auto object-contain" />
                 <button
                   onClick={onCloseMobileDrawer}
+                  aria-label="Close navigation menu"
+                  title="Close navigation menu"
                   className="text-slate-300 hover:text-white p-1 rounded hover:bg-white/10"
                 >
                   <X className="w-4 h-4" />
@@ -351,7 +355,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           <span>{item.label}</span>
                         </div>
                         {item.badge !== undefined && (
-                          <span className="px-1.5 py-0.2 text-[10px] rounded font-semibold bg-black/30 text-slate-300">
+                          <span className="px-1.5 py-0.2 text-[0.625rem] rounded font-semibold bg-black/30 text-slate-300">
                             {item.badge}
                           </span>
                         )}
@@ -371,14 +375,81 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span>Open mPanel Web</span>
                 <ExternalLink className="w-3 h-3 text-slate-400" />
               </button>
-              <div className="flex items-center justify-between px-2 pt-1 text-[10px] text-slate-400">
+              <div className="flex items-center justify-between px-2 pt-1 text-[0.625rem] text-slate-400">
                 <span>BLDesk</span>
                 <span className="font-mono text-slate-300">v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.28'}</span>
               </div>
             </div>
           </div>
-        </div>
+        </MobileDrawer>
       )}
     </>
+  )
+}
+
+const DRAWER_FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+/**
+ * The phone's navigation drawer, as a dialog: focus moves into it and Tab stays there, the page behind is inert,
+ * Escape (and so Android's Back) closes it, and focus goes back to the button that opened it.
+ */
+const MobileDrawer: React.FC<{ onClose: () => void; children: React.ReactNode }> = ({ onClose, children }) => {
+  const ref = useRef<HTMLDivElement>(null)
+  const close = useRef(onClose)
+  close.current = onClose
+  const opener = useRef<Element | null | undefined>(undefined)
+  if (opener.current === undefined) opener.current = document.activeElement
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const release = holdLayer(el)
+    // At the md breakpoint the drawer is hidden (md:hidden) but would still hold the page inert: close it instead.
+    const wide = window.matchMedia?.('(min-width: 768px)')
+    const onWide = () => {
+      if (wide?.matches) close.current()
+    }
+    onWide()
+    wide?.addEventListener?.('change', onWide)
+    const items = () => Array.from(el.querySelectorAll<HTMLElement>(DRAWER_FOCUSABLE)).filter((x) => x.getClientRects().length > 0)
+    items()[0]?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      // A dialog opened over the drawer has the keys.
+      if (!isTopLayer(el)) return
+      if (e.key === 'Escape' && !e.defaultPrevented) {
+        e.preventDefault()
+        close.current()
+      } else if (e.key === 'Tab') {
+        const list = items()
+        if (list.length === 0) return
+        const at = list.indexOf(document.activeElement as HTMLElement)
+        if (at === -1 || (e.shiftKey && at === 0) || (!e.shiftKey && at === list.length - 1)) {
+          e.preventDefault()
+          list[e.shiftKey ? list.length - 1 : 0].focus()
+        }
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      wide?.removeEventListener?.('change', onWide)
+      release()
+      const back = opener.current
+      const now = document.activeElement
+      if (back instanceof HTMLElement && back.isConnected && (!now || now === document.body)) back.focus()
+    }
+  }, [])
+
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Navigation menu"
+      data-dismissible="true"
+      className="md:hidden fixed inset-0 z-50 flex"
+    >
+      {children}
+    </div>
   )
 }

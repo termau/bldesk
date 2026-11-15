@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ArrowRightLeft, Info } from 'lucide-react'
 import { BlockedMark, CurrentMark, PlanBlockNotes } from './PlanBlocks'
 import { components } from '@shared/api/schema'
@@ -106,6 +106,7 @@ export const ChangePlanPanel: React.FC<{
     confirm?: { severity?: 'normal' | 'destructive' | 'irreversible'; notes?: string[]; typeToConfirm?: string }
   ) => void
 }> = ({ client, server, busy, onApply }) => {
+  const uid = useId()
   const [keepImage, setKeepImage] = useState(true)
   const [newImageSlug, setNewImageSlug] = useState<string>('')
   /*
@@ -585,7 +586,7 @@ export const ChangePlanPanel: React.FC<{
   // Distributions are only needed once "Continue using <OS>" is unticked, so
   // they load behind the picker rather than holding up the whole panel.
   if (sizesQuery.isLoading) {
-    return <p className="text-xs text-[#6c757d] dark:text-slate-400">Loading plans...</p>
+    return <p className="text-xs text-fg-muted dark:text-slate-400">Loading plans...</p>
   }
 
   const monthly = newCost?.total ?? 0
@@ -668,7 +669,7 @@ export const ChangePlanPanel: React.FC<{
   const cellClass = 'py-1.5 px-1 sm:py-2 sm:px-3'
   const selectClass =
     'w-full px-2 py-1.5 text-xs rounded border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#212529] text-[#212529] dark:text-white'
-  const labelClass = 'block text-[11px] font-semibold text-[#495057] dark:text-slate-300 mb-1'
+  const labelClass = 'block text-[0.6875rem] font-semibold text-[#495057] dark:text-slate-300 mb-1'
 
   const windowsish = /windows/i.test(effectiveImage?.distribution || server.image?.distribution || '')
 
@@ -710,7 +711,7 @@ export const ChangePlanPanel: React.FC<{
               if (e.target.checked) setNewImageSlug('')
             }}
             disabled={busy}
-            className="mt-0.5 shrink-0 rounded border-[#ced4da] text-[#017cb6] focus:ring-0"
+            className="mt-0.5 shrink-0 rounded border-[#ced4da] text-fg-link focus:ring-0"
           />
           <span>Continue using {server.image?.full_name || server.image?.name || 'the current image'}</span>
         </label>
@@ -718,8 +719,9 @@ export const ChangePlanPanel: React.FC<{
         {!keepImage && (
           <div className="ml-6 space-y-2">
             <div>
-              <label className={labelClass}>Install instead</label>
+              <label htmlFor={`${uid}-image`} className={labelClass}>Install instead</label>
               <select
+                id={`${uid}-image`}
                 value={newImageSlug}
                 onChange={(e) => setNewImageSlug(e.target.value)}
                 disabled={busy}
@@ -740,7 +742,7 @@ export const ChangePlanPanel: React.FC<{
                 ))}
               </select>
             </div>
-            <div className="flex items-start gap-2 text-[11px] text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-900 rounded p-2.5">
+            <div className="flex items-start gap-2 text-[0.6875rem] text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/30 border border-rose-300 dark:border-rose-900 rounded p-2.5">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
               <span>
                 Installing a different operating system destroys the server's disks and everything on them. The
@@ -752,7 +754,7 @@ export const ChangePlanPanel: React.FC<{
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2">
+      <div role="group" aria-label="Plan type" className="flex flex-wrap gap-2">
         {typeSlugs.map((t) => {
           const name = allSizes.find((s) => s.size_type?.slug === t)?.size_type?.name || t
           return (
@@ -760,6 +762,7 @@ export const ChangePlanPanel: React.FC<{
               key={t}
               type="button"
               onClick={() => setPlanType(t)}
+              aria-pressed={planType === t}
               className={`px-3 py-1.5 text-xs font-medium rounded border transition ${
                 planType === t
                   ? 'bg-[#6c757d] text-white border-[#6c757d]'
@@ -773,7 +776,7 @@ export const ChangePlanPanel: React.FC<{
       </div>
 
       <div className="border border-[#ced4da] dark:border-[#373b3e] rounded overflow-x-auto">
-        <table className="w-full text-[10px] sm:text-xs whitespace-nowrap">
+        <table className="w-full text-[0.625rem] sm:text-xs whitespace-nowrap">
           <thead className="bg-[#f8f9fa] dark:bg-[#212529] text-[#495057] dark:text-[#adb5bd]">
             <tr>
               <th className={`${cellClass} font-semibold text-center`}>Processor</th>
@@ -792,27 +795,28 @@ export const ChangePlanPanel: React.FC<{
                 // Its own figures, not the plan's defaults: the server may carry more.
                 const mem = server.memory ?? p.memory
                 const dsk = server.disk ?? p.disk
-                const fixed = (value: string) =>
+                const fixed = (value: string, label: string) =>
                   isSel ? (
-                    <select disabled value={value} className="px-1 py-0.5 text-[10px] sm:text-xs rounded border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035]">
+                    <select disabled value={value} aria-label={label} className="px-1 py-0.5 text-[0.625rem] sm:text-xs rounded border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035]">
                       <option value={value}>{value}</option>
                     </select>
                   ) : (
                     value
                   )
                 return (
-                  <tr key={p.slug} className={`opacity-45 cursor-not-allowed ${isSel ? 'bg-[#017cb6]/10' : ''}`}>
+                  <tr key={p.slug} id={`${uid}-plan-${p.slug}`} className={`opacity-45 cursor-not-allowed ${isSel ? 'bg-[#017cb6]/10' : ''}`}>
                     <td className={cellClass}>
                       <span className="flex items-center gap-1 sm:gap-2">
                         {isSel ? <CurrentMark /> : <BlockedMark />}
+                        <input type="radio" name={`${uid}-plan`} disabled checked={isSel} readOnly aria-labelledby={`${uid}-plan-${p.slug}`} className="sr-only" />
                         <span className="text-[#212529] dark:text-white">
                           {p.vcpus} {p.vcpu_units || 'VCPU'}
                           {p.vcpus === 1 ? '' : 's'}
                         </span>
                       </span>
                     </td>
-                    <td className={`${cellClass} text-center`}>{fixed(`${mem / 1024} GB`)}</td>
-                    <td className={`${cellClass} text-center`}>{fixed(`${dsk} GB`)}</td>
+                    <td className={`${cellClass} text-center`}>{fixed(`${mem / 1024} GB`, 'Memory')}</td>
+                    <td className={`${cellClass} text-center`}>{fixed(`${dsk} GB`, 'Storage')}</td>
                     <td className={`${cellClass} text-center`}>{p.transfer * 1000} GB</td>
                     <td className={`${cellClass} text-center font-medium`}>
                       ${planMonthlyPrice(p, effectiveImage, mem, dsk).toFixed(2)}
@@ -823,6 +827,7 @@ export const ChangePlanPanel: React.FC<{
               return (
                 <tr
                   key={p.slug}
+                  id={`${uid}-plan-${p.slug}`}
                   onClick={() => !blocked && pick(p.slug)}
                   title={blocked?.message || undefined}
                   className={`${blocked ? 'opacity-45 cursor-not-allowed' : 'cursor-pointer'} ${
@@ -831,17 +836,19 @@ export const ChangePlanPanel: React.FC<{
                 >
                   <td className={cellClass}>
                     <span className="flex items-center gap-1 sm:gap-2">
-                      {blocked ? (
-                        <BlockedMark />
-                      ) : (
-                        <span
-                          className={`w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full border flex items-center justify-center shrink-0 ${
-                            isSel ? 'border-[#017cb6]' : 'border-[#ced4da] dark:border-[#6c757d]'
-                          }`}
-                        >
-                          {isSel && <span className="w-2 h-2 rounded-full bg-[#017cb6]" />}
-                        </span>
-                      )}
+                      {blocked && <BlockedMark />}
+                      {/* A real radio, so the plans are a group the keyboard moves through; it is named by its row. */}
+                      <input
+                        type="radio"
+                        name={`${uid}-plan`}
+                        checked={isSel}
+                        disabled={!!blocked}
+                        onChange={() => pick(p.slug)}
+                        onClick={(e) => e.stopPropagation()}
+                        aria-labelledby={`${uid}-plan-${p.slug}`}
+                        title={blocked?.message || undefined}
+                        className={blocked ? 'sr-only' : 'w-3 h-3 sm:w-3.5 sm:h-3.5 m-0 shrink-0 cursor-pointer'}
+                      />
                       <span className="text-[#212529] dark:text-white">
                         {p.vcpus} {p.vcpu_units || 'VCPU'}
                         {p.vcpus === 1 ? '' : 's'}
@@ -851,10 +858,11 @@ export const ChangePlanPanel: React.FC<{
                   <td className={`${cellClass} text-center`}>
                     {isSel && memoryChoices(p, isCurrentPlan(p) ? server.memory : undefined).length > 1 ? (
                       <select
+                        aria-label="Memory"
                         value={memory}
                         onClick={(e) => e.stopPropagation()}
                         onChange={(e) => setMemory(Number(e.target.value))}
-                        className="px-1 py-0.5 text-[10px] sm:text-xs rounded border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035]"
+                        className="px-1 py-0.5 text-[0.625rem] sm:text-xs rounded border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035]"
                       >
                         {memoryChoices(p, isCurrentPlan(p) ? server.memory : undefined).map((m) => (
                           <option key={m} value={m}>
@@ -869,10 +877,11 @@ export const ChangePlanPanel: React.FC<{
                   <td className={`${cellClass} text-center`}>
                     {isSel && diskChoices(p, effectiveImage, isCurrentPlan(p) ? server.disk : undefined).length > 1 ? (
                       <select
+                        aria-label="Storage"
                         value={disk}
                         onClick={(e) => e.stopPropagation()}
                         onChange={(e) => setDisk(Number(e.target.value))}
-                        className="px-1 py-0.5 text-[10px] sm:text-xs rounded border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035]"
+                        className="px-1 py-0.5 text-[0.625rem] sm:text-xs rounded border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035]"
                       >
                         {diskChoices(p, effectiveImage, isCurrentPlan(p) ? server.disk : undefined).map((d) => (
                           <option key={d} value={d}>
@@ -898,7 +907,7 @@ export const ChangePlanPanel: React.FC<{
       </div>
 
       {storageChanging && (
-        <div className="flex items-start gap-2 text-[11px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-900 rounded p-2.5">
+        <div className="flex items-start gap-2 text-[0.6875rem] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-900 rounded p-2.5">
           <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
           <span>{STORAGE_CHANGE_NOTE}</span>
         </div>
@@ -906,12 +915,13 @@ export const ChangePlanPanel: React.FC<{
 
       <div className="grid gap-4 sm:grid-cols-2 [&>*]:min-w-0">
         <div>
-          <label className={labelClass}>IP Addresses</label>
+          <label htmlFor={`${uid}-ips`} className={labelClass}>IP Addresses</label>
           {/* Capped rather than full-width: the longest option is about 30
               characters ("8 IP addresses (+$14.00)"), so stretching it across
               half the panel just made a short control look oversized. Still
               w-full underneath, so it shrinks with the column on a phone. */}
           <select
+            id={`${uid}-ips`}
             value={ipCount}
             onChange={(e) => setIpCount(Number(e.target.value))}
             disabled={busy}
@@ -935,7 +945,7 @@ export const ChangePlanPanel: React.FC<{
 
           {publicIps.length > 0 && (
             <div className="mt-2 space-y-1">
-              <p className="text-[11px] text-[#6c757d] dark:text-slate-400">
+              <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400">
                 {mustRelease > 0
                   ? `Select at least ${mustRelease} address${mustRelease === 1 ? '' : 'es'} to give up.`
                   : secondaryIps.length > 0
@@ -946,14 +956,14 @@ export const ChangePlanPanel: React.FC<{
                   with the server, so the UI cannot ask for what the platform
                   refuses. (Adam, bd3d246.) */}
               {publicIps[0] && (
-                <div className="flex items-center gap-2 text-[11px] font-mono text-[#6c757d] dark:text-slate-500">
+                <label className="flex items-center gap-2 text-[0.6875rem] font-mono text-fg-muted dark:text-slate-500">
                   <input type="checkbox" disabled checked={false} className="shrink-0 rounded border-[#ced4da]" />
                   <span>{publicIps[0]}</span>
-                  <span className="font-sans text-[10px]">primary - stays with the server</span>
-                </div>
+                  <span className="font-sans text-[0.625rem]">primary - stays with the server</span>
+                </label>
               )}
               {secondaryIps.map((ip) => (
-                <label key={ip} className="flex items-center gap-2 text-[11px] font-mono">
+                <label key={ip} className="flex items-center gap-2 text-[0.6875rem] font-mono">
                   <input
                     type="checkbox"
                     checked={ipsToRemove.includes(ip)}
@@ -961,13 +971,13 @@ export const ChangePlanPanel: React.FC<{
                     onChange={(e) =>
                       setIpsToRemove((prev) => (e.target.checked ? [...prev, ip] : prev.filter((x) => x !== ip)))
                     }
-                    className="shrink-0 rounded border-[#ced4da] text-[#017cb6] focus:ring-0"
+                    className="shrink-0 rounded border-[#ced4da] text-fg-link focus:ring-0"
                   />
                   <span>{ip}</span>
                 </label>
               ))}
               {ipsToRemove.length > 0 && (
-                <p className="text-[11px] text-amber-700 dark:text-amber-400">
+                <p className="text-[0.6875rem] text-amber-700 dark:text-amber-400">
                   {mustRelease > 0 && `${mustRelease} given up permanently and cannot be reclaimed. `}
                   {replacing > 0 &&
                     `${replacing} replaced with ${replacing === 1 ? 'a new address' : 'new addresses'}. Anything pointing at ${replacing === 1 ? 'it' : 'them'} - DNS, firewall rules elsewhere, licences tied to an address - needs updating.`}
@@ -977,8 +987,8 @@ export const ChangePlanPanel: React.FC<{
           )}
         </div>
 
-        <div className="space-y-2">
-          <label className="block text-[11px] font-semibold text-[#495057] dark:text-slate-300">Backups</label>
+        <div role="group" aria-labelledby={`${uid}-backups`} className="space-y-2">
+          <div id={`${uid}-backups`} className="block text-[0.6875rem] font-semibold text-[#495057] dark:text-slate-300">Backups</div>
           {(
             [
               ['Daily', dailyBackups, setRetention(setDailyBackups, () => weeklyBackups + monthlyBackups)],
@@ -987,8 +997,9 @@ export const ChangePlanPanel: React.FC<{
             ] as const
           ).map(([label, value, setter]) => (
             <div key={label} className="flex items-center gap-2">
-              <span className="w-14 text-[11px] text-[#6c757d] dark:text-slate-400">{label}</span>
+              <label htmlFor={`${uid}-${label}`} className="w-14 text-[0.6875rem] text-fg-muted dark:text-slate-400">{label}</label>
               <select
+                id={`${uid}-${label}`}
                 value={value}
                 onChange={(e) => (setter as (v: number) => void)(Number(e.target.value))}
                 disabled={busy}
@@ -1016,7 +1027,7 @@ export const ChangePlanPanel: React.FC<{
               checked={offsiteBackups}
               onChange={(e) => setOffsiteBackups(e.target.checked)}
               disabled={busy || dailyBackups + weeklyBackups + monthlyBackups === 0}
-              className="shrink-0 rounded border-[#ced4da] text-[#017cb6] focus:ring-0"
+              className="shrink-0 rounded border-[#ced4da] text-fg-link focus:ring-0"
             />
             <span className="text-[#212529] dark:text-slate-200">Offsite backups (requires on-site backups)</span>
           </label>
@@ -1024,16 +1035,16 @@ export const ChangePlanPanel: React.FC<{
       </div>
 
       {(offered.length > 0 || windowsish) && (
-        <div className="space-y-2 border-t border-[#ced4da] dark:border-[#373b3e] pt-3">
-          <label className="block text-[11px] font-semibold text-[#495057] dark:text-slate-300">
+        <div role="group" aria-labelledby={`${uid}-licences`} className="space-y-2 border-t border-[#ced4da] dark:border-[#373b3e] pt-3">
+          <div id={`${uid}-licences`} className="block text-[0.6875rem] font-semibold text-[#495057] dark:text-slate-300">
             Licensed software
-          </label>
+          </div>
 
           {!licencesReady && !licenceError && (
-            <p className="text-[11px] text-[#6c757d] dark:text-slate-400">Loading licences...</p>
+            <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400">Loading licences...</p>
           )}
           {licenceError && (
-            <div className="flex items-start gap-2 text-[11px] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-900 rounded p-2.5">
+            <div className="flex items-start gap-2 text-[0.6875rem] text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-900 rounded p-2.5">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
               <span>
                 Could not load the server's licences ({licenceError.message}). They are left exactly as they are by this
@@ -1042,7 +1053,7 @@ export const ChangePlanPanel: React.FC<{
             </div>
           )}
 
-          {groups.map((g) => {
+          {groups.map((g, gi) => {
             const chosen = g.options.find((o) => (licences[o.id] ?? 0) > 0)
             /*
              * Nothing licensed shows as the opt-out where the OS has one, so the
@@ -1052,8 +1063,9 @@ export const ChangePlanPanel: React.FC<{
             const shown = chosen ? String(chosen.id) : g.optOut ? String(g.optOut.id) : ''
             return (
               <div key={g.name}>
-                <label className={labelClass}>{g.name}</label>
+                <label htmlFor={`${uid}-licence-${gi}`} className={labelClass}>{g.name}</label>
                 <select
+                  id={`${uid}-licence-${gi}`}
                   value={shown}
                   onChange={(e) => setGroup(g, e.target.value ? Number(e.target.value) : null)}
                   disabled={busy || !licencesReady}
@@ -1107,27 +1119,28 @@ export const ChangePlanPanel: React.FC<{
                         return next
                       })
                     }
-                    className="mt-0.5 shrink-0 rounded border-[#ced4da] text-[#017cb6] focus:ring-0"
+                    className="mt-0.5 shrink-0 rounded border-[#ced4da] text-fg-link focus:ring-0"
                   />
                   <span className="text-[#212529] dark:text-slate-200">
-                    {a.name} <span className="text-[#6c757d] dark:text-slate-400">{costLabel(a)}</span>
+                    {a.name} <span className="text-fg-muted dark:text-slate-400">{costLabel(a)}</span>
                     {a.description && a.description !== a.name && a.description !== '-' && (
-                      <span className="block text-[11px] text-[#6c757d] dark:text-slate-400">{a.description}</span>
+                      <span className="block text-[0.6875rem] text-fg-muted dark:text-slate-400">{a.description}</span>
                     )}
                     {retained && (
-                      <span className="block text-[11px] text-[#6c757d] dark:text-slate-400">
+                      <span className="block text-[0.6875rem] text-fg-muted dark:text-slate-400">
                         Closed to new orders. This server can keep it or give it up, but cannot get it back.
                       </span>
                     )}
                   </span>
                 </label>
                 {retained && !on && (
-                  <p className="ml-6 text-[11px] text-amber-700 dark:text-amber-400">
+                  <p className="ml-6 text-[0.6875rem] text-amber-700 dark:text-amber-400">
                     Giving up {a.name} is permanent - it cannot be re-added from here.
                   </p>
                 )}
                 {on && counts.length > 1 && (
                   <select
+                    aria-label={`${a.name} licences`}
                     value={licences[a.id] ?? counts[0]}
                     onChange={(e) => setLicenceEdit(() => ({ ...licences, [a.id]: Number(e.target.value) }))}
                     disabled={busy || !licencesReady}
@@ -1153,7 +1166,7 @@ export const ChangePlanPanel: React.FC<{
             * beats an empty space that reads as a missing feature.
             */}
           {windowsish && offered.length === 0 && licencesReady && (
-            <div className="flex items-start gap-2 text-[11px] text-[#6c757d] dark:text-[#adb5bd] bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded p-2.5">
+            <div className="flex items-start gap-2 text-[0.6875rem] text-fg-muted dark:text-[#adb5bd] bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded p-2.5">
               <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
               <span>
                 Windows licences cannot be added here: Remote Desktop SAL is closed to new orders, so it is offered
@@ -1164,7 +1177,7 @@ export const ChangePlanPanel: React.FC<{
           )}
 
           {incompatible.length > 0 && (
-            <div className="flex items-start gap-2 text-[11px] text-amber-700 dark:text-amber-400">
+            <div className="flex items-start gap-2 text-[0.6875rem] text-amber-700 dark:text-amber-400">
               <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-px" />
               <span>
                 {incompatible.map((l) => l.software.name).join(', ')} {incompatible.length === 1 ? 'is' : 'are'}{' '}
@@ -1177,8 +1190,9 @@ export const ChangePlanPanel: React.FC<{
 
       <div className="grid gap-4 sm:grid-cols-2 [&>*]:min-w-0 border-t border-[#ced4da] dark:border-[#373b3e] pt-3">
         <div>
-          <label className={labelClass}>Backup will</label>
+          <label htmlFor={`${uid}-prebackup`} className={labelClass}>Backup will</label>
           <select
+            id={`${uid}-prebackup`}
             value={preBackup}
             onChange={(e) => setPreBackup(e.target.value as PreBackup)}
             disabled={busy}
@@ -1191,8 +1205,9 @@ export const ChangePlanPanel: React.FC<{
         </div>
         {preBackup === 'specified' && (
           <div>
-            <label className={labelClass}>Backup to replace</label>
+            <label htmlFor={`${uid}-replace`} className={labelClass}>Backup to replace</label>
             <select
+              id={`${uid}-replace`}
               value={chosenReplacementBackup?.id ?? ''}
               onChange={(e) => setReplaceBackupId(e.target.value ? Number(e.target.value) : null)}
               disabled={busy}
@@ -1205,15 +1220,16 @@ export const ChangePlanPanel: React.FC<{
                 </option>
               ))}
             </select>
-            <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400">
+            <p className="mt-1 text-[0.6875rem] text-amber-700 dark:text-amber-400">
               The chosen backup is deleted to make room. That cannot be undone.
             </p>
           </div>
         )}
         {preBackup === 'free' && (
           <div>
-            <label className={labelClass}>Backup slot</label>
+            <label htmlFor={`${uid}-slot`} className={labelClass}>Backup slot</label>
             <select
+              id={`${uid}-slot`}
               value={chosenPreBackupSlot ?? ''}
               onChange={(e) => setPreBackupSlot(e.target.value as typeof preBackupSlot)}
               disabled={busy || !chosenPreBackupSlot}
@@ -1233,7 +1249,7 @@ export const ChangePlanPanel: React.FC<{
               ))}
             </select>
             {!backupsLoaded ? (
-              <p className="mt-1 text-[11px] text-[#6c757d] dark:text-slate-400" role="status">
+              <p className="mt-1 text-[0.6875rem] text-fg-muted dark:text-slate-400" role="status">
                 {backupsQuery.isError ? 'Could not load backups. Retry to check for a free slot.' : 'Loading backups...'}
                 {backupsQuery.isError && (
                   <button type="button" className="ml-1 underline" onClick={() => void backupsQuery.refetch()}>
@@ -1242,24 +1258,24 @@ export const ChangePlanPanel: React.FC<{
                 )}
               </p>
             ) : backupSlots.length === 0 ? (
-              <p className="mt-1 text-[11px] text-amber-700 dark:text-amber-400" role="status">
+              <p className="mt-1 text-[0.6875rem] text-amber-700 dark:text-amber-400" role="status">
                 No backup slots are free. Choose Replace an existing backup and select which backup to replace.
               </p>
             ) : backupSlots.length === 1 && backupSlots[0] === 'temporary' ? (
-              <p className="mt-1 text-[11px] text-[#6c757d] dark:text-slate-400">
+              <p className="mt-1 text-[0.6875rem] text-fg-muted dark:text-slate-400">
                 Only a temporary slot is free. A scheduled slot needs free capacity now and a type that stays enabled after
                 the change, so this server has none{replacementBackups.length > 0 && ' - replace a named backup instead'}.
               </p>
             ) : null}
             {backupsLoaded && chosenPreBackupSlot === 'temporary' && (
-              <p className="mt-1 text-[11px] text-[#6c757d] dark:text-slate-400">{TEMPORARY_BACKUP_TERMS}</p>
+              <p className="mt-1 text-[0.6875rem] text-fg-muted dark:text-slate-400">{TEMPORARY_BACKUP_TERMS}</p>
             )}
           </div>
         )}
       </div>
 
       {preBackup !== 'off' && disabledTypes.length > 0 && (
-        <p className="text-[11px] text-amber-700 dark:text-amber-400" role="status">
+        <p className="text-[0.6875rem] text-amber-700 dark:text-amber-400" role="status">
           Use a backup type that remains enabled after the plan change so the pre-action backup can be kept.
           Keep retention for that type, or download a backup and retain a separate copy before changing plans.
         </p>
@@ -1267,27 +1283,27 @@ export const ChangePlanPanel: React.FC<{
 
       {selected && !unchanged && (
         <div className="border border-[#ced4da] dark:border-[#373b3e] rounded overflow-hidden">
-          <div className="px-3 py-2 bg-[#f8f9fa] dark:bg-[#212529] text-[11px] font-bold uppercase tracking-wider text-[#495057] dark:text-[#adb5bd]">
+          <div className="px-3 py-2 bg-[#f8f9fa] dark:bg-[#212529] text-[0.6875rem] font-bold uppercase tracking-wider text-[#495057] dark:text-[#adb5bd]">
             Summary of changes
           </div>
-          <table className="w-full text-[11px]">
+          <table className="w-full text-[0.6875rem]">
             <tbody className="divide-y divide-[#ced4da]/60 dark:divide-[#373b3e]">
               {changes.map((c) => (
                 <tr key={c.label}>
-                  <td className="py-1.5 px-3 text-[#6c757d] dark:text-slate-400 align-top w-1/3">{c.label}</td>
+                  <td className="py-1.5 px-3 text-fg-muted dark:text-slate-400 align-top w-1/3">{c.label}</td>
                   <td className="py-1.5 px-3 text-[#212529] dark:text-white break-all">
-                    {c.from && <span className="text-[#6c757d] dark:text-slate-400 line-through">{c.from}</span>}
-                    {c.from && c.to && <span className="text-[#6c757d] dark:text-slate-400"> &rarr; </span>}
+                    {c.from && <span className="text-fg-muted dark:text-slate-400 line-through">{c.from}</span>}
+                    {c.from && c.to && <span className="text-fg-muted dark:text-slate-400"> &rarr; </span>}
                     {c.to && <span className="font-medium">{c.to}</span>}
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <div className="px-3 py-2 border-t border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529] space-y-1 text-[11px]">
+          <div className="px-3 py-2 border-t border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529] space-y-1 text-[0.6875rem]">
             <div className="font-bold uppercase tracking-wider text-[#495057] dark:text-[#adb5bd]">Billing</div>
             <div className="flex justify-between gap-6">
-              <span className="text-[#6c757d] dark:text-[#adb5bd]">Monthly Change</span>
+              <span className="text-fg-muted dark:text-[#adb5bd]">Monthly Change</span>
               <span
                 className={
                   delta > 0
@@ -1303,7 +1319,7 @@ export const ChangePlanPanel: React.FC<{
               </span>
             </div>
             <div className="flex justify-between gap-6">
-              <span className="text-[#6c757d] dark:text-[#adb5bd]">Monthly Total</span>
+              <span className="text-fg-muted dark:text-[#adb5bd]">Monthly Total</span>
               <span className="text-[#212529] dark:text-white font-medium">
                 ${total.toFixed(2)}
                 {taxNote && ` ${taxNote}`}
@@ -1311,11 +1327,11 @@ export const ChangePlanPanel: React.FC<{
             </div>
             {licencesMonthly > 0 && (
               <div className="flex justify-between gap-6">
-                <span className="text-[#6c757d] dark:text-[#adb5bd]">of which licences</span>
-                <span className="text-[#6c757d] dark:text-[#adb5bd]">${licencesMonthly.toFixed(2)} before tax</span>
+                <span className="text-fg-muted dark:text-[#adb5bd]">of which licences</span>
+                <span className="text-fg-muted dark:text-[#adb5bd]">${licencesMonthly.toFixed(2)} before tax</span>
               </div>
             )}
-            <p className="text-[#6c757d] dark:text-[#adb5bd] leading-relaxed pt-1">
+            <p className="text-fg-muted dark:text-[#adb5bd] leading-relaxed pt-1">
               All prices are in AUD and before tax unless stated otherwise. Charges are pro-rated from the time
               the change is applied.
             </p>
@@ -1329,7 +1345,7 @@ export const ChangePlanPanel: React.FC<{
           checked={agreed}
           onChange={(e) => setAgreed(e.target.checked)}
           disabled={busy}
-          className="mt-0.5 shrink-0 rounded border-[#ced4da] text-[#017cb6] focus:ring-0"
+          className="mt-0.5 shrink-0 rounded border-[#ced4da] text-fg-link focus:ring-0"
         />
         <span className="text-[#212529] dark:text-white">
           I agree to the <LinkOut href={TOS_URL}>Terms of Service</LinkOut> and{' '}
@@ -1342,10 +1358,10 @@ export const ChangePlanPanel: React.FC<{
           {selected ? (
             <>
               New monthly total <span className="font-semibold">${total.toFixed(2)}</span>{' '}
-              {taxNote && <span className="text-[#6c757d] dark:text-slate-400">{taxNote}</span>}
+              {taxNote && <span className="text-fg-muted dark:text-slate-400">{taxNote}</span>}
             </>
           ) : (
-            <span className="text-[#6c757d] dark:text-slate-400">Select a plan to see the new monthly total.</span>
+            <span className="text-fg-muted dark:text-slate-400">Select a plan to see the new monthly total.</span>
           )}
         </p>
         <button

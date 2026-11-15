@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useId, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { X, type LucideIcon } from 'lucide-react'
 import { enterDialog, leaveDialog } from '../../lib/failures'
 import { DialogFailures } from '../actions/FailureToasts'
 import { enterKeyGuard, isEnterDown } from '../../lib/enterKey'
+import { holdLayer } from '../../lib/dialogLayer'
 
 /**
  * The one modal shell. Every dialog in the app — the confirm dialog, the
@@ -19,7 +20,8 @@ import { enterKeyGuard, isEnterDown } from '../../lib/enterKey'
  * The shell also owns the keyboard while it is open: focus moves into the
  * dialog, Tab and Shift+Tab stay inside it, a held Enter key does not repeat,
  * the Enter that opened it cannot also activate something in it (lib/enterKey.ts),
- * and focus goes back to what opened it. Where dialogs are stacked, only the
+ * and focus goes back to what opened it. Everything else on the page is inert
+ * while it is open (lib/dialogLayer.ts). Where dialogs are stacked, only the
  * top one does this.
  *
  * A failure reported while a dialog is open (`notifyFailure`) shows inside it,
@@ -70,6 +72,7 @@ export interface ModalProps {
   noSelect?: boolean
   /** Stacking order; the default sits above the palette and the toasts (`ActionToasts`), which stay below every dialog. */
   z?: number
+  /** Id for the title, which names the dialog. Defaults to one of its own, so stacked dialogs never share it. */
   labelledBy?: string
   children: React.ReactNode
 }
@@ -95,15 +98,18 @@ export const Modal: React.FC<ModalProps> = ({
   headerRight,
   noSelect = false,
   z = 70,
-  labelledBy = 'modal-title',
+  labelledBy,
   children
 }) => {
+  const ownTitleId = useId()
+  const titleId = labelledBy ?? ownTitleId
   const id = useRef<symbol>(Symbol('modal')).current
   // The key listeners are added once, when the dialog mounts, so that an older dialog's listener always runs before a
   // newer one's. Re-adding them on each render (an inline onClose is a new function every time) moved a listener to the
   // end of the line, and then Escape could be heard by the dialog beneath after the one on top had closed.
   const latest = useRef({ onClose, busy })
   latest.current = { onClose, busy }
+  const overlayRef = useRef<HTMLDivElement | null>(null)
   const panelRef = useRef<HTMLElement | null>(null)
   const bodyRef = useRef<HTMLDivElement | null>(null)
   // Read while rendering: by the time an effect runs, an autofocused field inside the dialog has already taken focus.
@@ -117,6 +123,7 @@ export const Modal: React.FC<ModalProps> = ({
     openModals.push(id)
     enterDialog(id)
     const panel = panelRef.current
+    const releaseLayer = overlayRef.current ? holdLayer(overlayRef.current) : () => {}
 
     // Take focus into the dialog, unless something in it has already asked for it (a field with autoFocus, the confirm
     // button). A touch screen gets the panel itself, so opening a form does not raise the on-screen keyboard.
@@ -191,6 +198,7 @@ export const Modal: React.FC<ModalProps> = ({
       document.removeEventListener('keydown', onEscape)
       openModals.splice(openModals.indexOf(id), 1)
       leaveDialog(id)
+      releaseLayer()
       // Give focus back to what opened the dialog, unless it has gone or focus has since been put somewhere on purpose.
       const back = opener.current
       const now = document.activeElement
@@ -203,6 +211,7 @@ export const Modal: React.FC<ModalProps> = ({
 
   return createPortal(
     <div
+      ref={overlayRef}
       className={`fixed inset-0 flex ${align === 'top' ? 'items-start' : 'items-center'} justify-center bg-black/60 overlay-safe ${noSelect ? 'select-none' : ''}`}
       // Panels start below the app's title bar (2.75rem) rather than over it,
       // so a tall dialog's header does not collide with the window's own and
@@ -220,14 +229,14 @@ export const Modal: React.FC<ModalProps> = ({
         className={`w-full ${WIDTH[size]} max-h-full flex flex-col bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg shadow-2xl overflow-hidden outline-none`}
         role="dialog"
         aria-modal="true"
-        aria-labelledby={labelledBy}
+        aria-labelledby={titleId}
         // Whether Escape (and so the Android back button) can close it: a dialog that has to be answered cannot.
         data-dismissible={onClose ? 'true' : 'false'}
       >
         <div className="flex-shrink-0 flex items-start justify-between gap-3 p-4 border-b border-[#ced4da] dark:border-[#373b3e]">
           <div className={`flex items-center gap-2 min-w-0 ${headTone}`}>
             {Icon && <Icon className="w-5 h-5 flex-shrink-0" />}
-            <h3 id={labelledBy} className="font-bold text-sm truncate">
+            <h3 id={titleId} className="font-bold text-sm truncate">
               {title}
             </h3>
           </div>
@@ -238,7 +247,7 @@ export const Modal: React.FC<ModalProps> = ({
                 type="button"
                 onClick={() => !busy && onClose()}
                 disabled={busy}
-                className="text-[#6c757d] hover:text-[#212529] dark:hover:text-white transition disabled:opacity-40"
+                className="text-fg-muted hover:text-[#212529] dark:hover:text-white transition disabled:opacity-40"
                 aria-label="Close"
               >
                 <X className="w-4 h-4" />

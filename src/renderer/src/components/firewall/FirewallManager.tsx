@@ -504,10 +504,10 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-[#212529] dark:text-white flex items-center gap-2.5">
-            <Shield className="w-5 h-5 text-[#017cb6]" />
+            <Shield className="w-5 h-5 text-fg-link" />
             <span>Cloud Network Firewall</span>
           </h1>
-          <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-0.5">
+          <p className="text-xs text-fg-muted dark:text-slate-400 mt-0.5">
             Hardware edge packet filtering evaluated before traffic reaches your VM.
           </p>
         </div>
@@ -517,12 +517,14 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
           <div className="flex items-center bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded shadow-sm overflow-hidden text-xs">
             <button
               onClick={() => setView('server')}
+              aria-pressed={view === 'server'}
               className={`px-3 py-1.5 flex items-center gap-1.5 ${view === 'server' ? 'bg-[#017cb6] text-white' : 'text-[#212529] dark:text-slate-200 hover:bg-[#f1f1f1] dark:hover:bg-[#343a40]'}`}
             >
               <Server className="w-3.5 h-3.5" /> Server
             </button>
             <button
               onClick={() => setView('matrix')}
+              aria-pressed={view === 'matrix'}
               className={`px-3 py-1.5 flex items-center gap-1.5 ${view === 'matrix' ? 'bg-[#017cb6] text-white' : 'text-[#212529] dark:text-slate-200 hover:bg-[#f1f1f1] dark:hover:bg-[#343a40]'}`}
               title="Every server × every rule, with an audit"
             >
@@ -532,13 +534,14 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
           {view === 'matrix' ? null : (
           <>
           <div className="flex items-center gap-2 bg-white dark:bg-[#2b3035] px-3 py-1.5 border border-[#ced4da] dark:border-[#373b3e] rounded shadow-sm">
-            <Server className="w-3.5 h-3.5 text-[#017cb6]" />
+            <Server className="w-3.5 h-3.5 text-fg-link" />
             <select
               value={activeServerId || ''}
               onChange={(e) => setSelectedServerId(Number(e.target.value))}
               // The save in progress is for this server: the write is made for whichever one is chosen when it goes out.
               disabled={saving}
-              className="bg-transparent text-xs text-[#212529] dark:text-white focus:outline-none cursor-pointer max-w-[160px]"
+              aria-label="Server"
+              className="focus-ring rounded-sm bg-transparent text-xs text-[#212529] dark:text-white cursor-pointer max-w-[160px]"
             >
               {servers.map((s) => (
                 <option key={s.id} value={s.id} className="bg-white dark:bg-[#2b3035]">
@@ -593,7 +596,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
         </div>
       </div>
       {/* Under the buttons, not among them: inside the row it made the row so wide that the heading wrapped. */}
-      {view === 'server' && atRuleLimit && <p className="-mt-3 md:text-right text-[11px] text-[#6c757d] dark:text-slate-400">{limitNote}</p>}
+      {view === 'server' && atRuleLimit && <p className="-mt-3 md:text-right text-[0.6875rem] text-fg-muted dark:text-slate-400">{limitNote}</p>}
 
       {view === 'matrix' ? (
         <FirewallMatrix
@@ -616,38 +619,38 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
         >
           <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-[#ced4da] dark:border-[#373b3e] pb-3">
             <h3 className="font-bold text-sm text-[#212529] dark:text-white flex items-center gap-2">
-              <Plus className="w-4 h-4 text-[#017cb6]" />
+              <Plus className="w-4 h-4 text-fg-link" />
               <span>Add Inbound Firewall Rule</span>
             </h3>
 
             {/* Presets */}
             <div className="flex flex-wrap items-center gap-1.5">
-              <span className="text-[11px] text-[#6c757d] mr-1">Presets:</span>
+              <span className="text-[0.6875rem] text-fg-muted mr-1">Presets:</span>
               <button
                 type="button"
                 onClick={() => applyPreset('ssh')}
-                className="px-2 py-0.5 text-[10px] font-medium bg-[#f1f1f1] dark:bg-[#343a40] text-[#212529] dark:text-slate-200 rounded hover:bg-[#e9ecef]"
+                className="px-2 py-0.5 text-[0.625rem] font-medium bg-[#f1f1f1] dark:bg-[#343a40] text-[#212529] dark:text-slate-200 rounded hover:bg-[#e9ecef]"
               >
                 SSH (22)
               </button>
               <button
                 type="button"
                 onClick={() => applyPreset('http_https')}
-                className="px-2 py-0.5 text-[10px] font-medium bg-[#f1f1f1] dark:bg-[#343a40] text-[#212529] dark:text-slate-200 rounded hover:bg-[#e9ecef]"
+                className="px-2 py-0.5 text-[0.625rem] font-medium bg-[#f1f1f1] dark:bg-[#343a40] text-[#212529] dark:text-slate-200 rounded hover:bg-[#e9ecef]"
               >
                 HTTP/HTTPS
               </button>
               <button
                 type="button"
                 onClick={() => applyPreset('wireguard')}
-                className="px-2 py-0.5 text-[10px] font-medium bg-[#f1f1f1] dark:bg-[#343a40] text-[#212529] dark:text-slate-200 rounded hover:bg-[#e9ecef]"
+                className="px-2 py-0.5 text-[0.625rem] font-medium bg-[#f1f1f1] dark:bg-[#343a40] text-[#212529] dark:text-slate-200 rounded hover:bg-[#e9ecef]"
               >
                 WireGuard
               </button>
               <button
                 type="button"
                 onClick={() => applyPreset('drop_all')}
-                className="px-2 py-0.5 text-[10px] font-medium bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 rounded hover:bg-rose-100"
+                className="px-2 py-0.5 text-[0.625rem] font-medium bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 rounded hover:bg-rose-100"
               >
                 Drop All
               </button>
@@ -663,7 +666,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
 
           <div className="grid grid-cols-1 sm:grid-cols-3 xl:grid-cols-6 gap-3 items-start">
             <div>
-              <label htmlFor="fw-add-source" className="text-[11px] text-[#495057] dark:text-[#ced4da] block mb-1">Source</label>
+              <label htmlFor="fw-add-source" className="text-[0.6875rem] text-[#495057] dark:text-[#ced4da] block mb-1">Source</label>
               <textarea
                 id="fw-add-source"
                 rows={lines(ruleSource)}
@@ -677,7 +680,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
             </div>
 
             <div>
-              <label htmlFor="fw-add-destination" className="text-[11px] text-[#495057] dark:text-[#ced4da] block mb-1">Destination</label>
+              <label htmlFor="fw-add-destination" className="text-[0.6875rem] text-[#495057] dark:text-[#ced4da] block mb-1">Destination</label>
               <textarea
                 id="fw-add-destination"
                 rows={lines(ruleDestination)}
@@ -691,7 +694,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
             </div>
 
             <div>
-              <label htmlFor="fw-add-ports" className="text-[11px] text-[#495057] dark:text-[#ced4da] block mb-1">Destination ports</label>
+              <label htmlFor="fw-add-ports" className="text-[0.6875rem] text-[#495057] dark:text-[#ced4da] block mb-1">Destination ports</label>
               <textarea
                 id="fw-add-ports"
                 rows={lines(rulePorts)}
@@ -706,7 +709,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
             </div>
 
             <div>
-              <label htmlFor="fw-add-protocol" className="text-[11px] text-[#495057] dark:text-[#ced4da] block mb-1">Protocol</label>
+              <label htmlFor="fw-add-protocol" className="text-[0.6875rem] text-[#495057] dark:text-[#ced4da] block mb-1">Protocol</label>
               <select
                 id="fw-add-protocol"
                 value={ruleProtocol}
@@ -721,7 +724,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
             </div>
 
             <div>
-              <label htmlFor="fw-add-action" className="text-[11px] text-[#495057] dark:text-[#ced4da] block mb-1">Action</label>
+              <label htmlFor="fw-add-action" className="text-[0.6875rem] text-[#495057] dark:text-[#ced4da] block mb-1">Action</label>
               <select
                 id="fw-add-action"
                 value={ruleAction}
@@ -734,7 +737,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
             </div>
 
             <div>
-              <label htmlFor="fw-add-description" className="text-[11px] text-[#495057] dark:text-[#ced4da] block mb-1">Description</label>
+              <label htmlFor="fw-add-description" className="text-[0.6875rem] text-[#495057] dark:text-[#ced4da] block mb-1">Description</label>
               <input
                 id="fw-add-description"
                 type="text"
@@ -750,7 +753,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
             <button
               type="button"
               onClick={() => setIsAdding(false)}
-              className="px-3 py-1.5 text-xs text-[#6c757d] hover:text-[#212529] dark:hover:text-white"
+              className="px-3 py-1.5 text-xs text-fg-muted hover:text-[#212529] dark:hover:text-white"
             >
               Cancel
             </button>
@@ -777,18 +780,18 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
               {/* `whitespace-nowrap`: squeezed into the leftover column it broke
                   across two lines as "(16" / "rules)". */}
               {firewallQuery.data && (
-                <span className="text-xs font-normal whitespace-nowrap text-[#6c757d] dark:text-slate-400">
+                <span className="text-xs font-normal whitespace-nowrap text-fg-muted dark:text-slate-400">
                   ({ruleCount(currentRules.length)})
                 </span>
               )}
             </h3>
-            <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-0.5">
+            <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-0.5">
               Rules are evaluated sequentially from top to bottom. The first matching rule applies.
             </p>
-            <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-0.5 [@media(pointer:coarse)]:hidden">
+            <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-0.5 [@media(pointer:coarse)]:hidden">
               Edit a rule in place, drag it anywhere outside its fields or use the arrows to move it, and remove it with its remove button. Nothing is applied until you press Save changes.
             </p>
-            <p className="hidden [@media(pointer:coarse)]:block text-[11px] text-[#6c757d] dark:text-slate-400 mt-0.5">
+            <p className="hidden [@media(pointer:coarse)]:block text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-0.5">
               Edit a rule in place. To move one, touch and hold it outside its fields until it lifts, then drag it, or use the arrows. Remove it with its remove button. Nothing is applied until you press Save changes.
             </p>
           </div>
@@ -797,7 +800,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
             <button
               onClick={handleFlushFirewall}
               disabled={updateFirewall.isPending || !canEdit}
-              className="shrink-0 flex items-center gap-1 px-2.5 py-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition border border-rose-300 dark:border-rose-800 disabled:opacity-40"
+              className="shrink-0 flex items-center gap-1 px-2.5 py-1 text-[0.6875rem] font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition border border-rose-300 dark:border-rose-800 disabled:opacity-40"
             >
               <Unlock className="w-3.5 h-3.5" />
               <span>Disable Firewall</span>
@@ -806,8 +809,8 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
         </div>
 
         {firewallQuery.isPending && firewallQuery.fetchStatus !== 'idle' && (
-          <div className="flex items-center justify-center p-12 text-xs text-[#6c757d]">
-            <Loader2 className="w-6 h-6 animate-spin text-[#017cb6] mr-2" />
+          <div className="flex items-center justify-center p-12 text-xs text-fg-muted">
+            <Loader2 className="w-6 h-6 animate-spin text-fg-link mr-2" />
             <span>Fetching firewall rules from edge hypervisors...</span>
           </div>
         )}
@@ -847,10 +850,10 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
         )}
 
         {firewallQuery.isSuccess && currentRules.length === 0 && (
-          <div className="text-xs text-[#6c757d] p-8 text-center bg-[#f8f9fa] dark:bg-[#212529] border border-dashed border-[#ced4da] dark:border-[#373b3e] rounded-lg space-y-2">
-            <Unlock className="w-8 h-8 text-[#6c757d]/50 mx-auto" />
+          <div className="text-xs text-fg-muted p-8 text-center bg-[#f8f9fa] dark:bg-[#212529] border border-dashed border-[#ced4da] dark:border-[#373b3e] rounded-lg space-y-2">
+            <Unlock className="w-8 h-8 text-fg-muted/50 mx-auto" />
             <div className="font-semibold text-[#212529] dark:text-white">Firewall Inactive / Open</div>
-            <p className="text-[#6c757d] dark:text-slate-400 max-w-sm mx-auto text-[11px]">
+            <p className="text-fg-muted dark:text-slate-400 max-w-sm mx-auto text-[0.6875rem]">
               No external packet filtering rules configured. All inbound traffic is routed directly to the guest OS.
             </p>
             <button
@@ -924,7 +927,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
               <button
                 type="button"
                 onClick={() => setIsImportOpen(false)}
-                className="px-3 py-1.5 text-xs text-[#6c757d] hover:text-[#212529] dark:hover:text-white"
+                className="px-3 py-1.5 text-xs text-fg-muted hover:text-[#212529] dark:hover:text-white"
               >
                 Cancel
               </button>
@@ -940,14 +943,14 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
           }
         >
           <div className="p-5 space-y-4">
-            <p className="text-xs text-[#6c757d] dark:text-slate-400">
+            <p className="text-xs text-fg-muted dark:text-slate-400">
               Reads the text from mPanel&apos;s firewall Import/Export dialog, which is also what Export saves, or a list in the API&apos;s own rule fields (source_addresses, destination_addresses,
               destination_ports, protocol, action, description).
             </p>
             <div>
-              <label className="text-xs font-semibold text-[#495057] dark:text-[#ced4da] block mb-1">
+              <p id="fw-import-file-label" className="text-xs font-semibold text-[#495057] dark:text-[#ced4da] block mb-1">
                 Upload .json configuration file:
-              </label>
+              </p>
               <input
                 type="file"
                 accept=".json"
@@ -958,7 +961,8 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full py-2 px-3 border border-dashed border-[#ced4da] dark:border-[#373b3e] hover:border-[#017cb6] bg-[#f8f9fa] dark:bg-[#212529] rounded text-xs text-[#6c757d] dark:text-slate-300 transition flex items-center justify-center gap-2"
+                aria-describedby="fw-import-file-label"
+                className="w-full py-2 px-3 border border-dashed border-[#ced4da] dark:border-[#373b3e] hover:border-[#017cb6] bg-[#f8f9fa] dark:bg-[#212529] rounded text-xs text-fg-muted dark:text-slate-300 transition flex items-center justify-center gap-2"
               >
                 <Upload className="w-3.5 h-3.5" />
                 <span>Choose JSON File...</span>
@@ -966,16 +970,17 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
             </div>
 
             <div>
-              <label className="text-xs font-semibold text-[#495057] dark:text-[#ced4da] block mb-1">
+              <label htmlFor="fw-import-json" className="text-xs font-semibold text-[#495057] dark:text-[#ced4da] block mb-1">
                 Or paste JSON rules array directly:
               </label>
               <textarea
+                id="fw-import-json"
                 required
                 rows={8}
                 placeholder={`[\n  {\n    "sourceaddr": "0.0.0.0/0",\n    "destaddr": "203.0.113.17",\n    "destport": "22,80,443",\n    "action": "ACCEPT",\n    "description": "Production Web & SSH",\n    "protocol": "TCP"\n  }\n]`}
                 value={importJsonText}
                 onChange={(e) => setImportJsonText(e.target.value)}
-                className="w-full p-3 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded text-[#212529] dark:text-white font-mono text-[11px] focus:outline-none focus:border-[#017cb6]"
+                className="w-full p-3 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded text-[#212529] dark:text-white font-mono text-[0.6875rem] focus:outline-none focus:border-[#017cb6]"
               />
             </div>
 
@@ -1003,7 +1008,7 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
               <button
                 type="button"
                 onClick={closeClone}
-                className="px-3 py-1.5 text-[#6c757d] hover:text-[#212529] dark:hover:text-white"
+                className="px-3 py-1.5 text-fg-muted hover:text-[#212529] dark:hover:text-white"
               >
                 Cancel
               </button>
@@ -1019,15 +1024,16 @@ export const FirewallManager: React.FC<FirewallManagerProps> = ({ client, initia
           }
         >
           <div className="p-5 space-y-4 text-xs">
-            <p className="text-[#6c757d] dark:text-slate-400">
+            <p className="text-fg-muted dark:text-slate-400">
               This will overwrite the destination server's firewall rules with the {ruleCount(currentRules.length)} from {activeServer?.name}.
             </p>
 
             <div>
-              <label className="font-semibold text-[#495057] dark:text-[#ced4da] block mb-1">
+              <label htmlFor="fw-clone-target" className="font-semibold text-[#495057] dark:text-[#ced4da] block mb-1">
                 Destination Server
               </label>
               <select
+                id="fw-clone-target"
                 value={targetServerId || ''}
                 onChange={(e) => {
                   setTargetServerId(Number(e.target.value))

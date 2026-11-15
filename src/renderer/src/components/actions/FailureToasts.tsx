@@ -18,12 +18,12 @@ function FailureCard({ failure: f, inline }: { failure: Failure; inline?: boolea
       <div className="flex-1 min-w-0 space-y-1 select-text">
         <div className="font-semibold text-[#212529] dark:text-white break-words">
           {f.title}
-          {f.count > 1 && <span className="ml-1.5 font-normal text-[#6c757d] dark:text-[#adb5bd]">×{f.count}</span>}
+          {f.count > 1 && <span className="ml-1.5 font-normal text-fg-muted dark:text-[#adb5bd]">×{f.count}</span>}
         </div>
-        {f.detail && <div className="text-[11px] text-[#495057] dark:text-[#adb5bd] break-words">{f.detail}</div>}
-        {f.note && <div className="text-[11px] text-[#495057] dark:text-[#adb5bd] break-words">{f.note}</div>}
+        {f.detail && <div className="text-[0.6875rem] text-[#495057] dark:text-[#adb5bd] break-words">{f.detail}</div>}
+        {f.note && <div className="text-[0.6875rem] text-[#495057] dark:text-[#adb5bd] break-words">{f.note}</div>}
         {f.code && (
-          <code className="block text-[11px] font-mono bg-[#f1f3f5] dark:bg-[#1f2326] rounded px-2 py-1 break-all select-text">
+          <code className="block text-[0.6875rem] font-mono bg-[#f1f3f5] dark:bg-[#1f2326] rounded px-2 py-1 break-all select-text">
             {f.code}
           </code>
         )}
@@ -36,7 +36,7 @@ function FailureCard({ failure: f, inline }: { failure: Failure; inline?: boolea
         onClick={() => dismissFailure(f.id)}
         aria-label={`Dismiss: ${f.title}`}
         // The icon is small; the padding (pulled back with a negative margin) is what a finger has to hit.
-        className="p-2.5 -m-2 text-[#6c757d] hover:text-[#212529] dark:hover:text-white rounded flex-shrink-0"
+        className="p-2.5 -m-2 text-fg-muted hover:text-[#212529] dark:hover:text-white rounded flex-shrink-0"
       >
         <X className="w-3.5 h-3.5" />
       </button>

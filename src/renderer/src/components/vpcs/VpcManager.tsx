@@ -223,10 +223,10 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-[#212529] dark:text-white flex items-center gap-2.5">
-            <Network className="w-5 h-5 text-[#017cb6]" />
+            <Network className="w-5 h-5 text-fg-link" />
             <span>Virtual Private Clouds (VPCs)</span>
           </h1>
-          <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-0.5">
+          <p className="text-xs text-fg-muted dark:text-slate-400 mt-0.5">
             Isolated layer-2 private networks across BinaryLane data centres.
           </p>
         </div>
@@ -246,8 +246,8 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
       {/* Loading state */}
       {vpcsQuery.isLoading && (
         <div className="flex flex-col items-center justify-center p-12 space-y-3 bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e]">
-          <Loader2 className="w-8 h-8 text-[#017cb6] animate-spin" />
-          <p className="text-xs text-[#6c757d] dark:text-slate-400">Loading VPC networks...</p>
+          <Loader2 className="w-8 h-8 text-fg-link animate-spin" />
+          <p className="text-xs text-fg-muted dark:text-slate-400">Loading VPC networks...</p>
         </div>
       )}
 
@@ -258,9 +258,9 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
       {/* Empty State */}
       {!vpcsQuery.isLoading && !vpcsQuery.isError && vpcs.length === 0 && (
         <div className="flex flex-col items-center justify-center p-12 text-center bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e]">
-          <Network className="w-10 h-10 text-[#6c757d] dark:text-slate-500 mb-3" />
+          <Network className="w-10 h-10 text-fg-muted dark:text-slate-500 mb-3" />
           <h3 className="text-sm font-semibold text-[#212529] dark:text-white">No VPC Networks</h3>
-          <p className="text-xs text-[#6c757d] dark:text-slate-400 max-w-sm mt-1 mb-4">
+          <p className="text-xs text-fg-muted dark:text-slate-400 max-w-sm mt-1 mb-4">
             Connect multiple virtual servers privately on an isolated 10Gbps backend network.
           </p>
           <button
@@ -287,11 +287,11 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
               <div className="p-4 border-b border-[#ced4da] dark:border-[#373b3e] bg-[#f1f1f1] dark:bg-[#262a2e] flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <div className="w-7 h-7 rounded bg-[#017cb6]/10 flex items-center justify-center">
-                    <Network className="w-4 h-4 text-[#017cb6]" />
+                    <Network className="w-4 h-4 text-fg-link" />
                   </div>
                   <div>
                     <h3 className="font-bold text-sm text-[#212529] dark:text-white">{vpc.name}</h3>
-                    <span className="text-[11px] text-[#6c757d] dark:text-slate-400 font-mono">
+                    <span className="text-[0.6875rem] text-fg-muted dark:text-slate-400 font-mono">
                       #{vpc.id} • {vpc.ip_range}
                     </span>
                   </div>
@@ -299,7 +299,7 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
 
                 <button
                   onClick={() => handleDeleteVpc(vpc.id, vpc.name)}
-                  className="text-[#6c757d] hover:text-rose-500 p-1.5 rounded transition"
+                  className="text-fg-muted hover:text-rose-500 p-1.5 rounded transition"
                   title="Delete VPC"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -319,7 +319,7 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
                         setSelectedServerToAttach(attachableServers[0].id)
                       }
                     }}
-                    className="flex items-center gap-1 text-xs text-[#017cb6] hover:underline font-medium"
+                    className="flex items-center gap-1 text-xs text-fg-link hover:underline font-medium"
                   >
                     <UserPlus className="w-3.5 h-3.5" />
                     <span>Attach Server</span>
@@ -327,7 +327,7 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
                 </div>
 
                 {vpcServers.length === 0 ? (
-                  <div className="p-4 bg-[#f8f9fa] dark:bg-[#212529] rounded border border-dashed border-[#ced4da] dark:border-[#373b3e] text-center text-xs text-[#6c757d] dark:text-slate-400">
+                  <div className="p-4 bg-[#f8f9fa] dark:bg-[#212529] rounded border border-dashed border-[#ced4da] dark:border-[#373b3e] text-center text-xs text-fg-muted dark:text-slate-400">
                     No servers connected to this VPC yet.
                   </div>
                 ) : (
@@ -345,12 +345,12 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
                             onClick={() => onSelectServer && onSelectServer(s)}
                             className="flex items-center gap-2 cursor-pointer flex-1"
                           >
-                            <Server className="w-3.5 h-3.5 text-[#017cb6]" />
+                            <Server className="w-3.5 h-3.5 text-fg-link" />
                             <div>
-                              <div className="text-xs font-bold text-[#017cb6] hover:underline">
+                              <div className="text-xs font-bold text-fg-link hover:underline">
                                 {s.name}
                               </div>
-                              <div className="text-[11px] font-mono text-[#6c757d] dark:text-slate-400">
+                              <div className="text-[0.6875rem] font-mono text-fg-muted dark:text-slate-400">
                                 Private: {privateIp}
                               </div>
                             </div>
@@ -359,10 +359,10 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
                           <button
                             onClick={() => handleDetachServer(s.id, s.name)}
                             disabled={isDetaching}
-                            className="p-1.5 text-[#6c757d] hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition"
+                            className="p-1.5 text-fg-muted hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition"
                             title="Detach from VPC"
                           >
-                            {isDetaching ? <Loader2 className="w-3.5 h-3.5 animate-spin text-[#017cb6]" /> : <Unlink className="w-3.5 h-3.5" />}
+                            {isDetaching ? <Loader2 className="w-3.5 h-3.5 animate-spin text-fg-link" /> : <Unlink className="w-3.5 h-3.5" />}
                           </button>
                         </div>
                       )
@@ -376,7 +376,7 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
       </div>
 
       {vpcs.length > VPCS_PER_PAGE && (
-        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035] text-[11px] text-[#6c757d] dark:text-[#adb5bd]">
+        <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035] text-[0.6875rem] text-fg-muted dark:text-[#adb5bd]">
           <span>
             {(currentPage - 1) * VPCS_PER_PAGE + 1}&ndash;
             {Math.min(currentPage * VPCS_PER_PAGE, vpcs.length)} of {vpcs.length}
@@ -420,7 +420,7 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
                 type="button"
                 onClick={() => setIsCreating(false)}
                 disabled={isSubmitting}
-                className="px-3 py-1.5 text-xs text-[#6c757d] hover:text-[#212529] dark:hover:text-white disabled:opacity-40"
+                className="px-3 py-1.5 text-xs text-fg-muted hover:text-[#212529] dark:hover:text-white disabled:opacity-40"
               >
                 Cancel
               </button>
@@ -462,7 +462,7 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
                 onChange={(e) => setIpRange(e.target.value)}
                 className="w-full bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] text-xs text-[#212529] dark:text-white px-3 py-2 rounded font-mono focus:outline-none focus:border-[#017cb6]"
               />
-              <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-1">
+              <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-1">
                 Standard private range: 10.240.0.0/16, 172.16.0.0/16, etc.
               </p>
             </div>
@@ -485,7 +485,7 @@ export const VpcManager: React.FC<VpcManagerProps> = ({ client, onSelectServer, 
                 type="button"
                 onClick={() => setAttachModalVpc(null)}
                 disabled={isAttaching}
-                className="px-3 py-1.5 text-xs text-[#6c757d] hover:text-[#212529] dark:hover:text-white disabled:opacity-40"
+                className="px-3 py-1.5 text-xs text-fg-muted hover:text-[#212529] dark:hover:text-white disabled:opacity-40"
               >
                 Cancel
               </button>

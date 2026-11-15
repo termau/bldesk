@@ -25,7 +25,9 @@ interface ServerContextMenuProps {
 /**
  * Lightweight in-renderer context menu for a server row. Rendered fixed at the
  * click point, nudged back on-screen if it would overflow, closed on outside
- * click / Escape / scroll.
+ * click / Escape (and so Android's Back) / Tab / scroll. Focus moves to its
+ * first item, the arrow keys, Home and End move between items, and closing it
+ * puts focus back where it was.
  */
 export const ServerContextMenu: React.FC<ServerContextMenuProps> = ({
   state,
@@ -41,6 +43,13 @@ export const ServerContextMenu: React.FC<ServerContextMenuProps> = ({
   const { server } = state
   const ip = primaryIpv4(server)
   const isRunning = server.status === 'active'
+  // What had focus when the menu opened, read while rendering, before the menu takes focus.
+  const opener = useRef<Element | null | undefined>(undefined)
+  if (opener.current === undefined) opener.current = document.activeElement
+  const refocus = () => {
+    const back = opener.current
+    if (back instanceof HTMLElement && back !== document.body && back.isConnected) back.focus()
+  }
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -48,65 +57,106 @@ export const ServerContextMenu: React.FC<ServerContextMenuProps> = ({
     const { innerWidth, innerHeight } = window
     const r = el.getBoundingClientRect()
     setPos({
-      x: state.x + r.width > innerWidth - 8 ? Math.max(8, state.x - r.width) : state.x,
+      x: Math.max(8, state.x + r.width > innerWidth - 8 ? Math.min(state.x - r.width, innerWidth - r.width - 8) : state.x),
       y: state.y + r.height > innerHeight - 8 ? Math.max(8, innerHeight - r.height - 8) : state.y
     })
   }, [state.x, state.y])
+
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>('[role="menuitem"]:not([disabled])')?.focus()
+    return () => {
+      // Closed by a click elsewhere, a scroll or the window losing focus: focus had nowhere to go once the menu went.
+      const now = document.activeElement
+      if (!now || now === document.body) refocus()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     const down = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) onClose()
     }
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        refocus()
+        onClose()
+      }
     }
     document.addEventListener('mousedown', down)
     document.addEventListener('keydown', key)
     document.addEventListener('scroll', onClose, true)
+    window.addEventListener('resize', onClose)
     window.addEventListener('blur', onClose)
     return () => {
       document.removeEventListener('mousedown', down)
       document.removeEventListener('keydown', key)
       document.removeEventListener('scroll', onClose, true)
+      window.removeEventListener('resize', onClose)
       window.removeEventListener('blur', onClose)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [onClose])
 
+  // Focus goes back before the item runs, so a dialog the item opens returns focus there too.
   const run = (fn: () => void) => () => {
+    refocus()
     onClose()
     fn()
   }
 
+  const move = (e: React.KeyboardEvent) => {
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      refocus()
+      onClose()
+      return
+    }
+    const items = Array.from(ref.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not([disabled])') ?? [])
+    const at = items.indexOf(document.activeElement as HTMLElement)
+    const to = e.key === 'ArrowDown' ? at + 1 : e.key === 'ArrowUp' ? at - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : null
+    if (to === null || items.length === 0) return
+    e.preventDefault()
+    items[(to + items.length) % items.length].focus()
+  }
+
   const item =
-    'w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-xs rounded hover:bg-black/[0.05] dark:hover:bg-white/[0.08] transition disabled:opacity-40 disabled:hover:bg-transparent'
+    'w-full flex items-center gap-2 px-2.5 py-1.5 text-left text-xs rounded hover:bg-black/[0.05] dark:hover:bg-white/[0.08] focus:bg-black/[0.06] dark:focus:bg-white/[0.1] focus-ring transition disabled:opacity-40 disabled:hover:bg-transparent'
 
   return (
     <div
       ref={ref}
-      style={{ left: pos.x, top: pos.y }}
-      className="fixed z-[60] w-56 p-1 bg-white dark:bg-[#2b3035] text-[#212529] dark:text-[#f8f9fa] border border-[#ced4da] dark:border-[#373b3e] rounded-md shadow-xl select-none"
+      role="menu"
+      aria-label={`${server.name} #${server.id}`}
+      // Escape closes it, so the app's Back (which sends Escape to a dismissible menu) closes it too.
+      data-dismissible="true"
+      onKeyDown={move}
+      style={{ left: pos.x, top: pos.y, maxHeight: 'calc(100vh - 16px)' }}
+      className="fixed z-[60] w-56 max-w-[calc(100vw-16px)] overflow-y-auto p-1 bg-white dark:bg-[#2b3035] text-[#212529] dark:text-[#f8f9fa] border border-[#ced4da] dark:border-[#373b3e] rounded-md shadow-xl select-none"
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div className="px-2.5 py-1.5 text-[11px] font-semibold text-[#6c757d] dark:text-slate-400 truncate border-b border-[#ced4da]/60 dark:border-[#373b3e] mb-1">
+      <div aria-hidden="true" className="px-2.5 py-1.5 text-[0.6875rem] font-semibold text-fg-muted dark:text-slate-400 truncate border-b border-[#ced4da]/60 dark:border-[#373b3e] mb-1">
         {server.name} <span className="font-mono font-normal">#{server.id}</span>
       </div>
 
-      <button className={item} onClick={run(() => onOpen(server))}>
-        <ExternalLink className="w-3.5 h-3.5 text-[#017cb6]" /> Open
+      <button role="menuitem" tabIndex={-1} className={item} onClick={run(() => onOpen(server))}>
+        <ExternalLink className="w-3.5 h-3.5 text-fg-link" /> Open
       </button>
-      <button className={item} onClick={run(() => onSsh(ip || ''))}>
-        <Terminal className="w-3.5 h-3.5 text-[#017cb6]" /> SSH as root
+      <button role="menuitem" tabIndex={-1} className={item} onClick={run(() => onSsh(ip || ''))}>
+        <Terminal className="w-3.5 h-3.5 text-fg-link" /> SSH as root
       </button>
 
-      <div className="my-1 border-t border-[#ced4da]/60 dark:border-[#373b3e]" />
+      <div role="separator" className="my-1 border-t border-[#ced4da]/60 dark:border-[#373b3e]" />
 
-      <button className={item} disabled={!ip} onClick={run(() => ip && navigator.clipboard.writeText(ip))}>
-        <Copy className="w-3.5 h-3.5" /> Copy IP {ip && <span className="ml-auto font-mono text-[10px] text-[#6c757d]">{ip}</span>}
+      <button role="menuitem" tabIndex={-1} className={item} disabled={!ip} onClick={run(() => ip && navigator.clipboard.writeText(ip))}>
+        <Copy className="w-3.5 h-3.5" /> Copy IP {ip && <span className="ml-auto font-mono text-[0.625rem] text-fg-muted">{ip}</span>}
       </button>
-      <button className={item} onClick={run(() => onCopyLink(server.id))} title={formatDeepLink({ kind: 'server', serverId: server.id })}>
+      <button role="menuitem" tabIndex={-1} className={item} onClick={run(() => onCopyLink(server.id))} title={formatDeepLink({ kind: 'server', serverId: server.id })}>
         <Link2 className="w-3.5 h-3.5" /> Copy bldesk:// link
       </button>
       <button
+        role="menuitem"
+        tabIndex={-1}
         className={item}
         onClick={run(() => navigator.clipboard.writeText(formatDeepLink({ kind: 'console', serverId: server.id })))}
         title={formatDeepLink({ kind: 'console', serverId: server.id })}
@@ -114,19 +164,19 @@ export const ServerContextMenu: React.FC<ServerContextMenuProps> = ({
         <Radio className="w-3.5 h-3.5" /> Copy console link
       </button>
 
-      <div className="my-1 border-t border-[#ced4da]/60 dark:border-[#373b3e]" />
+      <div role="separator" className="my-1 border-t border-[#ced4da]/60 dark:border-[#373b3e]" />
 
       {isRunning ? (
         <>
-          <button className={item} disabled={actionInProgress} onClick={run(() => onAction(server.id, 'reboot'))}>
+          <button role="menuitem" tabIndex={-1} className={item} disabled={actionInProgress} onClick={run(() => onAction(server.id, 'reboot'))}>
             <RotateCw className="w-3.5 h-3.5 text-amber-500" /> Reboot…
           </button>
-          <button className={item} disabled={actionInProgress} onClick={run(() => onAction(server.id, 'shutdown'))}>
+          <button role="menuitem" tabIndex={-1} className={item} disabled={actionInProgress} onClick={run(() => onAction(server.id, 'shutdown'))}>
             <Power className="w-3.5 h-3.5 text-rose-500" /> Shutdown…
           </button>
         </>
       ) : (
-        <button className={item} disabled={actionInProgress} onClick={run(() => onAction(server.id, 'power_on'))}>
+        <button role="menuitem" tabIndex={-1} className={item} disabled={actionInProgress} onClick={run(() => onAction(server.id, 'power_on'))}>
           <Play className="w-3.5 h-3.5 text-emerald-500" /> Power on…
         </button>
       )}

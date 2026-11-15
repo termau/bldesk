@@ -1,9 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Activity, AlertTriangle, HelpCircle, Loader2, RotateCw, Route } from 'lucide-react'
 import type { TcpProbeResult, TracerouteHop } from '@shared/ipc-types'
 import type { BinaryLaneClient } from '../../api/client'
 import { useFirewallRules } from '../../api/queries'
-import { Modal } from '../ui/Modal'
+import { Modal, isModalOpen } from '../ui/Modal'
 import { explainUnreachablePort, describeRule, type FirewallVerdict } from '../../lib/firewallMatch'
 
 /**
@@ -104,7 +104,7 @@ export function useReachability(
   return { supported, result, busy, seq, port, probe, verdict, hops, tracing, runTrace, clearHops }
 }
 
-const pill = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium'
+const pill = 'inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[0.6875rem] font-medium'
 
 /** Re-probe. An icon rather than a word: the row is tight, the label goes on hover. */
 const ReloadButton: React.FC<{ r: Reachability; busy: boolean }> = ({ r, busy }) => (
@@ -161,7 +161,7 @@ export const ReachabilityChip: React.FC<{
     <span className="inline-flex items-center gap-2" title={sshHost ? `Checks the public address; SSH connects to ${sshHost}` : undefined}>
       {/* No result yet: the only time the pill is a placeholder. */}
       {!result && busy && (
-        <span className={`${pill} bg-[#e9ecef] dark:bg-[#343a40] text-[#6c757d] dark:text-slate-400`}>
+        <span className={`${pill} bg-[#e9ecef] dark:bg-[#343a40] text-fg-muted dark:text-slate-400`}>
           <Loader2 className="w-3 h-3 shrink-0 animate-spin" />
           Checking {port}…
         </span>
@@ -208,48 +208,25 @@ export const ReachabilityChip: React.FC<{
             * and an unchanged one does not.
             */}
           {explanation && (
-            <span key={r.seq} className="relative group inline-flex p-1.5 -m-1.5 blink-once">
-              <button
-                type="button"
-                aria-label="Why is this unreachable?"
-                className="inline-flex text-current opacity-70 hover:opacity-100"
-              >
-                <HelpCircle className="w-3.5 h-3.5" />
-              </button>
-              {/*
-                * The gap between the "?" and the card is padding on this wrapper,
-                * not margin outside it. With `mt-` the 6px was dead space owned
-                * by neither element, so moving the mouse toward the card left the
-                * hover target and it closed before you could reach the link.
-                */}
-              {/* focus-within as well as hover: a hover-only tooltip is
-                  unreachable by keyboard, and the card holds the only route to
-                  the firewall link and the traceroute action. */}
-              <span
-                role="tooltip"
-                className="pointer-events-none group-hover:pointer-events-auto group-focus-within:pointer-events-auto invisible group-hover:visible group-focus-within:visible opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition absolute left-1/2 -translate-x-1/2 top-full pt-2 z-30 w-80"
-              >
-                <span className="block p-2.5 rounded border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035] shadow-lg text-[11px] font-normal text-[#495057] dark:text-slate-300 space-y-1.5">
-                <span className="block">{explanation}</span>
-                <span className="flex items-center gap-3">
-                  {onOpenFirewall && r.verdict.kind === 'blocked' && (
-                    <button type="button" onClick={onOpenFirewall} className="text-[#017cb6] hover:underline">
-                      Open firewall rules
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => void r.runTrace()}
-                    disabled={r.tracing}
-                    className="inline-flex items-center gap-1 text-[#017cb6] hover:underline disabled:opacity-50"
-                  >
-                    {r.tracing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Route className="w-3 h-3" />}
-                    <span>{r.tracing ? 'Tracing…' : 'Trace route'}</span>
+            <WhyToggletip key={r.seq}>
+              <span className="block">{explanation}</span>
+              <span className="flex items-center gap-3">
+                {onOpenFirewall && r.verdict.kind === 'blocked' && (
+                  <button type="button" onClick={onOpenFirewall} className="text-fg-link hover:underline">
+                    Open firewall rules
                   </button>
-                </span>
-                </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => void r.runTrace()}
+                  disabled={r.tracing}
+                  className="inline-flex items-center gap-1 text-fg-link hover:underline disabled:opacity-50"
+                >
+                  {r.tracing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Route className="w-3 h-3" />}
+                  <span>{r.tracing ? 'Tracing…' : 'Trace route'}</span>
+                </button>
               </span>
-            </span>
+            </WhyToggletip>
           )}
 
           {/* Inside the bubble, beside the state it refreshes. */}
@@ -265,6 +242,103 @@ export const ReachabilityChip: React.FC<{
         */}
       <TraceDialog r={r} ip={ip} />
 
+    </span>
+  )
+}
+
+/**
+ * The "?" in a failed pill, a toggletip: hovering shows the card, and a click, Enter or Space keeps it open, so it can be
+ * reached by keyboard, touch and screen reader (the card holds the only route to the firewall link and the traceroute
+ * action). Escape, a click elsewhere or focus leaving it closes it, and Escape also hides a card shown by hovering.
+ * Centred under the "?" unless that would run off the window, when it is nudged in or shown above.
+ *
+ * The "?" sits inside the bubble it explains, and blinks once when a failure lands so it is noticed without a looping
+ * animation in the header. Keyed by probe sequence, so a fresh failure blinks again and an unchanged one does not.
+ */
+const WhyToggletip: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [open, setOpen] = useState(false)
+  const [hover, setHover] = useState(false)
+  const [place, setPlace] = useState({ dx: 0, up: false })
+  const wrap = useRef<HTMLSpanElement>(null)
+  const card = useRef<HTMLSpanElement>(null)
+  const button = useRef<HTMLButtonElement>(null)
+  const id = useId()
+  const shown = open || hover
+
+  const hide = () => {
+    setOpen(false)
+    setHover(false)
+  }
+
+  useLayoutEffect(() => {
+    if (!shown) return setPlace({ dx: 0, up: false })
+    const c = card.current?.getBoundingClientRect()
+    const w = wrap.current?.getBoundingClientRect()
+    if (!c || !w) return
+    const right = document.documentElement.clientWidth - 8
+    const dx = c.left < 8 ? 8 - c.left : c.right > right ? right - c.right : 0
+    const up = c.bottom > window.innerHeight - 8 && w.top - c.height >= 8
+    setPlace({ dx, up })
+  }, [shown])
+
+  useEffect(() => {
+    if (!shown) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || isModalOpen()) return
+      e.preventDefault()
+      if (wrap.current?.contains(document.activeElement)) button.current?.focus()
+      hide()
+    }
+    const onDown = (e: PointerEvent) => {
+      if (!wrap.current?.contains(e.target as Node)) hide()
+    }
+    document.addEventListener('keydown', onKey)
+    document.addEventListener('pointerdown', onDown)
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointerdown', onDown)
+    }
+  }, [shown])
+
+  return (
+    <span
+      ref={wrap}
+      className="relative inline-flex p-1.5 -m-1.5 blink-once"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onBlur={(e) => {
+        if (!wrap.current?.contains(e.relatedTarget as Node | null)) setOpen(false)
+      }}
+    >
+      <button
+        ref={button}
+        type="button"
+        aria-label="Why is this unreachable?"
+        aria-expanded={shown}
+        aria-controls={shown ? id : undefined}
+        onClick={() => (open ? hide() : setOpen(true))}
+        className="inline-flex text-current opacity-70 hover:opacity-100 focus-ring rounded-full"
+      >
+        <HelpCircle className="w-3.5 h-3.5" aria-hidden="true" />
+      </button>
+      {/*
+        * The gap between the "?" and the card is padding on this wrapper, not margin outside it. With `mt-` the 6px was
+        * dead space owned by neither element, so moving the mouse toward the card left the hover target and it closed
+        * before you could reach the link.
+        */}
+      {shown && (
+        <span
+          ref={card}
+          id={id}
+          role="tooltip"
+          style={{ transform: `translateX(calc(-50% + ${place.dx}px))` }}
+          className={`absolute left-1/2 ${place.up ? 'bottom-full pb-2' : 'top-full pt-2'} z-30 w-80 max-w-[calc(100vw-16px)]`}
+        >
+          <span className="block p-2.5 rounded border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035] shadow-lg text-[0.6875rem] font-normal text-[#495057] dark:text-slate-300 space-y-1.5">
+            {children}
+          </span>
+        </span>
+      )}
     </span>
   )
 }
@@ -291,12 +365,11 @@ const TraceDialog: React.FC<{ r: Reachability; ip?: string }> = ({ r, ip }) => {
     <Modal
       title="Route from this machine"
       icon={Route}
-      headTone="text-[#212529] dark:text-white [&>svg]:text-[#017cb6]"
+      headTone="text-[#212529] dark:text-white [&>svg]:text-fg-link"
       onClose={clearHops}
       size="sm"
-      labelledBy="trace-title"
       footer={
-        <div className="px-4 py-2.5 text-[11px] text-[#6c757d] dark:text-slate-400">
+        <div className="px-4 py-2.5 text-[0.6875rem] text-fg-muted dark:text-slate-400">
           A <span className="font-mono">*</span> is a hop that did not answer, which is normal. Paste this into a
           support ticket to show where the path stops.
         </div>
@@ -304,7 +377,7 @@ const TraceDialog: React.FC<{ r: Reachability; ip?: string }> = ({ r, ip }) => {
     >
       <div className="p-4">
         {tracing && (
-          <p className="flex items-center gap-2 text-xs text-[#6c757d] dark:text-slate-400">
+          <p className="flex items-center gap-2 text-xs text-fg-muted dark:text-slate-400">
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
             Tracing to {ip}…
           </p>
@@ -315,7 +388,7 @@ const TraceDialog: React.FC<{ r: Reachability; ip?: string }> = ({ r, ip }) => {
             <tbody className="divide-y divide-[#ced4da]/60 dark:divide-[#373b3e]">
               {hops.map((h) => (
                 <tr key={h.hop} className="text-[#495057] dark:text-slate-300">
-                  <td className="py-1 pr-3 text-right w-8 text-[#6c757d] dark:text-slate-500">{h.hop}</td>
+                  <td className="py-1 pr-3 text-right w-8 text-fg-muted dark:text-slate-500">{h.hop}</td>
                   <td className="py-1 pr-3">{h.timedOut ? '*' : h.host || '—'}</td>
                   <td className="py-1 text-right whitespace-nowrap">{h.latencyMs !== undefined ? `${h.latencyMs} ms` : ''}</td>
                 </tr>
@@ -325,7 +398,7 @@ const TraceDialog: React.FC<{ r: Reachability; ip?: string }> = ({ r, ip }) => {
         )}
 
         {!tracing && hops && hops.length === 0 && (
-          <p className="text-xs text-[#6c757d] dark:text-slate-400">Traceroute returned nothing — the system tool may be unavailable here.</p>
+          <p className="text-xs text-fg-muted dark:text-slate-400">Traceroute returned nothing — the system tool may be unavailable here.</p>
         )}
       </div>
     </Modal>

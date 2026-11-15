@@ -21,6 +21,7 @@ import {
   rulesToWrite,
   rowsWithProblems,
   sameRules,
+  shownProblems,
   splitList
 } from '../src/renderer/src/lib/firewallDraft.ts'
 
@@ -332,4 +333,14 @@ test('a draft that only holds typed layout is kept against the rules it was type
   assert.equal(draftApplies({ base: rules, rows: edited }, [rule('drop', 'tcp', ['22'])]), true)
   assert.equal(ruleOfRow({ ...typing[0] }).description, 'Operations SSH', 'and the layout is not written')
   assert.equal(rulesToWrite(typing)[0], rules[0], 'a rule that was only typed in layout is written as it came')
+})
+
+test('a problem in the field being typed in waits until the field is left, and still stops the save', () => {
+  const rows = draftFromRules([rule('accept', 'tcp', ['22'])]).map((r) => ({ ...r, sources: '10.0.', ports: '' }))
+  const p = problemsOf(rows[0])
+  assert.ok(p.sources && p.ports)
+  assert.deepEqual(shownProblems(p, 'sources'), { ports: p.ports }, 'half an address is not called wrong while it is typed')
+  assert.deepEqual(shownProblems(p), p, 'once the field is left, it is')
+  assert.deepEqual(shownProblems(p, 'description'), p, 'typing in a field with no problem hides nothing')
+  assert.equal(rowsWithProblems(rows), 1, 'and saving is stopped whether it is shown or not')
 })

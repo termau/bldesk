@@ -11,7 +11,7 @@ export const LinkOut: React.FC<{ href: string; children: React.ReactNode }> = ({
   <button
     type="button"
     onClick={() => window.bldeskApi?.openExternal?.(href)}
-    className="text-[#017cb6] dark:text-[#4db2e0] hover:underline inline-flex items-center gap-0.5"
+    className="text-fg-link dark:text-[#4db2e0] hover:underline inline-flex items-center gap-0.5"
   >
     {children}
     <ExternalLink className="w-2.5 h-2.5" />

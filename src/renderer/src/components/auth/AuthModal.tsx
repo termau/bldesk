@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useId, useRef, useState } from 'react'
 import { Key, ShieldCheck, ExternalLink, Trash2, CheckCircle2, AlertCircle, Loader2, RefreshCw } from 'lucide-react'
 import { AccountProfile } from '@shared/ipc-types'
 import { createBinaryLaneClient } from '../../api/client'
@@ -39,8 +39,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
    */
   const [encryptionUnavailable, setEncryptionUnavailable] = useState(false)
   const [allowUnencrypted, setAllowUnencrypted] = useState(false)
+  // The field an error is about: marked invalid and focused, so the message is read with it.
+  const [errorField, setErrorField] = useState<'name' | 'token' | null>(null)
+  const nameRef = useRef<HTMLInputElement>(null)
+  const tokenRef = useRef<HTMLInputElement>(null)
+  const nameId = useId()
+  const tokenId = useId()
+  const errorId = useId()
 
   if (!isOpen) return null
+
+  const fail = (message: string, field: 'name' | 'token' | null) => {
+    setErrorMsg(message)
+    setErrorField(field)
+    if (field === 'name') nameRef.current?.focus()
+    else if (field === 'token') tokenRef.current?.focus()
+  }
 
   const handleOpenTokenPage = () => {
     window.bldeskApi?.openExternal?.('https://home.binarylane.com.au/api-info')
@@ -49,11 +63,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleSaveToken = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMsg(null)
+    setErrorField(null)
     setSuccessMsg(null)
 
     const cleanToken = tokenInput.trim()
     if (!cleanToken) {
-      setErrorMsg('Please enter a valid BinaryLane API token.')
+      fail('Please enter a valid BinaryLane API token.', 'token')
       return
     }
 
@@ -62,8 +77,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const wanted = profileName.trim().toLowerCase()
       const clash = wanted && profiles.find((p) => (p.name || '').trim().toLowerCase() === wanted)
       if (clash) {
-        setErrorMsg(
-          `A profile named "${clash.name}" already exists. Use the update action on that profile to replace its API key.`
+        fail(
+          `A profile named "${clash.name}" already exists. Use the update action on that profile to replace its API key.`,
+          'name'
         )
         return
       }
@@ -77,7 +93,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const { data, error } = await client.GET('/v2/account')
 
       if (error || !data?.account) {
-        throw new Error('API token verification failed. Please ensure the token is active and has correct permissions.')
+        fail('API token verification failed. Please ensure the token is active and has correct permissions.', 'token')
+        return
       }
 
       const verifiedEmail = data.account.email
@@ -162,34 +179,36 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     key={p.id}
                     className={`flex items-center justify-between p-2.5 rounded border transition ${
                       isActive
-                        ? 'bg-[#017cb6]/10 border-[#017cb6] text-[#017cb6]'
+                        ? 'bg-[#017cb6]/10 border-[#017cb6] text-fg-link'
                         : 'bg-[#f8f9fa] dark:bg-[#212529] border-[#ced4da] dark:border-[#373b3e] text-[#212529] dark:text-white hover:border-[#017cb6]'
                     }`}
                   >
-                    <div
+                    <button
+                      type="button"
                       onClick={() => handleSetActive(p.id)}
-                      className="cursor-pointer flex-1 flex items-center gap-2"
+                      aria-pressed={isActive}
+                      className="focus-ring rounded cursor-pointer flex-1 flex items-center gap-2 text-left"
                     >
-                      <Key className={`w-3.5 h-3.5 ${isActive ? 'text-[#f1ca00]' : 'text-[#6c757d]'}`} />
+                      <Key className={`w-3.5 h-3.5 ${isActive ? 'text-[#f1ca00]' : 'text-fg-muted'}`} />
                       <div>
                         <div className="font-semibold">{p.name}</div>
-                        {p.email && <div className="text-[10px] text-[#6c757d]">{p.email}</div>}
+                        {p.email && <div className="text-[0.625rem] text-fg-muted">{p.email}</div>}
                         {p.tokenStatus === 'unencrypted' && (
-                          <div className="text-[10px] text-amber-600 dark:text-amber-400" title="Saved without encryption because this system had no working keyring. Replace the token once a keyring is available to encrypt it.">
+                          <div className="text-[0.625rem] text-amber-600 dark:text-amber-400" title="Saved without encryption because this system had no working keyring. Replace the token once a keyring is available to encrypt it.">
                             Token not encrypted
                           </div>
                         )}
                         {p.tokenStatus === 'unreadable' && (
-                          <div className="text-[10px] text-rose-600 dark:text-rose-400" title="The token could not be decrypted, for example because the keyring is locked or was replaced. Use the replace button to enter it again.">
+                          <div className="text-[0.625rem] text-rose-600 dark:text-rose-400" title="The token could not be decrypted, for example because the keyring is locked or was replaced. Use the replace button to enter it again.">
                             Token needs re-entering
                           </div>
                         )}
                       </div>
-                    </div>
+                    </button>
 
                     <div className="flex items-center gap-1.5">
                       {isActive && (
-                        <span className="px-1.5 py-0.5 text-[9px] font-bold bg-[#017cb6] text-white rounded">
+                        <span className="px-1.5 py-0.5 text-[0.5625rem] font-bold bg-[#017cb6] text-white rounded">
                           ACTIVE
                         </span>
                       )}
@@ -201,13 +220,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           setSuccessMsg(null)
                         }}
                         title={`Replace the API key for ${p.name}`}
-                        className="text-[#6c757d] hover:text-[#017cb6] p-1 rounded"
+                        className="text-fg-muted hover:text-fg-link p-1 rounded"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={() => handleDeleteProfile(p.id, p.name)}
-                        className="text-[#6c757d] hover:text-rose-500 p-1 rounded"
+                        className="text-fg-muted hover:text-rose-500 p-1 rounded"
                         title="Delete profile"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -222,7 +241,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Add New Profile Form */}
         {updating && (
-        <div className="mb-3 flex items-center justify-between gap-2 p-2.5 rounded border border-[#017cb6] bg-[#017cb6]/10 text-[#017cb6] dark:text-[#4db2e0] text-xs">
+        <div className="mb-3 flex items-center justify-between gap-2 p-2.5 rounded border border-[#017cb6] bg-[#017cb6]/10 text-fg-link dark:text-[#4db2e0] text-xs">
           <span>
             Replacing the API key for <span className="font-semibold">{updating.name}</span>. The
             profile keeps its name and stays in place.
@@ -242,7 +261,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <button
               type="button"
               onClick={handleOpenTokenPage}
-              className="text-[11px] text-[#017cb6] hover:underline flex items-center gap-1"
+              className="text-[0.6875rem] text-fg-link hover:underline flex items-center gap-1"
             >
               <span>Generate in mPanel</span>
               <ExternalLink className="w-3 h-3" />
@@ -250,25 +269,39 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-[11px] text-[#6c757d] mb-1">Account Label (optional)</label>
+            <label htmlFor={nameId} className="block text-[0.6875rem] text-fg-muted mb-1">Account Label (optional)</label>
             <input
+              ref={nameRef}
+              id={nameId}
               type="text"
               placeholder="e.g. Production / Personal"
               value={updating ? updating.name : profileName}
-              onChange={(e) => setProfileName(e.target.value)}
+              onChange={(e) => {
+                setProfileName(e.target.value)
+                if (errorField === 'name') setErrorField(null)
+              }}
               disabled={!!updating}
+              aria-invalid={errorField === 'name'}
+              aria-describedby={errorField === 'name' ? errorId : undefined}
               className="w-full bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] px-3 py-1.5 rounded text-[#212529] dark:text-white focus:outline-none focus:border-[#017cb6]"
             />
           </div>
 
           <div>
-            <label className="block text-[11px] text-[#6c757d] mb-1">API Token Secret</label>
+            <label htmlFor={tokenId} className="block text-[0.6875rem] text-fg-muted mb-1">API Token Secret</label>
             <input
+              ref={tokenRef}
+              id={tokenId}
               type="password"
               required
               placeholder="Paste API token secret..."
               value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
+              onChange={(e) => {
+                setTokenInput(e.target.value)
+                if (errorField === 'token') setErrorField(null)
+              }}
+              aria-invalid={errorField === 'token'}
+              aria-describedby={errorField === 'token' ? errorId : undefined}
               className="w-full bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] px-3 py-1.5 rounded text-[#212529] dark:text-white font-mono focus:outline-none focus:border-[#017cb6]"
             />
           </div>
@@ -278,9 +311,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               type="checkbox"
               checked={isDefault}
               onChange={(e) => setIsDefault(e.target.checked)}
-              className="rounded border-[#ced4da] text-[#017cb6] focus:ring-0"
+              className="rounded border-[#ced4da] text-fg-link focus:ring-0"
             />
-            <span className="text-[11px] text-[#6c757d]">Set as default active profile</span>
+            <span className="text-[0.6875rem] text-fg-muted">Set as default active profile</span>
           </label>
 
           {encryptionUnavailable && (
@@ -291,25 +324,28 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 onChange={(e) => setAllowUnencrypted(e.target.checked)}
                 className="mt-0.5 rounded border-[#ced4da] text-amber-600 focus:ring-0"
               />
-              <span className="text-[11px] text-amber-800 dark:text-amber-300">
+              <span className="text-[0.6875rem] text-amber-800 dark:text-amber-300">
                 Save this token without encryption on this device
               </span>
             </label>
           )}
 
+          {/* Mounted before any message, so one put into it is announced. */}
+          <div aria-live="polite" className="!mt-0">
           {errorMsg && (
-            <div className="p-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded flex items-center gap-2 text-[11px]">
+            <div id={errorId} className="mt-3 p-2 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 rounded flex items-center gap-2 text-[0.6875rem]">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
               <span>{errorMsg}</span>
             </div>
           )}
 
           {successMsg && (
-            <div className="p-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 rounded flex items-center gap-2 text-[11px]">
+            <div className="mt-3 p-2 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 rounded flex items-center gap-2 text-[0.6875rem]">
               <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
               <span>{successMsg}</span>
             </div>
           )}
+          </div>
 
           <div className="pt-2">
             <button

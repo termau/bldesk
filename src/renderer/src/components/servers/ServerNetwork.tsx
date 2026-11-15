@@ -31,6 +31,7 @@ import { useTrackedActions } from '../../context/ActionTrackerContext'
 import { useConfirm } from '../../context/ConfirmContext'
 import { RESTART_NOTE, restartsServer } from '../../lib/actionLabels'
 import { updateChange } from '../../lib/changelog'
+import { isComposing } from '../../lib/ime'
 
 type Server = components['schemas']['Server']
 type Network = components['schemas']['Network']
@@ -54,7 +55,7 @@ const Card: React.FC<{ title: string; icon: React.ReactNode; action?: React.Reac
   <div className="bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm overflow-hidden">
     <div className="px-4 py-3 bg-[#f1f1f1] dark:bg-[#262a2e] border-b border-[#ced4da] dark:border-[#373b3e] flex items-center justify-between gap-3">
       <h3 className="font-semibold text-xs text-[#495057] dark:text-[#ced4da] flex items-center gap-2">
-        <span className="text-[#017cb6]">{icon}</span>
+        <span className="text-fg-link">{icon}</span>
         <span>{title}</span>
       </h3>
       {action}
@@ -73,8 +74,8 @@ const Row: React.FC<{ label: string; children: React.ReactNode; hint?: string }>
    */
   <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1.5 sm:gap-4 py-2.5 px-4 text-xs">
     <div className="w-full sm:w-44 sm:flex-shrink-0">
-      <div className="text-[#6c757d] dark:text-slate-400">{label}</div>
-      {hint && <div className="text-[10px] text-[#adb5bd] dark:text-slate-500 mt-0.5 leading-snug">{hint}</div>}
+      <div className="text-fg-muted dark:text-slate-400">{label}</div>
+      {hint && <div className="text-[0.625rem] text-[#adb5bd] dark:text-slate-500 mt-0.5 leading-snug">{hint}</div>}
     </div>
     <div className="flex-1 min-w-0 flex flex-wrap items-center justify-start sm:justify-end gap-2 text-[#212529] dark:text-white">
       {children}
@@ -109,20 +110,20 @@ const Switch: React.FC<{ checked: boolean; disabled?: boolean; onChange: (next: 
 
 const Badge: React.FC<{ tone: 'public' | 'private' | 'warn' | 'muted'; children: React.ReactNode }> = ({ tone, children }) => {
   const tones = {
-    public: 'bg-[#017cb6]/10 text-[#017cb6] border-[#017cb6]/30',
+    public: 'bg-[#017cb6]/10 text-fg-link border-[#017cb6]/30',
     private: 'bg-violet-500/10 text-violet-600 dark:text-violet-300 border-violet-500/30',
     warn: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30',
-    muted: 'bg-[#e9ecef] dark:bg-[#343a40] text-[#6c757d] dark:text-slate-400 border-[#ced4da] dark:border-[#373b3e]'
+    muted: 'bg-[#e9ecef] dark:bg-[#343a40] text-fg-muted dark:text-slate-400 border-[#ced4da] dark:border-[#373b3e]'
   }
   return (
-    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide border ${tones[tone]}`}>
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[0.625rem] font-semibold uppercase tracking-wide border ${tones[tone]}`}>
       {children}
     </span>
   )
 }
 
 const CopyButton: React.FC<{ text: string; copied: string | null; onCopy: (t: string) => void }> = ({ text, copied, onCopy }) => (
-  <button onClick={() => onCopy(text)} className="text-[#6c757d] hover:text-[#017cb6]" title="Copy" aria-label={`Copy ${text}`}>
+  <button onClick={() => onCopy(text)} className="text-fg-muted hover:text-fg-link" title="Copy" aria-label={`Copy ${text}`}>
     {copied === text ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
   </button>
 )
@@ -133,7 +134,7 @@ const inputClass =
 const primaryBtn =
   'px-3 py-1.5 text-xs font-medium rounded transition border text-white bg-[#017cb6] border-[#017cb6] hover:bg-[#016594] disabled:opacity-50 disabled:cursor-not-allowed'
 const subtleBtn =
-  'px-2.5 py-1 text-xs font-medium rounded transition border text-[#017cb6] bg-[#017cb6]/10 border-[#017cb6]/30 hover:bg-[#017cb6]/20 disabled:opacity-50 disabled:cursor-not-allowed'
+  'px-2.5 py-1 text-xs font-medium rounded transition border text-fg-link bg-[#017cb6]/10 border-[#017cb6]/30 hover:bg-[#017cb6]/20 disabled:opacity-50 disabled:cursor-not-allowed'
 
 /** Inline "value → pencil → input + save/cancel" editor for a single string field. */
 const InlineEdit: React.FC<{
@@ -161,7 +162,7 @@ const InlineEdit: React.FC<{
             setEditing(true)
           }}
           disabled={disabled}
-          className="text-[#6c757d] hover:text-[#017cb6] disabled:opacity-50"
+          className="text-fg-muted hover:text-fg-link disabled:opacity-50"
           title="Edit"
           aria-label={`Edit ${placeholder}`}
         >
@@ -171,7 +172,7 @@ const InlineEdit: React.FC<{
           <button
             onClick={onClear}
             disabled={disabled}
-            className="text-[#6c757d] hover:text-rose-500 disabled:opacity-50"
+            className="text-fg-muted hover:text-rose-500 disabled:opacity-50"
             title="Clear"
             aria-label={`Clear ${placeholder}`}
           >
@@ -199,6 +200,8 @@ const InlineEdit: React.FC<{
         disabled={disabled}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
+          // Enter and Escape mid-composition belong to the input method.
+          if (isComposing(e)) return
           if (e.key === 'Enter') commit()
           if (e.key === 'Escape') setEditing(false)
         }}
@@ -214,7 +217,7 @@ const InlineEdit: React.FC<{
       >
         <Check className="w-4 h-4" />
       </button>
-      <button onClick={() => setEditing(false)} className="text-[#6c757d] hover:text-rose-500" title="Cancel" aria-label="Cancel">
+      <button onClick={() => setEditing(false)} className="text-fg-muted hover:text-rose-500" title="Cancel" aria-label="Cancel">
         <X className="w-4 h-4" />
       </button>
     </div>
@@ -372,7 +375,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
       <tr key={`${family}-${n.ip_address}`} className="align-top">
         <td className="py-2.5 px-4 whitespace-nowrap">
           <Badge tone={isPrivate ? 'private' : 'public'}>{n.type}</Badge>
-          <span className="ml-1.5 text-[10px] text-[#6c757d] dark:text-slate-500 uppercase">{family}</span>
+          <span className="ml-1.5 text-[0.625rem] text-fg-muted dark:text-slate-500 uppercase">{family}</span>
         </td>
         <td className="py-2.5 px-4">
           <div className="flex items-center gap-2 font-mono text-[#212529] dark:text-white">
@@ -380,7 +383,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
               {n.ip_address}
             </span>
             {n.netmask !== null && n.netmask !== undefined && (
-              <span className="text-[#6c757d] dark:text-slate-500" title="Netmask">
+              <span className="text-fg-muted dark:text-slate-500" title="Netmask">
                 {typeof n.netmask === 'number' || /^\d{1,3}$/.test(String(n.netmask))
                   ? `/${n.netmask}`
                   : `mask ${n.netmask}`}
@@ -389,7 +392,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
             <CopyButton text={n.ip_address} copied={copied} onCopy={handleCopy} />
           </div>
           {isPrivate && family === 'v4' && server.vpc_id && (
-            <div className="mt-1 text-[10px] text-[#6c757d] dark:text-slate-500 flex items-center gap-1">
+            <div className="mt-1 text-[0.625rem] text-fg-muted dark:text-slate-500 flex items-center gap-1">
               <span>Change address (restarts a running server):</span>
               <InlineEdit
                 value=""
@@ -515,7 +518,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
           <div>
             <div className="flex items-center gap-2">
               <span className="font-semibold text-xs text-[#212529] dark:text-white">Edge DDoS Protection</span>
-              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.625rem] font-semibold ${
                 networks?.recent_ddos
                   ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30'
                   : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
@@ -524,7 +527,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
                 {networks?.recent_ddos ? 'Active Attack Mitigation' : 'Active & Protected'}
               </span>
             </div>
-            <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-0.5">
+            <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-0.5">
               {networks?.recent_ddos
                 ? 'BinaryLane hardware edge filters recently intercepted and scrubbed volumetric attack traffic targeting this server.'
                 : 'Continuous hardware edge packet inspection and volumetric traffic scrubbing enabled.'}
@@ -532,9 +535,9 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
           </div>
         </div>
 
-        <div className="flex items-center gap-3 self-end sm:self-auto text-xs text-[#6c757d] dark:text-slate-400">
+        <div className="flex items-center gap-3 self-end sm:self-auto text-xs text-fg-muted dark:text-slate-400">
           <div className="text-right">
-            <span className="text-[10px] block uppercase tracking-wider text-[#adb5bd] dark:text-slate-500">Primary MAC</span>
+            <span className="text-[0.625rem] block uppercase tracking-wider text-[#adb5bd] dark:text-slate-500">Primary MAC</span>
             <span className="font-mono text-xs text-[#212529] dark:text-slate-200">{networks?.mac_address || '—'}</span>
           </div>
         </div>
@@ -546,9 +549,9 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
         icon={<NetworkIcon className="w-4 h-4" />}
         action={
           serverQuery.isFetching ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#6c757d]" />
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-fg-muted" />
           ) : (
-            <span className="text-[10px] text-[#6c757d] dark:text-slate-500">
+            <span className="text-[0.625rem] text-fg-muted dark:text-slate-500">
               {v4.length + v6.length} address{v4.length + v6.length === 1 ? '' : 'es'}
             </span>
           )
@@ -557,7 +560,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
         <div className="overflow-x-auto">
           <table className="w-full text-left text-xs border-collapse">
             <thead>
-              <tr className="text-[#6c757d] dark:text-slate-400 border-b border-[#ced4da]/60 dark:border-[#373b3e]">
+              <tr className="text-fg-muted dark:text-slate-400 border-b border-[#ced4da]/60 dark:border-[#373b3e]">
                 <th className="py-2 px-4 font-medium">Type</th>
                 <th className="py-2 px-4 font-medium">Address</th>
                 <th className="py-2 px-4 font-medium">Gateway</th>
@@ -570,7 +573,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
               {v6.map((n) => renderNetworkRow(n, 'v6'))}
               {v4.length + v6.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="py-6 px-4 text-center text-[#6c757d] dark:text-slate-500">
+                  <td colSpan={5} className="py-6 px-4 text-center text-fg-muted dark:text-slate-500">
                     No network interfaces reported for this server.
                   </td>
                 </tr>
@@ -590,7 +593,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
       <Card title="IPv6" icon={<Globe className="w-4 h-4" />}>
         <div className="divide-y divide-[#ced4da]/60 dark:divide-[#373b3e]">
           <Row label="IPv6 connectivity" hint={ipv6Enabled ? 'A /64 is routed to this server.' : 'Enable to allocate a public IPv6 range.'}>
-            <span className="text-[#6c757d] dark:text-slate-400">{ipv6Enabled ? 'Enabled' : 'Disabled'}</span>
+            <span className="text-fg-muted dark:text-slate-400">{ipv6Enabled ? 'Enabled' : 'Disabled'}</span>
             <Switch
               checked={ipv6Enabled}
               disabled={busy}
@@ -627,7 +630,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
                           `Remove ${ns} from this server's IPv6 reverse nameservers?`
                         )
                       }
-                      className="text-[#6c757d] hover:text-rose-500 disabled:opacity-50"
+                      className="text-fg-muted hover:text-rose-500 disabled:opacity-50"
                       title="Remove"
                       aria-label={`Remove reverse nameserver ${ns}`}
                     >
@@ -681,7 +684,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
             label="Default port blocking"
             hint="Blocks outgoing SSH, SMTP and Remote Desktop (TCP 22, 25 and 3389) at BinaryLane's edge, so a compromised server can't be used for spam or brute-force attacks. Independent of the server firewall rules."
           >
-            <span className="text-[#6c757d] dark:text-slate-400">{networks?.port_blocking ? 'Enabled' : 'Disabled'}</span>
+            <span className="text-fg-muted dark:text-slate-400">{networks?.port_blocking ? 'Enabled' : 'Disabled'}</span>
             <Switch
               checked={!!networks?.port_blocking}
               disabled={busy}
@@ -701,7 +704,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
             label="Source / destination check"
             hint="When on, the server can only send and receive packets addressed to its own IPs. Read-only — managed by BinaryLane support."
           >
-            <span className="text-[#6c757d] dark:text-slate-400">
+            <span className="text-fg-muted dark:text-slate-400">
               {networks?.source_and_destination_check === null || networks?.source_and_destination_check === undefined
                 ? 'Not reported'
                 : networks.source_and_destination_check
@@ -729,10 +732,10 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
             {server.vpc_id ? (
               <span>
                 <span className="font-medium">{currentVpc?.name || `VPC #${server.vpc_id}`}</span>
-                {currentVpc?.ip_range && <span className="ml-2 font-mono text-[#6c757d] dark:text-slate-400">{currentVpc.ip_range}</span>}
+                {currentVpc?.ip_range && <span className="ml-2 font-mono text-fg-muted dark:text-slate-400">{currentVpc.ip_range}</span>}
               </span>
             ) : (
-              <span className="text-[#6c757d] dark:text-slate-400">Default public network for {server.region?.name || 'this region'}</span>
+              <span className="text-fg-muted dark:text-slate-400">Default public network for {server.region?.name || 'this region'}</span>
             )}
           </Row>
           <Row label="Move server" hint="Moves the private interface to another VPC, or back to the public network. A running server is restarted to do this.">
@@ -779,7 +782,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
               label="Separate private interface"
               hint="Adds a second NIC dedicated to VPC traffic instead of sharing the primary interface. A running server is restarted when this changes."
             >
-              <span className="text-[#6c757d] dark:text-slate-400">
+              <span className="text-fg-muted dark:text-slate-400">
                 {networks?.separate_private_network_interface ? 'Enabled' : 'Disabled'}
               </span>
               <Switch
@@ -812,7 +815,7 @@ export const ServerNetwork: React.FC<ServerNetworkProps> = ({ client, server: in
       </Card>
 
       {publicV4.length === 0 && (
-        <p className="text-[11px] text-[#6c757d] dark:text-slate-500 flex items-center gap-1.5">
+        <p className="text-[0.6875rem] text-fg-muted dark:text-slate-500 flex items-center gap-1.5">
           <AlertTriangle className="w-3.5 h-3.5" />
           This server has no public IPv4 address; reverse DNS editing applies to public addresses only.
         </p>

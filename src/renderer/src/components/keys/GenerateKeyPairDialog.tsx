@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useEffect, useId, useRef, useState } from 'react'
 import { KeyRound, Loader2, FolderOpen, Copy, Check, AlertTriangle } from 'lucide-react'
 import { Modal } from '../ui/Modal'
 import { BinaryLaneClient } from '../../api/client'
@@ -43,6 +43,12 @@ export const GenerateKeyPairDialog: React.FC<{
   const [err, setErr] = useState<string | null>(null)
   const [done, setDone] = useState<Generated | null>(null)
   const [copied, setCopied] = useState(false)
+  const errRef = useRef<HTMLDivElement>(null)
+  const hintId = useId()
+  // A failed generate moves focus to its message: the button that was pressed is disabled while it runs, so focus was lost.
+  useEffect(() => {
+    if (err) errRef.current?.focus()
+  }, [err])
 
   const trimmed = name.trim()
   const invalid = validateKeyName(trimmed)
@@ -116,18 +122,18 @@ export const GenerateKeyPairDialog: React.FC<{
             </p>
           )}
           <div className="space-y-1">
-            <div className="text-[#6c757d] dark:text-[#adb5bd]">Private key saved to</div>
+            <div className="text-fg-muted dark:text-[#adb5bd]">Private key saved to</div>
             <div className="flex items-center gap-1.5">
-              <code className="flex-1 min-w-0 px-2 py-1.5 font-mono text-[11px] bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded break-all">
+              <code className="flex-1 min-w-0 px-2 py-1.5 font-mono text-[0.6875rem] bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded break-all">
                 {done.privateKeyPath}
               </code>
               <button type="button" onClick={() => copyPath(done.privateKeyPath)} title="Copy path" aria-label="Copy path"
-                className="p-1.5 rounded text-[#6c757d] hover:text-[#017cb6]">
+                className="p-1.5 rounded text-fg-muted hover:text-fg-link">
                 {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5" />}
               </button>
               {window.bldeskApi?.showSshKeyInFolder && (
                 <button type="button" onClick={() => void window.bldeskApi.showSshKeyInFolder?.(done.privateKeyPath)}
-                  title="Show in folder" aria-label="Show in folder" className="p-1.5 rounded text-[#6c757d] hover:text-[#017cb6]">
+                  title="Show in folder" aria-label="Show in folder" className="p-1.5 rounded text-fg-muted hover:text-fg-link">
                   <FolderOpen className="w-3.5 h-3.5" />
                 </button>
               )}
@@ -140,7 +146,7 @@ export const GenerateKeyPairDialog: React.FC<{
               in with this key, and you will need the server's web console or rescue mode to get back in.
             </span>
           </div>
-          <p className="text-[#6c757d] dark:text-[#adb5bd]">
+          <p className="text-fg-muted dark:text-[#adb5bd]">
             It has no passphrase. To add one: <code className="font-mono">ssh-keygen -p -f {done.privateKeyPath}</code>
           </p>
         </div>
@@ -165,16 +171,18 @@ export const GenerateKeyPairDialog: React.FC<{
     >
       <div className="p-4 space-y-3 text-xs">
         <label className="block space-y-1">
-          <span className="text-[#6c757d] dark:text-[#adb5bd]">Name</span>
+          <span className="text-fg-muted dark:text-[#adb5bd]">Name</span>
           <input
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="bldesk-20260924-1830"
             spellCheck={false}
+            aria-invalid={!!invalid}
+            aria-describedby={hintId}
             className="w-full px-2.5 py-1.5 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded outline-none focus:border-[#017cb6] text-[#212529] dark:text-white"
           />
-          <span className="block text-[10px] text-[#6c757d]">
+          <span id={hintId} className="block text-[0.625rem] text-fg-muted">
             {invalid
               ? <span className="text-rose-600 dark:text-rose-400">{invalid}</span>
               : accountClash
@@ -188,11 +196,14 @@ export const GenerateKeyPairDialog: React.FC<{
           <input type="checkbox" checked={makeDefault} onChange={(e) => setMakeDefault(e.target.checked)} />
           <span className="text-[#212529] dark:text-white">Select this SSH Key for all new Cloud Server Installations</span>
         </label>
-        <p className="text-[#6c757d] dark:text-[#adb5bd]">
+        <p className="text-fg-muted dark:text-[#adb5bd]">
           The private key is saved to ~/.ssh on this device and never leaves it. Only the public key is added to your
           account.
         </p>
-        {err && <div className="text-rose-600 dark:text-rose-400 break-words">{err}</div>}
+        {/* Mounted before any error, so a message put into it is announced. */}
+        <div aria-live="polite" className="!mt-0">
+          {err && <div ref={errRef} tabIndex={-1} className="mt-3 text-rose-600 dark:text-rose-400 break-words outline-none">{err}</div>}
+        </div>
       </div>
     </Modal>
   )

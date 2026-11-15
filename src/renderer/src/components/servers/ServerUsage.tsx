@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { memo, useState, useMemo } from 'react'
 import {
   Loader2,
   Calendar,
@@ -82,14 +82,77 @@ interface ChartSeries {
  * A day at five-minute resolution is ~288 points across an 800-unit viewBox, so
  * they sit roughly 2.8 units apart: anything larger than a pixel merges into a
  * band, and the dark outline each marker used to carry turned that band into
- * visible noise. Sparse windows keep readable dots; dense ones fade to specks so
- * the line itself carries the shape.
+ * visible noise. Sparse windows keep readable dots; above MAX_MARKERS a series
+ * draws none (the line carries the shape, and one element per sample per series
+ * was the bulk of the chart's DOM). The hover readout gives every point's value.
  */
+const MAX_MARKERS = 120
 function markerRadius(count: number): number {
   if (count <= 12) return 3
   if (count <= 40) return 2
-  if (count <= 120) return 1.4
-  return 0.9
+  return 1.4
+}
+
+/** The point of a series nearest a time; samples are few enough per series to scan. */
+function nearestPoint(data: DataPoint[], time: number): DataPoint | undefined {
+  let best: DataPoint | undefined
+  for (const p of data) if (!best || Math.abs(p.time - time) < Math.abs(best.time - time)) best = p
+  return best
+}
+
+/**
+ * One readout for the whole chart: a guide line at the sample nearest the pointer, with every series' value there.
+ * Its own component, so moving the pointer re-renders this and not the lines and axes.
+ */
+const ChartHover: React.FC<{
+  seriesList: ChartSeries[]
+  x0: number
+  x1: number
+  y0: number
+  y1: number
+  minTime: number
+  timeSpan: number
+  getY: (value: number, s: ChartSeries) => number
+}> = ({ seriesList, x0, x1, y0, y1, minTime, timeSpan, getY }) => {
+  const [time, setTime] = useState<number | null>(null)
+  const onMove = (e: React.PointerEvent<SVGRectElement>) => {
+    const ctm = e.currentTarget.ownerSVGElement?.getScreenCTM()
+    if (!ctm) return
+    const p = new DOMPoint(e.clientX, e.clientY).matrixTransform(ctm.inverse())
+    setTime(minTime + ((Math.min(Math.max(p.x, x0), x1) - x0) / (x1 - x0)) * timeSpan)
+  }
+  const rows = time == null ? [] : seriesList.flatMap((s) => {
+    const p = nearestPoint(s.summary.data, time)
+    return p ? [{ s, p }] : []
+  })
+  const at = rows[0]?.p.time
+  const x = at == null ? 0 : x0 + ((at - minTime) / timeSpan) * (x1 - x0)
+  const lines = at == null ? [] : [
+    new Date(at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }),
+    ...rows.map(({ s, p }) => `${s.name}: ${s.formatter(p.value)}`)
+  ]
+  const boxW = Math.max(...lines.map((l) => l.length), 0) * 5.4 + 14
+  const boxH = lines.length * 11 + 8
+  const boxX = x > (x0 + x1) / 2 ? x - boxW - 8 : x + 8
+  return (
+    <g>
+      {at != null && (
+        <g pointerEvents="none">
+          <line x1={x} y1={y0} x2={x} y2={y1} stroke="#94a3b8" strokeWidth="1" strokeDasharray="3,3" />
+          {rows.map(({ s, p }) => (
+            <circle key={s.name} cx={x0 + ((p.time - minTime) / timeSpan) * (x1 - x0)} cy={getY(p.value, s)} r={3} fill={s.color} stroke="#1e2227" strokeWidth="1" />
+          ))}
+          <rect x={boxX} y={y0} width={boxW} height={boxH} rx={4} fill="#111418" fillOpacity="0.92" stroke="#373b3e" />
+          {lines.map((l, i) => (
+            <text key={i} x={boxX + 7} y={y0 + 13 + i * 11} fontSize="9" fontFamily="monospace" fill={i === 0 ? '#94a3b8' : rows[i - 1].s.color}>
+              {l}
+            </text>
+          ))}
+        </g>
+      )}
+      <rect x={x0} y={y0} width={x1 - x0} height={y1 - y0} fill="transparent" onPointerMove={onMove} onPointerLeave={() => setTime(null)} />
+    </g>
+  )
 }
 
 /** Axis tick text for a unit; rates switch to MBps once they get large. */
@@ -103,7 +166,8 @@ function axisLabel(unit: ChartUnit, value: number): string {
 }
 
 // High-fidelity SVG Multi-Series Line Chart
-const UsageSvgChart: React.FC<{
+// Memoised: the page re-renders on every poll status change, and a chart can hold thousands of points.
+const UsageSvgChart = memo(function UsageSvgChart({ title, subtitle, seriesList, window, scaleBy = 'unit' }: {
   title: string
   subtitle: string
   seriesList: ChartSeries[]
@@ -115,7 +179,7 @@ const UsageSvgChart: React.FC<{
    * 2.4 MBps disk line are both data rates, but sharing a scale hides one.
    */
   scaleBy?: 'unit' | 'series'
-}> = ({ title, subtitle, seriesList, window, scaleBy = 'unit' }) => {
+}) {
   const width = 800
   const height = 220
   const padding = { top: 20, right: 72, bottom: 30, left: 72 }
@@ -223,9 +287,9 @@ const UsageSvgChart: React.FC<{
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 border-b border-[#373b3e]/80 pb-2.5">
         <div>
           <h4 className="font-semibold text-xs text-white flex items-center gap-2">{title}</h4>
-          <span className="text-[11px] text-slate-400 font-mono">{subtitle}</span>
+          <span className="text-[0.6875rem] text-slate-400 font-mono">{subtitle}</span>
         </div>
-        <span className="text-[10px] text-slate-400 self-end sm:self-auto font-mono">
+        <span className="text-[0.625rem] text-slate-400 self-end sm:self-auto font-mono">
           {window === 'Day'
             ? '5 minute average'
             : window === 'Week'
@@ -346,24 +410,26 @@ const UsageSvgChart: React.FC<{
                   strokeLinejoin="round"
                   strokeDasharray={points.length === 1 ? '4,4' : 'none'}
                 />
-                {points.map((p, pIdx) => {
-                  const cx = getX(p.time)
-                  const cy = getY(p.value, scaleKey(s))
-                  return (
-                    <circle
-                      key={pIdx}
-                      cx={cx}
-                      cy={cy}
-                      r={markerRadius(points.length)}
-                      fill={s.color}
-                    >
-                      <title>{`${s.name}: ${s.formatter(p.value)} (${new Date(p.time).toLocaleTimeString()})`}</title>
-                    </circle>
-                  )
-                })}
+                {points.length <= MAX_MARKERS &&
+                  points.map((p, pIdx) => (
+                    <circle key={pIdx} cx={getX(p.time)} cy={getY(p.value, scaleKey(s))} r={markerRadius(points.length)} fill={s.color} />
+                  ))}
               </g>
             )
           })}
+
+          {hasData && (
+            <ChartHover
+              seriesList={seriesList}
+              x0={padding.left}
+              x1={width - padding.right}
+              y0={padding.top}
+              y1={padding.top + chartH}
+              minTime={minTime}
+              timeSpan={timeSpan}
+              getY={(value, s) => getY(value, scaleKey(s))}
+            />
+          )}
         </svg>
       </div>
 
@@ -372,7 +438,7 @@ const UsageSvgChart: React.FC<{
         {seriesList.map((s, i) => (
           <div key={i} className="flex items-center gap-1.5 text-xs">
             <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: s.color }} />
-            <span className="text-slate-300 text-[11px] font-medium">{s.name}</span>
+            <span className="text-slate-300 text-[0.6875rem] font-medium">{s.name}</span>
           </div>
         ))}
       </div>
@@ -381,14 +447,14 @@ const UsageSvgChart: React.FC<{
       <div className="overflow-x-auto border-t border-[#373b3e]/80 pt-3">
         <table className="w-full text-left text-xs border-collapse font-sans">
           <thead>
-            <tr className="text-slate-400 border-b border-[#373b3e]/60 text-[11px]">
+            <tr className="text-slate-400 border-b border-[#373b3e]/60 text-[0.6875rem]">
               <th className="py-1 px-3 font-medium">Metric</th>
               <th className="py-1 px-3 font-medium">Average</th>
               <th className="py-1 px-3 font-medium">Maximum</th>
               <th className="py-1 px-3 font-medium">Current</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#373b3e]/40 font-mono text-[11px]">
+          <tbody className="divide-y divide-[#373b3e]/40 font-mono text-[0.6875rem]">
             {seriesList.map((s, i) => (
               <tr key={i} className="hover:bg-[#262c33] transition">
                 <td className="py-1.5 px-3 font-sans text-slate-200 flex items-center gap-2">
@@ -406,13 +472,13 @@ const UsageSvgChart: React.FC<{
 
       {!hasData && (
         <div className="p-3 bg-[#262c33] rounded border border-[#373b3e] text-center text-xs text-slate-400 flex items-center justify-center gap-2">
-          <Info className="w-4 h-4 text-[#017cb6]" />
+          <Info className="w-4 h-4 text-fg-link" />
           <span>Collecting telemetry samples for this interval... Data updates every 30s.</span>
         </div>
       )}
     </div>
   )
-}
+})
 
 export const ServerUsage: React.FC<ServerUsageProps> = ({ client, server }) => {
   const [activeWindow, setActiveWindow] = useState<TimeWindow>('Day')
@@ -543,120 +609,124 @@ export const ServerUsage: React.FC<ServerUsageProps> = ({ client, server }) => {
 
   const timeTabs: TimeWindow[] = ['Day', 'Week', 'Month', 'Year']
 
-  // 1. Activity Overview Series List
-  /**
-   * Memory reporting depends on an in-guest agent, so it can be absent on an
-   * otherwise healthy server. The API has no capability flag for it — /v2/software
-   * lists only licensed products and has no Memory Graph entry — so absence is
-   * inferred from having samples for other metrics but none for memory.
-   */
-  const memoryUnavailable =
-    metricSummaries.memory.data.length === 0 && metricSummaries.diskUsage.data.length > 0
+  // Built once per refresh of the samples, so the memoised charts below skip renders that change nothing they draw.
+  const { memoryUnavailable, activitySeriesList, cpuDetailSeriesList, networkSeriesList, diskSeriesList } = useMemo(() => {
+    // 1. Activity Overview Series List
+    /**
+     * Memory reporting depends on an in-guest agent, so it can be absent on an
+     * otherwise healthy server. The API has no capability flag for it — /v2/software
+     * lists only licensed products and has no Memory Graph entry — so absence is
+     * inferred from having samples for other metrics but none for memory.
+     */
+    const memoryUnavailable =
+      metricSummaries.memory.data.length === 0 && metricSummaries.diskUsage.data.length > 0
 
-  const activityAllSeries: ChartSeries[] = [
-    {
-      name: 'CPU Usage',
-      color: '#48bb78',
-      summary: metricSummaries.cpuOverall,
+    const activityAllSeries: ChartSeries[] = [
+      {
+        name: 'CPU Usage',
+        color: '#48bb78',
+        summary: metricSummaries.cpuOverall,
+        formatter: fmtPercent,
+        unit: 'percent'
+      },
+      {
+        name: 'Memory Usage',
+        color: '#ecc94b',
+        summary: metricSummaries.memory,
+        formatter: fmtGB,
+        unit: 'gb',
+        isSecondaryAxis: true
+      },
+      {
+        name: 'Disk Usage',
+        color: '#38bdf8',
+        summary: metricSummaries.diskUsage,
+        formatter: fmtGB,
+        unit: 'gb',
+        isSecondaryAxis: true
+      },
+      {
+        name: 'Network Activity',
+        color: '#ed8936',
+        summary: metricSummaries.networkActivity,
+        formatter: fmtKBpsOrMBps,
+        unit: 'rate'
+      },
+      {
+        name: 'Disk Activity',
+        color: '#f56565',
+        summary: metricSummaries.diskActivity,
+        formatter: fmtKBpsOrMBps,
+        unit: 'rate'
+      }
+    ]
+
+    // Drop the memory series entirely when the guest isn't reporting it, so the
+    // chart, legend and summary table stay silent about it rather than showing zero.
+    const activitySeriesList = activityAllSeries.filter(
+      (sr) => !(memoryUnavailable && sr.name === 'Memory Usage')
+    )
+
+    // 2. CPU Detail Series List
+    const cpuDetailSeriesList: ChartSeries[] = metricSummaries.cpuCores.map((core, i) => ({
+      name: `CPU ${i + 1}`,
+      color: ['#48bb78', '#38bdf8', '#ecc94b', '#ed8936', '#9f7aea', '#f56565'][i % 6],
+      summary: core,
       formatter: fmtPercent,
-      unit: 'percent'
-    },
-    {
-      name: 'Memory Usage',
-      color: '#ecc94b',
-      summary: metricSummaries.memory,
-      formatter: fmtGB,
-      unit: 'gb',
-      isSecondaryAxis: true
-    },
-    {
-      name: 'Disk Usage',
-      color: '#38bdf8',
-      summary: metricSummaries.diskUsage,
-      formatter: fmtGB,
-      unit: 'gb',
-      isSecondaryAxis: true
-    },
-    {
-      name: 'Network Activity',
-      color: '#ed8936',
-      summary: metricSummaries.networkActivity,
-      formatter: fmtKBpsOrMBps,
-      unit: 'rate'
-    },
-    {
-      name: 'Disk Activity',
-      color: '#f56565',
-      summary: metricSummaries.diskActivity,
-      formatter: fmtKBpsOrMBps,
-      unit: 'rate'
-    }
-  ]
+        unit: 'percent'
+    }))
 
-  // Drop the memory series entirely when the guest isn't reporting it, so the
-  // chart, legend and summary table stay silent about it rather than showing zero.
-  const activitySeriesList = activityAllSeries.filter(
-    (sr) => !(memoryUnavailable && sr.name === 'Memory Usage')
-  )
+    // 3. Network Detail Series List
+    const networkSeriesList: ChartSeries[] = [
+      {
+        name: 'Network In',
+        color: '#38bdf8',
+        summary: metricSummaries.networkIn,
+        formatter: fmtKBpsOrMBps,
+        unit: 'rate'
+      },
+      {
+        name: 'Network Out',
+        color: '#ed8936',
+        summary: metricSummaries.networkOut,
+        formatter: fmtKBpsOrMBps,
+        unit: 'rate'
+      }
+    ]
 
-  // 2. CPU Detail Series List
-  const cpuDetailSeriesList: ChartSeries[] = metricSummaries.cpuCores.map((core, i) => ({
-    name: `CPU ${i + 1}`,
-    color: ['#48bb78', '#38bdf8', '#ecc94b', '#ed8936', '#9f7aea', '#f56565'][i % 6],
-    summary: core,
-    formatter: fmtPercent,
-      unit: 'percent'
-  }))
-
-  // 3. Network Detail Series List
-  const networkSeriesList: ChartSeries[] = [
-    {
-      name: 'Network In',
-      color: '#38bdf8',
-      summary: metricSummaries.networkIn,
-      formatter: fmtKBpsOrMBps,
-      unit: 'rate'
-    },
-    {
-      name: 'Network Out',
-      color: '#ed8936',
-      summary: metricSummaries.networkOut,
-      formatter: fmtKBpsOrMBps,
-      unit: 'rate'
-    }
-  ]
-
-  // 4. Disk Detail Series List
-  const diskSeriesList: ChartSeries[] = [
-    {
-      name: 'Disk Read Rate',
-      color: '#38bdf8',
-      summary: metricSummaries.diskRead,
-      formatter: fmtKBpsOrMBps,
-      unit: 'rate'
-    },
-    {
-      name: 'Disk Write Rate',
-      color: '#f56565',
-      summary: metricSummaries.diskWrite,
-      formatter: fmtKBpsOrMBps,
-      unit: 'rate'
-    },
-    {
-      name: 'Read IOPS',
-      color: '#48bb78',
-      summary: metricSummaries.diskReadOps,
-      formatter: fmtRps,
-      unit: 'rps'
-    },
-    {
-      name: 'Write IOPS',
-      color: '#ecc94b',
-      summary: metricSummaries.diskWriteOps,
-      formatter: fmtRps,
-      unit: 'rps'
-    }
-  ]
+    // 4. Disk Detail Series List
+    const diskSeriesList: ChartSeries[] = [
+      {
+        name: 'Disk Read Rate',
+        color: '#38bdf8',
+        summary: metricSummaries.diskRead,
+        formatter: fmtKBpsOrMBps,
+        unit: 'rate'
+      },
+      {
+        name: 'Disk Write Rate',
+        color: '#f56565',
+        summary: metricSummaries.diskWrite,
+        formatter: fmtKBpsOrMBps,
+        unit: 'rate'
+      },
+      {
+        name: 'Read IOPS',
+        color: '#48bb78',
+        summary: metricSummaries.diskReadOps,
+        formatter: fmtRps,
+        unit: 'rps'
+      },
+      {
+        name: 'Write IOPS',
+        color: '#ecc94b',
+        summary: metricSummaries.diskWriteOps,
+        formatter: fmtRps,
+        unit: 'rps'
+      }
+    ]
+    return { memoryUnavailable, activitySeriesList, cpuDetailSeriesList, networkSeriesList, diskSeriesList }
+  }, [metricSummaries])
 
   return (
     <div className="space-y-5 select-text">
@@ -672,7 +742,7 @@ export const ServerUsage: React.FC<ServerUsageProps> = ({ client, server }) => {
                 className={`px-3 py-1.5 text-xs font-semibold rounded-md transition ${
                   isActive
                     ? 'bg-[#017cb6] text-white shadow-sm'
-                    : 'text-[#6c757d] dark:text-slate-400 hover:text-[#212529] dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-slate-800'
+                    : 'text-fg-muted dark:text-slate-400 hover:text-[#212529] dark:hover:text-white hover:bg-slate-200/50 dark:hover:bg-slate-800'
                 }`}
               >
                 {w}
@@ -682,8 +752,8 @@ export const ServerUsage: React.FC<ServerUsageProps> = ({ client, server }) => {
         </div>
 
         {samplesQuery.isFetching && (
-          <div className="flex items-center gap-1.5 text-xs text-[#6c757d] dark:text-slate-400">
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#017cb6]" />
+          <div className="flex items-center gap-1.5 text-xs text-fg-muted dark:text-slate-400">
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-fg-link" />
             <span>Updating graphs...</span>
           </div>
         )}
@@ -692,41 +762,41 @@ export const ServerUsage: React.FC<ServerUsageProps> = ({ client, server }) => {
       {/* When Historical Data is Empty for this window */}
       {samples.length === 0 && (
         <div className="bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e] p-4 shadow-sm space-y-3">
-          <div className="flex items-center gap-2 text-xs font-semibold text-[#017cb6] dark:text-[#5bc0de]">
+          <div className="flex items-center gap-2 text-xs font-semibold text-fg-link dark:text-[#5bc0de]">
             <Info className="w-4 h-4 flex-shrink-0" />
             <span>No historical telemetry samples recorded for {server.name} in this {activeWindow} window yet.</span>
           </div>
-          <p className="text-xs text-[#6c757d] dark:text-slate-400">
+          <p className="text-xs text-fg-muted dark:text-slate-400">
             BinaryLane's telemetry daemon records 5-minute performance metrics on active instances. If this VM was recently started or is in testing, historical curves will accumulate automatically.
           </p>
 
           {latestMetricsQuery.data?.average && (
             <div className="pt-2 border-t border-[#ced4da] dark:border-[#373b3e] space-y-2">
               <h4 className="text-xs font-bold text-[#212529] dark:text-white flex items-center gap-2">
-                <Activity className="w-3.5 h-3.5 text-[#017cb6]" />
+                <Activity className="w-3.5 h-3.5 text-fg-link" />
                 <span>Live Telemetry</span>
               </h4>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
                 <div className="bg-[#f8f9fa] dark:bg-[#212529] p-2.5 rounded border border-[#ced4da] dark:border-[#373b3e]">
-                  <span className="text-[10px] text-[#6c757d] dark:text-slate-400 block">CPU Load</span>
+                  <span className="text-[0.625rem] text-fg-muted dark:text-slate-400 block">CPU Load</span>
                   <span className="font-bold text-[#212529] dark:text-white font-mono">
                     {(latestMetricsQuery.data.average.cpu_usage_percent || 0).toFixed(1)}%
                   </span>
                 </div>
                 <div className="bg-[#f8f9fa] dark:bg-[#212529] p-2.5 rounded border border-[#ced4da] dark:border-[#373b3e]">
-                  <span className="text-[10px] text-[#6c757d] dark:text-slate-400 block">Memory</span>
+                  <span className="text-[0.625rem] text-fg-muted dark:text-slate-400 block">Memory</span>
                   <span className="font-bold text-[#212529] dark:text-white font-mono">
                     {((latestMetricsQuery.data.average.memory_usage_bytes || 0) / (1024 * 1024 * 1024)).toFixed(2)} GB
                   </span>
                 </div>
                 <div className="bg-[#f8f9fa] dark:bg-[#212529] p-2.5 rounded border border-[#ced4da] dark:border-[#373b3e]">
-                  <span className="text-[10px] text-[#6c757d] dark:text-slate-400 block">Storage Used</span>
+                  <span className="text-[0.625rem] text-fg-muted dark:text-slate-400 block">Storage Used</span>
                   <span className="font-bold text-[#212529] dark:text-white font-mono">
                     {((latestMetricsQuery.data.average.storage_usage_megabytes || 0) / 1024).toFixed(2)} GB
                   </span>
                 </div>
                 <div className="bg-[#f8f9fa] dark:bg-[#212529] p-2.5 rounded border border-[#ced4da] dark:border-[#373b3e]">
-                  <span className="text-[10px] text-[#6c757d] dark:text-slate-400 block">Network (In+Out)</span>
+                  <span className="text-[0.625rem] text-fg-muted dark:text-slate-400 block">Network (In+Out)</span>
                   <span className="font-bold text-[#212529] dark:text-white font-mono">
                     {fmtKBpsOrMBps(
                       (latestMetricsQuery.data.average.network_incoming_kbps || 0) +
@@ -796,7 +866,7 @@ export const ServerUsage: React.FC<ServerUsageProps> = ({ client, server }) => {
       />
 
       {/* Footer Timestamp */}
-      <div className="text-[11px] text-[#6c757d] dark:text-slate-500 text-center py-2 flex items-center justify-center gap-1.5">
+      <div className="text-[0.6875rem] text-fg-muted dark:text-slate-500 text-center py-2 flex items-center justify-center gap-1.5">
         <Calendar className="w-3.5 h-3.5" />
         <span>As at {new Date().toLocaleString()} (Auto-refreshed from BinaryLane telemetry)</span>
       </div>

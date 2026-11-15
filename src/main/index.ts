@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, nativeImage, NativeImage, dialog, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, nativeImage, NativeImage, dialog, shell, nativeTheme } from 'electron'
 import { existingKeyFiles } from './sshKeyFiles'
 import { generateKeyPair } from './sshKeygen'
 import { dirname, join } from 'path'
@@ -137,7 +137,8 @@ function createWindow(): void {
     ...(process.platform === 'darwin'
       ? { frame: true, titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 14, y: 14 } }
       : { frame: false }),
-    backgroundColor: '#212529', // mPanel dark
+    // Matches the theme the renderer will most likely open in (it follows the system unless told otherwise).
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#212529' : '#f8f9fa',
     autoHideMenuBar: true,
     webPreferences: {
       preload,

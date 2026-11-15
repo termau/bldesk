@@ -32,7 +32,7 @@ const COLUMNS: Array<{ key: HeatmapMetric; label: string; kind: 'ratio' | 'rate'
 
 /** Cool is near-neutral on purpose: a heatmap only works if the hot cells are the ones that draw the eye. */
 const BUCKET_CLASS = [
-  'bg-[#f1f3f5] text-[#6c757d] dark:bg-white/5 dark:text-slate-400',
+  'bg-[#f1f3f5] text-fg-muted dark:bg-white/5 dark:text-slate-400',
   'bg-sky-500/15 text-sky-900 dark:bg-sky-400/20 dark:text-sky-100',
   'bg-amber-400/40 text-amber-950 dark:bg-amber-400/30 dark:text-amber-50',
   'bg-orange-500/55 text-orange-950 dark:bg-orange-500/50 dark:text-orange-50',
@@ -60,7 +60,7 @@ function Cell({ cell, kind }: { cell: HeatmapCell; kind: 'ratio' | 'rate' }) {
   return (
     <td className="p-1.5" title={cell.tooltip}>
       <div className={`min-w-[78px] rounded px-2 py-2 text-center text-xs font-semibold ${BUCKET_CLASS[cell.bucket ?? 0]} ${cell.state === 'stale' ? 'opacity-50' : ''}`}>
-        {value}{cell.state === 'stale' && <span className="block text-[9px] font-normal">stale</span>}
+        {value}{cell.state === 'stale' && <span className="block text-[0.5625rem] font-normal">stale</span>}
       </div>
     </td>
   )
@@ -88,21 +88,24 @@ export const FleetHeatmap: React.FC<Props> = ({ client, servers, serversLoading,
     else { setSort(next); setDirection('asc') }
   }
   const SortIcon = direction === 'asc' ? ArrowUp : ArrowDown
+  // Only the sorted column carries aria-sort; "none" on the rest is noise to a screen reader.
+  const ariaSort = (key: HeatmapSort) => (sort === key ? (direction === 'asc' ? 'ascending' : 'descending') : undefined)
   const header = (key: HeatmapSort, label: string) => (
-    <button type="button" onClick={() => chooseSort(key)} className="inline-flex items-center gap-1 hover:text-[#017cb6]">
+    <button type="button" onClick={() => chooseSort(key)} className="inline-flex items-center gap-1 hover:text-fg-link">
       {label}{sort === key && <SortIcon className="h-3 w-3" />}
     </button>
   )
 
   return (
-    <div className="h-full min-w-0 overflow-y-auto p-4 md:p-6">
-      <div className="mx-auto max-w-[1500px] space-y-4">
+    // The table box takes the height left on the page and scrolls both ways inside it, so its header row stays in view.
+    <div className="h-full min-w-0 flex flex-col overflow-y-auto p-4 md:p-6">
+      <div className="mx-auto w-full max-w-[1500px] flex-1 min-h-0 flex flex-col space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-[#212529] dark:text-white flex items-center gap-2"><ChartNoAxesCombined className="w-5 h-5 text-[#017cb6]" />Fleet Heatmap</h2>
-            <p className="text-xs text-[#6c757d] dark:text-slate-400">Live utilisation: CPU, RAM and disk against each server's own capacity; network and IO rates against the busiest server in the fleet right now.</p>
+            <h2 className="text-lg font-bold text-[#212529] dark:text-white flex items-center gap-2"><ChartNoAxesCombined className="w-5 h-5 text-fg-link" />Fleet Heatmap</h2>
+            <p className="text-xs text-fg-muted dark:text-slate-400">Live utilisation: CPU, RAM and disk against each server's own capacity; network and IO rates against the busiest server in the fleet right now.</p>
           </div>
-          <div className="flex items-center gap-3 text-xs text-[#6c757d] dark:text-slate-400">
+          <div className="flex items-center gap-3 text-xs text-fg-muted dark:text-slate-400">
             <span>Updated {fleet.dataUpdatedAt ? new Date(fleet.dataUpdatedAt).toLocaleTimeString() : 'not yet'}</span>
             <button onClick={() => void Promise.all([fleet.refetch(), alerts.refresh()])} disabled={fleet.isFetching} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border border-[#ced4da] dark:border-[#495057] hover:border-[#017cb6] disabled:opacity-50 text-[#212529] dark:text-white">
               <RefreshCw className={`h-3.5 w-3.5 ${fleet.isFetching ? 'animate-spin' : ''}`} /> Refresh
@@ -117,13 +120,13 @@ export const FleetHeatmap: React.FC<Props> = ({ client, servers, serversLoading,
         {!serversLoading && (!client || (!fleet.isLoading && servers.length === 0)) && <div className="rounded border border-dashed border-slate-300 py-16 text-center text-sm text-slate-500 dark:border-slate-600">No servers to display.</div>}
 
         {!serversLoading && !!client && servers.length > 0 && (
-          <div className="min-w-0 overflow-x-auto rounded-lg border border-[#ced4da] bg-white shadow-sm dark:border-[#373b3e] dark:bg-[#2b3035]">
+          <div className={`min-w-0 overflow-auto ${rows.length > 3 ? 'flex-initial min-h-[12rem]' : 'flex-shrink-0'} rounded-lg border border-[#ced4da] bg-white shadow-sm dark:border-[#373b3e] dark:bg-[#2b3035]`}>
             <table className="w-full min-w-[1050px] border-collapse text-left">
-              <thead className="sticky top-0 z-10 bg-[#f8f9fa] text-[10px] font-semibold uppercase tracking-wider text-[#6c757d] dark:bg-[#212529] dark:text-slate-400">
+              <thead className="text-[0.625rem] font-semibold uppercase tracking-wider text-fg-muted dark:text-slate-400">
                 <tr>
-                  <th className="px-3 py-3" aria-sort={sort === 'name' ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}>{header('name', 'Server')}</th>
-                  <th className="px-3 py-3" aria-sort={sort === 'region' ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}>{header('region', 'Region')}</th>
-                  {COLUMNS.map((column) => <th key={column.key} className="px-2 py-3 text-center" aria-sort={sort === column.key ? (direction === 'asc' ? 'ascending' : 'descending') : 'none'}>{header(column.key, column.label)}</th>)}
+                  <th className="sticky top-0 z-10 bg-[#f8f9fa] dark:bg-[#212529] px-3 py-3" aria-sort={ariaSort('name')}>{header('name', 'Server')}</th>
+                  <th className="sticky top-0 z-10 bg-[#f8f9fa] dark:bg-[#212529] px-3 py-3" aria-sort={ariaSort('region')}>{header('region', 'Region')}</th>
+                  {COLUMNS.map((column) => <th key={column.key} className="sticky top-0 z-10 bg-[#f8f9fa] dark:bg-[#212529] px-2 py-3 text-center" aria-sort={ariaSort(column.key)}>{header(column.key, column.label)}</th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#e9ecef] dark:divide-[#373b3e]">
@@ -148,13 +151,13 @@ export const FleetHeatmap: React.FC<Props> = ({ client, servers, serversLoading,
                         className="rounded text-left focus:outline-none focus:ring-2 focus:ring-[#017cb6]"
                       >
                         <span className={`mr-2 inline-block h-2 w-2 rounded-full ${status.dot}`} />{row.name}
-                        <span className="ml-2 text-[10px] font-normal text-slate-400">{status.label}</span>
+                        <span className="ml-2 text-[0.625rem] font-normal text-slate-400">{status.label}</span>
                       </button>
                       {alerts.ids.includes(row.server.id) && (
                         <ThresholdAlertMarker serverName={row.name} detail={alerts.details.get(row.server.id)} onOpenSettings={() => onOpenAlerts(row.server)} />
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-xs text-[#6c757d] dark:text-slate-400">{row.region}</td>
+                    <td className="whitespace-nowrap px-3 py-2 text-xs text-fg-muted dark:text-slate-400">{row.region}</td>
                     {spans
                       ? <td colSpan={COLUMNS.length} className={`px-3 py-2 text-center text-xs ${rowState === 'error' ? 'text-rose-600 dark:text-rose-400' : 'text-[#adb5bd] dark:text-slate-500'}`} title={row.cells.cpu.tooltip}>{SPAN_LABEL[rowState](row.cells.cpu.tooltip)}</td>
                       : COLUMNS.map((column) => <Cell key={column.key} cell={row.cells[column.key]} kind={column.kind} />)}
@@ -166,10 +169,10 @@ export const FleetHeatmap: React.FC<Props> = ({ client, servers, serversLoading,
           </div>
         )}
 
-        <div className="flex flex-wrap items-center gap-3 text-[11px] text-[#6c757d] dark:text-slate-400">
+        <div className="flex flex-wrap items-center gap-3 text-[0.6875rem] text-fg-muted dark:text-slate-400">
           <span>Under 50%</span>{BUCKET_CLASS.map((className, index) => <span key={index} className={`h-4 w-8 rounded ${className}`} title={['under 50%', '50–70%', '70–85%', '85–95%', '95% and above'][index]} />)}<span>95%+</span>
           <span className="ml-2">Rate colours are relative to the fleet's current maximum, once it is above about 40 Mbit/s of network or 10 MB/s of disk; below that a quiet fleet stays neutral.</span>
-          <button onClick={() => window.bldeskApi?.openExternal?.(MEMORY_GRAPH_KB)} className="inline-flex items-center gap-1 text-[#017cb6] hover:underline">Memory reporting help <ExternalLink className="h-3 w-3" /></button>
+          <button onClick={() => window.bldeskApi?.openExternal?.(MEMORY_GRAPH_KB)} className="inline-flex items-center gap-1 text-fg-link hover:underline">Memory reporting help <ExternalLink className="h-3 w-3" /></button>
         </div>
       </div>
     </div>

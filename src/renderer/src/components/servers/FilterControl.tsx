@@ -16,6 +16,6 @@ export const FILTER_CONTROL =
 export const FilterShell: React.FC<{ children: React.ReactNode }> = ({ children }) => (
   <span className="relative inline-flex">
     {children}
-    <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-[13px] top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#6c757d] dark:text-slate-400" />
+    <ChevronDown aria-hidden="true" className="pointer-events-none absolute right-[13px] top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-fg-muted dark:text-slate-400" />
   </span>
 )

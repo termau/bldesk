@@ -168,11 +168,11 @@ export function ActionInteractionPrompt({ client, profileId, servers = [] }: Act
       <div className="p-5 space-y-4 text-xs">
         {/* Which machine this is about */}
         <div className="flex items-center gap-2 text-[#495057] dark:text-[#ced4da]">
-          <ServerIcon className="w-3.5 h-3.5 text-[#6c757d] flex-shrink-0" />
+          <ServerIcon className="w-3.5 h-3.5 text-fg-muted flex-shrink-0" />
           <span className="font-semibold">
             {server?.name || (current.resource_id ? `Resource #${current.resource_id}` : 'Your account')}
           </span>
-          <span className="text-[#6c757d]">
+          <span className="text-fg-muted">
             · {current.title} · action #{current.id}
           </span>
         </div>
@@ -197,12 +197,12 @@ export function ActionInteractionPrompt({ client, profileId, servers = [] }: Act
         {/* Deliberately not the app's usual #6c757d small-print grey: that is
             2.8:1 on this panel, and the fact that nothing moves until someone
             answers is the whole reason the modal is interrupting anyone. */}
-        <p className="text-[11px] text-[#495057] dark:text-[#adb5bd]">
+        <p className="text-[0.6875rem] text-[#495057] dark:text-[#adb5bd]">
           This action stays paused until it is answered — it will not continue on its own.
         </p>
 
         {outstanding.length > 1 && (
-          <p className="text-[11px] text-[#495057] dark:text-[#adb5bd]">
+          <p className="text-[0.6875rem] text-[#495057] dark:text-[#adb5bd]">
             {outstanding.length - 1} other action{outstanding.length > 2 ? 's are' : ' is'} also waiting.
           </p>
         )}

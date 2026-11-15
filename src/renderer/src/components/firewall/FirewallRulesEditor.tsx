@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, Trash2, Undo2 } from 'lucide-react'
-import { dropGapAt, dropIndexAt, edgePull, edgeScrollSpeed, isEdited, moveRow, problemsOf, ROW_HOLD_MS, type DraftRow, type RowProblems } from '../../lib/firewallDraft'
+import { dropGapAt, dropIndexAt, edgePull, edgeScrollSpeed, isEdited, moveRow, problemsOf, ROW_HOLD_MS, shownProblems, type DraftRow, type RowProblems } from '../../lib/firewallDraft'
 import { PORT_CHOICES, withChoice, type PickChoice } from '../../lib/firewallPicks'
 import { PickMenu } from './PickMenu'
 import { HOLD_TICK_VIBRATION_MS, holdMovedTooFar } from '../../lib/tags'
@@ -81,6 +81,24 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
   // The newest rows and callback, for the gesture's listeners, which outlive the render that made them.
   const latest = useRef({ rows, onChange })
   latest.current = { rows, onChange }
+  const uid = useId()
+  // The field being typed in. Its problem is shown once it is left, and said then, once, in one polite announcement for the list.
+  const [typing, setTyping] = useState<{ key: number; field: keyof RowProblems } | null>(null)
+  const [said, setSaid] = useState('')
+  const sayTimer = useRef(0)
+  useEffect(() => () => window.clearTimeout(sayTimer.current), [])
+  const typed = (row: DraftRow, field: keyof RowProblems) => {
+    window.clearTimeout(sayTimer.current)
+    setSaid('')
+    if (typing?.key !== row.key || typing.field !== field) setTyping({ key: row.key, field })
+  }
+  const left = (row: DraftRow, field: keyof RowProblems, name: string) => {
+    if (typing?.key !== row.key || typing.field !== field) return
+    setTyping(null)
+    const problem = problemsOf(row)[field]
+    // A moment later, so it does not talk over the field that focus moved to.
+    if (problem) sayTimer.current = window.setTimeout(() => setSaid(`${name}: ${problem}`), 500)
+  }
 
   // The middle of every row now in the list, read from the page itself. A list kept in a ref grows with the rows and keeps its length when
   // some go, so after a rule was removed and saved the places that no longer held a row counted as a row at the top of the page.
@@ -213,7 +231,7 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
     <div ref={listRef}>
       <div
         aria-hidden="true"
-        className={`hidden xl:grid ${COLUMNS} gap-x-3 px-3 mb-2 text-[10px] font-bold uppercase tracking-wider text-[#6c757d] dark:text-slate-400`}
+        className={`hidden xl:grid ${COLUMNS} gap-x-3 px-3 mb-2 text-[0.625rem] font-bold uppercase tracking-wider text-fg-muted dark:text-slate-400`}
       >
         <span>#</span>
         <span>Source</span>
@@ -227,7 +245,13 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
 
       {rows.map((row, i) => {
         const edited = isEdited(row)
-        const problems: RowProblems = problemsOf(row)
+        const problems: RowProblems = shownProblems(problemsOf(row), typing?.key === row.key ? typing.field : undefined)
+        const problemId = (field: keyof RowProblems) => `${uid}-${row.key}-${field}`
+        // A field with a problem shown is marked invalid and described by it.
+        const invalid = (field: keyof RowProblems) => ({
+          'aria-invalid': !!problems[field],
+          'aria-describedby': problems[field] ? problemId(field) : undefined
+        })
         const n = numbers[i]
         const label = n === null ? `Removed rule ${row.key + 1}` : `Rule ${n}`
         const off = !editable || row.removed
@@ -310,8 +334,8 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
           >
             {/* Place in the list, and the arrows */}
             <div className="col-span-2 sm:col-span-6 xl:col-span-1 flex items-center gap-1.5 xl:pt-1.5">
-              <span className="shrink-0 flex items-center gap-1.5 select-none text-[#6c757d] [@media(pointer:coarse)]:py-2 [@media(pointer:coarse)]:pr-1">
-                <span aria-hidden="true" className="xl:hidden text-[11px] text-[#6c757d] dark:text-slate-400">
+              <span className="shrink-0 flex items-center gap-1.5 select-none text-fg-muted [@media(pointer:coarse)]:py-2 [@media(pointer:coarse)]:pr-1">
+                <span aria-hidden="true" className="xl:hidden text-[0.6875rem] text-fg-muted dark:text-slate-400">
                   Rule
                 </span>
                 <span className={`font-mono text-xs font-bold text-[#495057] dark:text-slate-300 w-5 text-center ${row.removed ? 'line-through' : ''}`}>
@@ -325,7 +349,7 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
                   disabled={off || i === 0}
                   aria-label={`Move ${label.toLowerCase()} up`}
                   title="Move Rule Up"
-                  className="text-[#6c757d] hover:text-[#017cb6] disabled:opacity-20 transition"
+                  className="text-fg-muted hover:text-fg-link disabled:opacity-20 transition"
                 >
                   <ChevronUp className="w-3.5 h-3.5" />
                 </button>
@@ -335,53 +359,65 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
                   disabled={off || i === rows.length - 1}
                   aria-label={`Move ${label.toLowerCase()} down`}
                   title="Move Rule Down"
-                  className="text-[#6c757d] hover:text-[#017cb6] disabled:opacity-20 transition"
+                  className="text-fg-muted hover:text-fg-link disabled:opacity-20 transition"
                 >
                   <ChevronDown className="w-3.5 h-3.5" />
                 </button>
               </div>
             </div>
 
-            <Field caption="Source" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.sources}>
+            <Field caption="Source" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.sources} problemId={problemId('sources')}>
               <textarea
                 aria-label={`${label} source addresses`}
-                aria-invalid={problems.sources ? true : undefined}
+                {...invalid('sources')}
                 rows={lines(row.sources)}
                 value={row.sources}
                 disabled={off}
                 placeholder="0.0.0.0/0"
                 spellCheck={false}
-                onChange={(e) => patch(i, { sources: e.target.value })}
+                onChange={(e) => {
+                  typed(row, 'sources')
+                  patch(i, { sources: e.target.value })
+                }}
+                onBlur={() => left(row, 'sources', `${label} source addresses`)}
                 className={`${cell} ${mono} resize-none`}
               />
               <PickMenu label={`${label.toLowerCase()} source addresses`} choices={addressChoices} disabled={off} onPick={(c) => patch(i, { sources: withChoice(row.sources, c.values) })} />
             </Field>
 
-            <Field caption="Destination" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.destinations}>
+            <Field caption="Destination" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.destinations} problemId={problemId('destinations')}>
               <textarea
                 aria-label={`${label} destination addresses`}
-                aria-invalid={problems.destinations ? true : undefined}
+                {...invalid('destinations')}
                 rows={lines(row.destinations)}
                 value={row.destinations}
                 disabled={off}
                 placeholder="0.0.0.0/0"
                 spellCheck={false}
-                onChange={(e) => patch(i, { destinations: e.target.value })}
+                onChange={(e) => {
+                  typed(row, 'destinations')
+                  patch(i, { destinations: e.target.value })
+                }}
+                onBlur={() => left(row, 'destinations', `${label} destination addresses`)}
                 className={`${cell} ${mono} resize-none`}
               />
               <PickMenu label={`${label.toLowerCase()} destination addresses`} choices={addressChoices} disabled={off} onPick={(c) => patch(i, { destinations: withChoice(row.destinations, c.values) })} />
             </Field>
 
-            <Field caption="Destination ports" short="Dest. ports" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.ports}>
+            <Field caption="Destination ports" short="Dest. ports" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.ports} problemId={problemId('ports')}>
               <textarea
                 aria-label={`${label} destination ports`}
-                aria-invalid={problems.ports ? true : undefined}
+                {...invalid('ports')}
                 rows={lines(row.ports)}
                 value={row.ports}
                 disabled={off || row.protocol === 'icmp'}
                 placeholder={row.protocol === 'icmp' ? 'No ports' : 'All ports'}
                 spellCheck={false}
-                onChange={(e) => patch(i, { ports: e.target.value })}
+                onChange={(e) => {
+                  typed(row, 'ports')
+                  patch(i, { ports: e.target.value })
+                }}
+                onBlur={() => left(row, 'ports', `${label} destination ports`)}
                 className={`${cell} ${mono} resize-none`}
               />
               <PickMenu label={`${label.toLowerCase()} destination ports`} choices={PORT_CHOICES} disabled={off || row.protocol === 'icmp'} onPick={(c) => patch(i, { ports: withChoice(row.ports, c.values) })} />
@@ -416,22 +452,26 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
               </select>
             </Field>
 
-            <Field caption="Description" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.description}>
+            <Field caption="Description" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.description} problemId={problemId('description')}>
               <input
                 type="text"
                 aria-label={`${label} description`}
-                aria-invalid={problems.description ? true : undefined}
+                {...invalid('description')}
                 value={row.description}
                 disabled={off}
                 placeholder="Description"
-                onChange={(e) => patch(i, { description: e.target.value })}
+                onChange={(e) => {
+                  typed(row, 'description')
+                  patch(i, { description: e.target.value })
+                }}
+                onBlur={() => left(row, 'description', `${label} description`)}
                 className={cell}
               />
             </Field>
 
             <div className="col-span-2 sm:col-span-6 xl:col-span-1 flex items-center max-sm:justify-start justify-end gap-2 xl:flex-col xl:items-end xl:gap-1 xl:pt-0.5">
-              {row.removed && <span className="text-[10px] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">Removed</span>}
-              {edited && !row.removed && <span className="text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">Edited</span>}
+              {row.removed && <span className="text-[0.625rem] font-bold uppercase tracking-wider text-rose-600 dark:text-rose-400">Removed</span>}
+              {edited && !row.removed && <span className="text-[0.625rem] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400">Edited</span>}
               {row.removed ? (
                 <button
                   type="button"
@@ -439,7 +479,7 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
                   disabled={!editable}
                   aria-label={`Put ${label.toLowerCase()} back`}
                   title="Put this rule back"
-                  className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-[#017cb6] hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded transition disabled:opacity-30"
+                  className="flex items-center gap-1 px-2 py-1 text-[0.6875rem] font-medium text-fg-link hover:bg-sky-50 dark:hover:bg-sky-950/40 rounded transition disabled:opacity-30"
                 >
                   <Undo2 className="w-3.5 h-3.5" />
                   <span>Undo</span>
@@ -451,7 +491,7 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
                   disabled={!editable}
                   aria-label={`Remove ${label.toLowerCase()}`}
                   title="Remove Rule"
-                  className="p-1.5 text-[#6c757d] hover:text-rose-500 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition disabled:opacity-30"
+                  className="p-1.5 text-fg-muted hover:text-rose-500 rounded hover:bg-rose-50 dark:hover:bg-rose-950/40 transition disabled:opacity-30"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -462,6 +502,9 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
         )
       })}
       {gap(rows.length)}
+      <p aria-live="polite" className="sr-only">
+        {said}
+      </p>
     </div>
   )
 }
@@ -470,9 +513,9 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
  * A cell with its caption. On a phone the caption sits to the left of the cell, one field to a line; from sm it sits above it; from the
  * xl breakpoint the header row names the column and the caption is not shown.
  */
-const Field: React.FC<{ caption: string; short?: string; className?: string; problem?: string; children: React.ReactNode }> = ({ caption, short, className, problem, children }) => (
+const Field: React.FC<{ caption: string; short?: string; className?: string; problem?: string; problemId?: string; children: React.ReactNode }> = ({ caption, short, className, problem, problemId, children }) => (
   <div className={`min-w-0 max-sm:grid max-sm:grid-cols-[7.25rem_minmax(0,1fr)] max-sm:gap-x-3 ${className ?? ''}`}>
-    <span aria-hidden="true" className="xl:hidden block select-none mb-1 max-sm:mb-0 max-sm:pt-2 text-[10px] max-sm:text-[11px] font-bold uppercase tracking-wider text-[#6c757d] dark:text-slate-400">
+    <span aria-hidden="true" className="xl:hidden block select-none mb-1 max-sm:mb-0 max-sm:pt-2 text-[0.625rem] max-sm:text-[0.6875rem] font-bold uppercase tracking-wider text-fg-muted dark:text-slate-400">
       {short ? (
         <>
           <span className="sm:hidden">{short}</span>
@@ -485,7 +528,7 @@ const Field: React.FC<{ caption: string; short?: string; className?: string; pro
     <div className="min-w-0">
       {children}
       {problem && (
-        <p role="alert" className="mt-1 text-[11px] text-rose-600 dark:text-rose-400 break-words">
+        <p id={problemId} className="mt-1 text-[0.6875rem] text-rose-600 dark:text-rose-400 break-words">
           {problem}
         </p>
       )}

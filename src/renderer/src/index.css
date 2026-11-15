@@ -15,6 +15,11 @@
     --bg-subnav: #f1f1f1;
     --text-main: #212529;
     --text-muted: #6c757d;
+    --fg-muted-rgb: 108 117 125;
+    --fg-link-rgb: 1 124 182;
+    --focus-ring: #017cb6;
+    color-scheme: light;
+    accent-color: #017cb6;
   }
 
   .dark {
@@ -24,6 +29,12 @@
     --bg-subnav: #2b3035;
     --text-main: #f8f9fa;
     --text-muted: #adb5bd;
+    /* #6c757d and #017cb6 fall to about 2.9:1 on the dark surface; these keep 4.5:1 or better. */
+    --fg-muted-rgb: 173 181 189;
+    --fg-link-rgb: 79 179 232;
+    --focus-ring: #4fb3e8;
+    color-scheme: dark;
+    accent-color: #4fb3e8;
   }
 
   body {
@@ -49,20 +60,45 @@
  * opt-out and throw the cue away.
  */
 @media (pointer: fine) {
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #6c757d88 transparent;
   }
-  ::-webkit-scrollbar-track {
-    background: transparent;
+  /* Older engines without the standard properties. Chromium ignores these once scrollbar-color is set. */
+  @supports not (scrollbar-color: auto) {
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #6c757d55;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #6c757d88;
+    }
   }
-  ::-webkit-scrollbar-thumb {
-    background: #6c757d55;
-    border-radius: 3px;
+}
+
+/*
+ * Keyboard focus indicator for controls that draw their own border instead of an outline.
+ * A 1px border colour change is too faint (about 2.4:1 in dark mode); this ring keeps 3:1.
+ */
+@layer components {
+  .focus-ring:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
   }
-  ::-webkit-scrollbar-thumb:hover {
-    background: #6c757d88;
-  }
+}
+
+/* Inputs styled with outline-none still get a visible ring when focused from the keyboard or by typing. */
+input:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 /* Frameless Window Draggable Region */

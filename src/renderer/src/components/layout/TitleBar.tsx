@@ -67,6 +67,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             onClick={onToggleMobileDrawer}
             className="md:hidden text-slate-300 hover:text-white p-1 rounded hover:bg-white/10 transition"
             title="Open Navigation Menu"
+            aria-label="Open Navigation Menu"
           >
             <Menu className="w-4 h-4" />
           </button>
@@ -79,7 +80,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               <span className="text-[#f1ca00]">binary</span>
               <span className="text-white">lane</span>
             </span>
-            <span className="hidden sm:inline-block text-[10px] font-normal text-slate-300/90 bg-black/30 px-1.5 py-0.5 rounded border border-white/10 font-mono">
+            <span className="hidden sm:inline-block text-[0.625rem] font-normal text-slate-300/90 bg-black/30 px-1.5 py-0.5 rounded border border-white/10 font-mono">
               BLDesk v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.35'}
             </span>
           </span>
@@ -95,7 +96,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         >
           <Search className="w-3.5 h-3.5 text-slate-300" />
           <span>Search servers, DNS, actions...</span>
-          <kbd className="ml-3 max-md:hidden px-1.5 py-0.5 text-[10px] bg-black/40 text-slate-300 rounded border border-white/10 font-mono">
+          <kbd className="ml-3 max-md:hidden px-1.5 py-0.5 text-[0.625rem] bg-black/40 text-slate-300 rounded border border-white/10 font-mono">
             Ctrl+K
           </kbd>
         </button>
@@ -105,6 +106,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           onClick={onOpenCommandPalette}
           className="sm:hidden p-1.5 text-slate-300 hover:text-white bg-black/20 rounded-md border border-white/10"
           title="Search"
+          aria-label="Search"
         >
           <Search className="w-3.5 h-3.5" />
         </button>
@@ -124,7 +126,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             <select
               value={activeProfile.id}
               onChange={(e) => onSwitchProfile(e.target.value)}
-              className="bg-transparent text-[11px] sm:text-xs text-slate-200 font-medium outline-none cursor-pointer pr-1 max-w-[85px] max-[399px]:max-w-[56px] xs:max-w-[110px] sm:max-w-[130px] truncate"
+              className="bg-transparent text-[0.6875rem] sm:text-xs text-slate-200 font-medium outline-none cursor-pointer pr-1 max-w-[85px] max-[399px]:max-w-[56px] xs:max-w-[110px] sm:max-w-[130px] truncate"
             >
               {profiles.map((p) => (
                 <option key={p.id} value={p.id} className="bg-[#343a40] text-slate-100">
@@ -135,6 +137,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             <button
               onClick={onOpenAuth}
               title="Add or Manage Profiles"
+              aria-label="Add or Manage Profiles"
               className="text-slate-400 hover:text-[#f1ca00] p-0.5 transition flex-shrink-0"
             >
               <Key className="w-3 h-3" />
@@ -170,6 +173,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             onClick={handleMinimize}
             className="w-7 h-7 flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 rounded transition"
             title="Minimize"
+            aria-label="Minimize"
           >
             <Minus className="w-3.5 h-3.5" />
           </button>
@@ -177,6 +181,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             onClick={handleMaximize}
             className="w-7 h-7 flex items-center justify-center text-slate-300 hover:text-white hover:bg-white/10 rounded transition"
             title={isMaximized ? 'Restore' : 'Maximize'}
+            aria-label={isMaximized ? 'Restore' : 'Maximize'}
           >
             {isMaximized ? <Copy className="w-3 h-3" /> : <Square className="w-3 h-3" />}
           </button>
@@ -184,6 +189,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             onClick={handleClose}
             className="w-7 h-7 flex items-center justify-center text-slate-300 hover:text-white hover:bg-rose-600 rounded transition"
             title="Close"
+            aria-label="Close"
           >
             <X className="w-3.5 h-3.5" />
           </button>

@@ -45,16 +45,16 @@ export const ServerAlertRules: React.FC<Props> = ({ alerts, status, error, onRet
     <div className="bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm overflow-hidden">
       <div className="p-3.5 bg-[#f1f1f1] dark:bg-[#262a2e] border-b border-[#ced4da] dark:border-[#373b3e]">
         <h3 className="font-bold text-xs text-[#495057] dark:text-[#ced4da] flex items-center gap-2">
-          <Bell className="w-4 h-4 text-[#017cb6]" />
+          <Bell className="w-4 h-4 text-fg-link" />
           <span>Monitoring & Threshold Alert Rules</span>
         </h3>
-        <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-0.5">
+        <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-0.5">
           BinaryLane automatically sends email notifications when sustained resource usage crosses these limits.
         </p>
       </div>
 
       {status === 'loading' && (
-        <p className="p-5 text-xs text-[#6c757d] dark:text-slate-400 flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" />Loading alert rules…</p>
+        <p className="p-5 text-xs text-fg-muted dark:text-slate-400 flex items-center gap-2"><Loader2 className="w-3.5 h-3.5 animate-spin" />Loading alert rules…</p>
       )}
 
       {status === 'error' && (
@@ -65,12 +65,12 @@ export const ServerAlertRules: React.FC<Props> = ({ alerts, status, error, onRet
       )}
 
       {status === 'ready' && alerts && alerts.length === 0 && (
-        <p className="p-5 text-xs text-[#6c757d] dark:text-slate-400">BinaryLane returned no alert rules for this server.</p>
+        <p className="p-5 text-xs text-fg-muted dark:text-slate-400">BinaryLane returned no alert rules for this server.</p>
       )}
 
       {status === 'ready' && alerts && alerts.length > 0 && (
         <form onSubmit={save}>
-          <div className={`hidden md:grid ${COLUMNS} gap-x-4 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[#6c757d] dark:text-slate-400 border-b border-[#ced4da]/60 dark:border-[#373b3e]`}>
+          <div className={`hidden md:grid ${COLUMNS} gap-x-4 px-4 py-2 text-[0.6875rem] font-semibold uppercase tracking-wide text-fg-muted dark:text-slate-400 border-b border-[#ced4da]/60 dark:border-[#373b3e]`}>
             <span>Alert</span>
             <span>Threshold</span>
             <span>Description</span>
@@ -95,7 +95,7 @@ export const ServerAlertRules: React.FC<Props> = ({ alerts, status, error, onRet
                         checked={enabled}
                         disabled={busy}
                         onChange={(e) => edit(rule.alert_type, { enabled: e.target.checked })}
-                        className="rounded border-[#ced4da] text-[#017cb6]"
+                        className="rounded border-[#ced4da] text-fg-link"
                       />
                     </label>
                     <input
@@ -111,9 +111,9 @@ export const ServerAlertRules: React.FC<Props> = ({ alerts, status, error, onRet
                       onChange={(e) => edit(rule.alert_type, { value: e.target.value === '' ? null : Number(e.target.value) })}
                       className={inputClass}
                     />
-                    <span className="text-xs text-[#6c757d] dark:text-slate-400">{shortUnit(rule.unit)}</span>
+                    <span className="text-xs text-fg-muted dark:text-slate-400">{shortUnit(rule.unit)}</span>
                   </div>
-                  <p className="text-[11px] leading-snug text-[#6c757d] dark:text-slate-400 md:pt-1.5">{rule.description}</p>
+                  <p className="text-[0.6875rem] leading-snug text-fg-muted dark:text-slate-400 md:pt-1.5">{rule.description}</p>
                 </div>
               )
             })}
@@ -128,7 +128,7 @@ export const ServerAlertRules: React.FC<Props> = ({ alerts, status, error, onRet
               <Bell className="w-3.5 h-3.5" />
               <span>Save Alert Thresholds</span>
             </button>
-            <span className={`text-[11px] ${invalid.length > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-[#6c757d] dark:text-slate-400'}`}>
+            <span className={`text-[0.6875rem] ${invalid.length > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-fg-muted dark:text-slate-400'}`}>
               {invalid.length > 0
                 ? 'A threshold must be a whole number of at least 1, and at most 100 for a percentage (memory can go higher).'
                 : changes.length === 0

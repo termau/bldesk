@@ -8,6 +8,11 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Theme-aware text colours, so dark mode keeps 4.5:1 contrast without a dark: variant on every use.
+        fg: {
+          muted: 'rgb(var(--fg-muted-rgb) / <alpha-value>)',
+          link: 'rgb(var(--fg-link-rgb) / <alpha-value>)'
+        },
         brand: {
           DEFAULT: '#017cb6',
           hover: '#016594',

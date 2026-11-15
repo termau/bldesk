@@ -1,7 +1,7 @@
 import { AlertTriangle, CheckCircle2, HelpCircle, Loader2, Receipt, X } from 'lucide-react'
 import { TrackedAction, TrackedActionState, useTrackedActions } from '../../context/ActionTrackerContext'
 import { RESTART_TOAST, restartsServer } from '../../lib/actionLabels'
-import { FailureToastItems, useFailures } from './FailureToasts'
+import { FailureToastItems } from './FailureToasts'
 
 /**
  * Toast host for actions being tracked to completion, and for failures reported
@@ -13,7 +13,7 @@ import { FailureToastItems, useFailures } from './FailureToasts'
  */
 
 const TONE: Record<TrackedActionState, { icon: typeof Loader2; className: string; spin?: boolean }> = {
-  running: { icon: Loader2, className: 'text-[#017cb6]', spin: true },
+  running: { icon: Loader2, className: 'text-fg-link', spin: true },
   completed: { icon: CheckCircle2, className: 'text-emerald-500' },
   errored: { icon: AlertTriangle, className: 'text-red-500' },
   'awaiting-interaction': { icon: HelpCircle, className: 'text-[#f1ca00]' },
@@ -50,9 +50,8 @@ function statusLine(action: TrackedAction): string {
 export function ActionToasts() {
   const { tracked: all, dismiss } = useTrackedActions()
   const tracked = all.filter((a) => !a.dismissed)
-  const failures = useFailures()
-  if (tracked.length === 0 && failures.length === 0) return null
 
+  // Rendered even when empty: a live region has to be on the page before what it announces is added to it.
   return (
     /*
      * Above the mobile navigation bar, not behind it.
@@ -70,8 +69,25 @@ export function ActionToasts() {
      * bottom right, where it covers the page's own controls least: the header
      * actions at the top right are what people reach for next.
      */
-    <div className="fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.75rem)] md:bottom-4 right-4 z-[55] flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)] pointer-events-none">
+    <div
+      role="region"
+      aria-label="Notifications"
+      className="fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.75rem)] md:bottom-4 right-4 z-[55] flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)] pointer-events-none"
+    >
+      {/* A failure is its own alert (FailureToasts). */}
       <FailureToastItems />
+      {/*
+        * What a screen reader announces about tracked actions: one line each, which changes only when the state does, so
+        * a percentage ticking up is not read out every few seconds. The toasts below show the detail.
+        */}
+      <div className="sr-only" aria-live="polite">
+        {tracked.map((action) => (
+          <p key={action.actionId}>
+            {action.label}
+            {action.resourceName ? ` · ${action.resourceName}` : ''}: {action.state === 'running' ? 'In progress' : statusLine(action)}
+          </p>
+        ))}
+      </div>
       {tracked.map((action) => {
         const tone = TONE[action.state]
         const Icon = tone.icon
@@ -88,9 +104,9 @@ export function ActionToasts() {
                   <span className="font-normal text-[#495057] dark:text-[#adb5bd]"> · {action.resourceName}</span>
                 )}
               </div>
-              <div className="text-[11px] text-[#495057] dark:text-[#adb5bd] break-words">{statusLine(action)}</div>
+              <div className="text-[0.6875rem] text-[#495057] dark:text-[#adb5bd] break-words">{statusLine(action)}</div>
               {action.state === 'running' && (action.stepDetail || (restartsServer(action.actionType) && action.step)) && (
-                <div className="text-[11px] text-[#6c757d] dark:text-[#8b9299] break-words mt-0.5">
+                <div className="text-[0.6875rem] text-fg-muted dark:text-[#8b9299] break-words mt-0.5">
                   {action.stepDetail || action.step}
                 </div>
               )}
@@ -98,7 +114,7 @@ export function ActionToasts() {
             <button
               onClick={() => dismiss(action.actionId)}
               aria-label={`Dismiss ${action.label} notification`}
-              className="p-0.5 text-[#6c757d] hover:text-[#212529] dark:hover:text-white rounded flex-shrink-0"
+              className="p-0.5 text-fg-muted hover:text-[#212529] dark:hover:text-white rounded flex-shrink-0"
             >
               <X className="w-3.5 h-3.5" />
             </button>

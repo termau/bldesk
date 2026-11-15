@@ -5,6 +5,7 @@ import { HelpLink } from '../components/ui/HelpLink'
 import type { DiffLine, FieldChange } from '../lib/diff'
 import { summariseDiff } from '../lib/diff'
 import { recordChange, type ChangeSeverity, type ChangeTarget } from '../lib/changelog'
+import { isComposing } from '../lib/ime'
 
 /**
  * One confirm dialog for every mutation (FEATURES.md #5), replacing the
@@ -158,10 +159,14 @@ function ConfirmDialog({ req, onSettle }: { req: ConfirmRequest; onSettle: (ok: 
     : undefined
   const canConfirm = typedOk && reasonOk
   const primaryRef = useRef<HTMLButtonElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  // With nothing to type or choose, focus starts on a button. A red action starts on Cancel, so a stray Enter or Space
+  // does not power off or delete; the confirm button is a Tab or a click away.
+  const cancelFirst = severity !== 'normal' && !mustType && !req.reason
 
   useEffect(() => {
-    if (!mustType && !req.reason) primaryRef.current?.focus()
-  }, [mustType, req.reason])
+    if (!mustType && !req.reason) (cancelFirst ? cancelRef : primaryRef).current?.focus()
+  }, [mustType, req.reason, cancelFirst])
 
   const finish = (ok: boolean) => {
     if (busy) return
@@ -179,7 +184,7 @@ function ConfirmDialog({ req, onSettle }: { req: ConfirmRequest; onSettle: (ok: 
       // Only a key that starts in this dialog, or in nothing at all, answers it. One typed into something on top of it,
       // such as the command palette, is not an answer, and neither is a held key repeating.
       const elsewhere = e.target instanceof Element && e.target !== document.body && e.target !== document.documentElement && !dialog?.contains(e.target)
-      if (e.key === 'Enter' && !e.repeat && !elsewhere && !(e.target instanceof HTMLTextAreaElement) && !onButton) {
+      if (e.key === 'Enter' && !e.repeat && !isComposing(e) && !elsewhere && !(e.target instanceof HTMLTextAreaElement) && !onButton) {
         e.preventDefault()
         finish(true)
       }
@@ -194,7 +199,7 @@ function ConfirmDialog({ req, onSettle }: { req: ConfirmRequest; onSettle: (ok: 
       ? { icon: ShieldAlert, head: 'text-rose-600 dark:text-rose-400', btn: 'bg-rose-600 hover:bg-rose-700' }
       : severity === 'destructive'
         ? { icon: AlertTriangle, head: 'text-amber-600 dark:text-amber-400', btn: 'bg-rose-600 hover:bg-rose-700' }
-        : { icon: Check, head: 'text-[#017cb6]', btn: 'bg-[#017cb6] hover:bg-[#016594]' }
+        : { icon: Check, head: 'text-fg-link', btn: 'bg-[#017cb6] hover:bg-[#016594]' }
   const Icon = tone.icon
 
   const diffSummary = req.diff ? summariseDiff(req.diff) : null
@@ -205,7 +210,7 @@ function ConfirmDialog({ req, onSettle }: { req: ConfirmRequest; onSettle: (ok: 
       {req.target && (
         <span className="ml-2 font-mono font-normal text-[#212529] dark:text-[#f8f9fa]">
           {req.target.name}
-          {req.target.id !== undefined && <span className="text-[#6c757d]"> #{req.target.id}</span>}
+          {req.target.id !== undefined && <span className="text-fg-muted"> #{req.target.id}</span>}
         </span>
       )}
     </>
@@ -219,20 +224,20 @@ function ConfirmDialog({ req, onSettle }: { req: ConfirmRequest; onSettle: (ok: 
       onClose={() => finish(false)}
       busy={busy}
       noSelect
-      labelledBy="confirm-title"
       headerRight={req.helpSlug && !busy ? <HelpLink slug={req.helpSlug} onOpen={() => finish(false)} /> : undefined}
       footer={
         <div className="flex items-center justify-between gap-2 p-4">
-          <span className="text-[10px] text-[#6c757d]">
+          <span className="text-[0.625rem] text-fg-muted">
             {severity === 'irreversible' ? 'No undo. ' : ''}
             {req.log === false ? '' : 'Recorded in History.'}
           </span>
           <div className="flex items-center gap-2">
             <button
+              ref={cancelRef}
               onClick={() => finish(false)}
               className="px-3 py-1.5 text-xs font-medium rounded border border-[#ced4da] dark:border-[#373b3e] text-[#212529] dark:text-slate-200 hover:bg-[#f8f9fa] dark:hover:bg-[#32383e] transition"
             >
-              Cancel <kbd className="ml-1 text-[9px] opacity-60">Esc</kbd>
+              Cancel <kbd className="ml-1 text-[0.5625rem] opacity-60">Esc</kbd>
             </button>
             <button
               ref={primaryRef}
@@ -246,7 +251,8 @@ function ConfirmDialog({ req, onSettle }: { req: ConfirmRequest; onSettle: (ok: 
               disabled={!canConfirm || busy}
               className={`px-3 py-1.5 text-xs font-semibold rounded text-white transition disabled:opacity-40 ${tone.btn}`}
             >
-              {req.confirmLabel ?? (severity === 'normal' ? 'Confirm' : req.title)} <kbd className="ml-1 text-[9px] opacity-70">↵</kbd>
+              {req.confirmLabel ?? (severity === 'normal' ? 'Confirm' : req.title)}
+              {!cancelFirst && <kbd className="ml-1 text-[0.5625rem] opacity-70">↵</kbd>}
             </button>
           </div>
         </div>
@@ -272,18 +278,18 @@ function ConfirmDialog({ req, onSettle }: { req: ConfirmRequest; onSettle: (ok: 
           )}
 
           {req.changes && req.changes.length > 0 && (
-            <table className="w-full text-[11px] border border-[#ced4da] dark:border-[#373b3e] rounded overflow-hidden">
+            <table className="w-full text-[0.6875rem] border border-[#ced4da] dark:border-[#373b3e] rounded overflow-hidden">
               <tbody>
                 {req.changes.map((c, i) => (
                   <tr key={i} className="border-t first:border-t-0 border-[#ced4da] dark:border-[#373b3e]">
-                    <td className="px-2 py-1.5 text-[#6c757d] dark:text-slate-400 whitespace-nowrap align-top w-1/3">{c.label}</td>
+                    <td className="px-2 py-1.5 text-fg-muted dark:text-slate-400 whitespace-nowrap align-top w-1/3">{c.label}</td>
                     <td className="px-2 py-1.5 font-mono align-top">
                       {c.from !== undefined && <span className="text-rose-600 dark:text-rose-400 line-through break-all">{c.from}</span>}
-                      {c.from !== undefined && c.to !== undefined && <span className="text-[#6c757d] mx-1.5">→</span>}
+                      {c.from !== undefined && c.to !== undefined && <span className="text-fg-muted mx-1.5">→</span>}
                       {c.to !== undefined ? (
                         <span className="text-emerald-700 dark:text-emerald-300 break-all">{c.to}</span>
                       ) : c.from !== undefined ? (
-                        <span className="text-[#6c757d] ml-1.5">(removed)</span>
+                        <span className="text-fg-muted ml-1.5">(removed)</span>
                       ) : null}
                     </td>
                   </tr>
@@ -294,11 +300,11 @@ function ConfirmDialog({ req, onSettle }: { req: ConfirmRequest; onSettle: (ok: 
 
           {req.diff && req.diff.length > 0 && (
             <div>
-              <div className="flex items-center justify-between text-[10px] uppercase tracking-wider font-bold text-[#6c757d] mb-1">
+              <div className="flex items-center justify-between text-[0.625rem] uppercase tracking-wider font-bold text-fg-muted mb-1">
                 <span>Before → after</span>
                 <span>{diffSummary}</span>
               </div>
-              <pre className="text-[11px] font-mono leading-5 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded p-2 overflow-x-auto max-h-64">
+              <pre className="text-[0.6875rem] font-mono leading-5 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded p-2 overflow-x-auto max-h-64">
                 {req.diff.map((l, i) => (
                   <div
                     key={i}
@@ -307,7 +313,7 @@ function ConfirmDialog({ req, onSettle }: { req: ConfirmRequest; onSettle: (ok: 
                         ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-500/10'
                         : l.kind === 'remove'
                           ? 'text-rose-600 dark:text-rose-400 bg-rose-500/10 line-through decoration-rose-400/60'
-                          : 'text-[#6c757d] dark:text-slate-400'
+                          : 'text-fg-muted dark:text-slate-400'
                     }
                   >
                     <span className="inline-block w-4 select-none">{l.kind === 'add' ? '+' : l.kind === 'remove' ? '−' : ' '}</span>
@@ -320,7 +326,7 @@ function ConfirmDialog({ req, onSettle }: { req: ConfirmRequest; onSettle: (ok: 
 
           {req.reason && (
             <div className="space-y-1.5">
-              <label className="block text-[#6c757d] dark:text-[#adb5bd]">{req.reason.label}</label>
+              <label className="block text-fg-muted dark:text-[#adb5bd]">{req.reason.label}</label>
               <select
                 value={reasonChoice}
                 onChange={(e) => setReasonChoice(e.target.value)}
@@ -344,7 +350,7 @@ function ConfirmDialog({ req, onSettle }: { req: ConfirmRequest; onSettle: (ok: 
 
           {mustType && (
             <label className="block space-y-1.5">
-              <span className="text-[#6c757d] dark:text-[#adb5bd]">
+              <span className="text-fg-muted dark:text-[#adb5bd]">
                 Type <span className="font-mono text-[#212529] dark:text-[#f8f9fa]">{mustType}</span> to confirm
               </span>
               <input

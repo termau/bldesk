@@ -106,7 +106,7 @@ export const PickMenu: React.FC<{
           setShown(choices)
           setOpen(true)
         }}
-        className="mt-0.5 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[#495057] dark:text-slate-300 hover:text-[#017cb6] hover:bg-sky-50 dark:hover:bg-sky-950/40 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[#495057] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#017cb6] [@media(pointer:coarse)]:min-h-9 [@media(pointer:coarse)]:min-w-11 [@media(pointer:coarse)]:justify-center"
+        className="mt-0.5 inline-flex items-center gap-0.5 rounded px-1 py-0.5 text-[#495057] dark:text-slate-300 hover:text-fg-link hover:bg-sky-50 dark:hover:bg-sky-950/40 disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-[#495057] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#017cb6] [@media(pointer:coarse)]:min-h-9 [@media(pointer:coarse)]:min-w-11 [@media(pointer:coarse)]:justify-center"
       >
         <Search className="w-3.5 h-3.5" aria-hidden="true" />
         <ChevronDown className="w-3 h-3" aria-hidden="true" />

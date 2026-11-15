@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { Suspense, lazy, useState, useEffect } from 'react'
 import { DISMISSIBLE_SELECTOR, installAndroidBackButton } from './lib/androidBack'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TitleBar } from './components/layout/TitleBar'
@@ -10,7 +10,6 @@ import { ServerDetails } from './components/servers/ServerDetails'
 import type { SettingsStart } from './components/servers/ServerSettings'
 import { AuthModal } from './components/auth/AuthModal'
 import { CommandPalette } from './components/palette/CommandPalette'
-import { TerminalView } from './components/terminal/TerminalView'
 import { openSsh } from './lib/openSsh'
 import { useTraySaveFailures } from './lib/traySettings'
 import { openServerSsh } from './lib/openServerSsh'
@@ -27,10 +26,7 @@ import { ActionToasts } from './components/actions/ActionToasts'
 import { ActionTrackerProvider } from './context/ActionTrackerContext'
 import { ConfirmProvider, useConfirm } from './context/ConfirmContext'
 import { HistoryView } from './components/history/HistoryView'
-import { HelpView } from './components/help/HelpView'
 import { HELP_OPEN_EVENT, type HelpLocation } from './lib/helpNavigation'
-import { NetworkMap } from './components/map/NetworkMap'
-import { TemplatesView } from './components/templates/TemplatesView'
 import type { ServerTemplate } from './lib/serverTemplates'
 import { FleetHeatmap } from './components/heatmap/FleetHeatmap'
 import { setChangeLogProfile } from './lib/changelog'
@@ -44,6 +40,21 @@ import { AccountProfile } from '@shared/ipc-types'
 import { ThemeProvider } from './context/ThemeContext'
 import { useDeepLinkRouter } from './lib/deeplinks'
 import { AlertCircle, KeyRound, X, Server, Loader2 } from 'lucide-react'
+
+// Views that are heavy (xterm, the map, the help pages' renderer, the template editor) and never the first screen load
+// as their own chunks, so they do not weigh on startup.
+const TerminalView = lazy(() => import('./components/terminal/TerminalView').then((m) => ({ default: m.TerminalView })))
+const NetworkMap = lazy(() => import('./components/map/NetworkMap').then((m) => ({ default: m.NetworkMap })))
+const HelpView = lazy(() => import('./components/help/HelpView').then((m) => ({ default: m.HelpView })))
+const TemplatesView = lazy(() => import('./components/templates/TemplatesView').then((m) => ({ default: m.TemplatesView })))
+
+function ViewLoading() {
+  return (
+    <div className="h-full flex items-center justify-center gap-2 text-xs text-fg-muted dark:text-slate-400">
+      <Loader2 className="w-4 h-4 animate-spin" /> Loading…
+    </div>
+  )
+}
 
 // Strict QueryClient settings: Never retry failed mutations (create/update/delete/actions) to prevent spamming!
 const queryClient = new QueryClient({
@@ -321,16 +332,16 @@ function MainDashboard() {
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#212529] text-[#f8f9fa] space-y-4 select-none">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-[#017cb6]/20 flex items-center justify-center">
-            <Server className="w-6 h-6 text-[#017cb6]" />
+            <Server className="w-6 h-6 text-fg-link" />
           </div>
           <div className="text-2xl font-bold tracking-tight">
-            <span className="text-[#017cb6]">binary</span>
+            <span className="text-fg-link">binary</span>
             <span className="text-[#f1ca00]">lane</span>
-            <span className="text-xs font-normal text-[#6c757d] ml-2">BLDesk</span>
+            <span className="text-xs font-normal text-fg-muted ml-2">BLDesk</span>
           </div>
         </div>
         <div className="flex items-center gap-2.5 text-xs text-[#adb5bd]">
-          <Loader2 className="w-4 h-4 text-[#017cb6] animate-spin" />
+          <Loader2 className="w-4 h-4 text-fg-link animate-spin" />
           <span>Connecting to BinaryLane Cloud...</span>
         </div>
       </div>
@@ -368,7 +379,7 @@ function MainDashboard() {
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setIsAuthOpen(true)}
-                className="bg-slate-900 text-white hover:bg-slate-800 px-2.5 py-1 rounded text-[11px] font-semibold flex items-center gap-1"
+                className="bg-slate-900 text-white hover:bg-slate-800 px-2.5 py-1 rounded text-[0.6875rem] font-semibold flex items-center gap-1"
               >
                 <KeyRound className="w-3 h-3" />
                 <span>Update API Token</span>
@@ -429,11 +440,15 @@ function MainDashboard() {
               )
             )}
 
+            {/* Mounted from the start and never unmounted, as before: it recovers sessions after a reload and takes queued SSH
+                requests. Only its code arrives a moment after the first screen. */}
             {window.bldeskApi?.pty ? <div className={activeTab === 'terminal' ? 'h-full' : 'hidden'}>
-              <TerminalView servers={servers} profileId={activeProfile?.id} active={activeTab === 'terminal'} onActivate={() => setActiveTab('terminal')} />
+              <Suspense fallback={activeTab === 'terminal' ? <ViewLoading /> : null}>
+                <TerminalView servers={servers} profileId={activeProfile?.id} active={activeTab === 'terminal'} onActivate={() => setActiveTab('terminal')} />
+              </Suspense>
             </div> : activeTab === 'terminal' && (
               // Reachable on Android via `go terminal` or bldesk://tab/terminal even though the sidebar hides the tab.
-              <div className="p-6 text-sm text-[#6c757d] dark:text-slate-400">Embedded SSH is available in the desktop app only. Use the SSH button on a server to open your device's SSH client.</div>
+              <div className="p-6 text-sm text-fg-muted dark:text-slate-400">Embedded SSH is available in the desktop app only. Use the SSH button on a server to open your device's SSH client.</div>
             )}
 
             {activeTab === 'vpcs' && (
@@ -485,26 +500,30 @@ function MainDashboard() {
             {activeTab === 'settings' && <SettingsView profileId={activeProfile?.id} profileName={activeProfile?.name} servers={servers} />}
 
             {activeTab === 'map' && (
-              <NetworkMap
-                client={client}
-                servers={servers}
-                onSelectServer={(s) => {
-                  handleSelectServer(s)
-                  setActiveTab('servers')
-                }}
-              />
+              <Suspense fallback={<ViewLoading />}>
+                <NetworkMap
+                  client={client}
+                  servers={servers}
+                  onSelectServer={(s) => {
+                    handleSelectServer(s)
+                    setActiveTab('servers')
+                  }}
+                />
+              </Suspense>
             )}
 
             {activeTab === 'templates' && (
-              <TemplatesView
-                client={client}
-                servers={servers}
-                profileId={activeProfile?.id}
-                draft={templateDraft}
-                onDraftConsumed={() => setTemplateDraft(null)}
-                applyRequest={templateApply}
-                onApplyConsumed={() => setTemplateApply(null)}
-              />
+              <Suspense fallback={<ViewLoading />}>
+                <TemplatesView
+                  client={client}
+                  servers={servers}
+                  profileId={activeProfile?.id}
+                  draft={templateDraft}
+                  onDraftConsumed={() => setTemplateDraft(null)}
+                  applyRequest={templateApply}
+                  onApplyConsumed={() => setTemplateApply(null)}
+                />
+              </Suspense>
             )}
 
             {activeTab === 'heatmap' && (
@@ -529,9 +548,13 @@ function MainDashboard() {
             {activeTab === 'history' && (
               <HistoryView profileId={activeProfile?.id} profileName={activeProfile?.name} />
             )}
-            {activeTab === 'help' && <HelpView location={helpLocation} contextHint={selectedServer
-              ? [selectedServer.image?.distribution, selectedServer.region?.name].filter(Boolean).join(', ')
-              : undefined} />}
+            {activeTab === 'help' && (
+              <Suspense fallback={<ViewLoading />}>
+                <HelpView location={helpLocation} contextHint={selectedServer
+                  ? [selectedServer.image?.distribution, selectedServer.region?.name].filter(Boolean).join(', ')
+                  : undefined} />
+              </Suspense>
+            )}
           </main>
         </div>
 

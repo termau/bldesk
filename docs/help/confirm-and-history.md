@@ -12,7 +12,7 @@ Most page-level cloud changes use a shared review dialog with the target, a plai
 - Destructive: a disruptive change with a red button, such as hard power off or replacing firewall rules.
 - Irreversible: a red action requiring you to type the target name, such as restore, rebuild or cancellation.
 
-Escape, the close button or Cancel dismisses a review before submission. Where a question mark is present, it opens contextual help and cancels the current review; return to the action to review it again. Not every confirmation has a help link.
+Escape, the close button or Cancel dismisses a review before submission. A review with a red button and nothing to type or choose opens with Cancel focused, so a stray Enter or Space cancels rather than going ahead; Tab to the red button or click it to confirm. Where a question mark is present, it opens contextual help and cancels the current review; return to the action to review it again. Not every confirmation has a help link.
 
 ## Worked example
 For a restore, the dialog title is “Restore from backup”. Its note says:

@@ -103,7 +103,7 @@ export function ImportImageModal({ client, server, backups, onClose }: Props) {
     <Modal title="Import Image" icon={Upload} size="sm" as="form" onSubmit={submit} busy={busy} onClose={onClose}
       headerRight={<HelpLink slug="backups#import-image" />}
       footer={<div className="flex justify-end gap-2 p-4 text-xs">
-        <button type="button" onClick={onClose} disabled={busy} className="px-3 py-1.5 text-[#6c757d] disabled:opacity-50">Cancel</button>
+        <button type="button" onClick={onClose} disabled={busy} className="px-3 py-1.5 text-fg-muted disabled:opacity-50">Cancel</button>
         <button type="submit" disabled={busy || !url.trim() || (strategy === 'specified' && !replacementId)}
           className="px-4 py-1.5 bg-[#017cb6] hover:bg-[#016594] text-white font-medium rounded flex items-center gap-1.5 disabled:opacity-50">
           {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Import Image
@@ -111,7 +111,7 @@ export function ImportImageModal({ client, server, backups, onClose }: Props) {
       </div>}
     >
       <fieldset disabled={busy} className="p-5 space-y-4 text-xs min-w-0">
-        <p className="text-[#6c757d] dark:text-slate-400">Import an image from an HTTP or HTTPS URL into a backup slot on {server.name}.</p>
+        <p className="text-fg-muted dark:text-slate-400">Import an image from an HTTP or HTTPS URL into a backup slot on {server.name}.</p>
         <div>
           <label htmlFor="import-image-url" className={labelClass}>Image URL</label>
           <input id="import-image-url" type="url" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/image" className={fieldClass} autoComplete="off" spellCheck={false} />
@@ -137,7 +137,7 @@ export function ImportImageModal({ client, server, backups, onClose }: Props) {
           </select>
         </div>}
         {(strategy === 'specified' ? replacements.find((b) => b.id === replacementId)?.backup_info.type === 'temporary' : slot === 'temporary') &&
-          <p className="text-[11px] text-[#6c757d] dark:text-slate-400">{IMPORT_TEMPORARY_TERMS}</p>}
+          <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400">{IMPORT_TEMPORARY_TERMS}</p>}
         <div>
           <label htmlFor="import-image-label" className={labelClass}>Label (optional)</label>
           <input id="import-image-label" value={label} maxLength={250} onChange={(e) => setLabel(e.target.value)} className={fieldClass} />

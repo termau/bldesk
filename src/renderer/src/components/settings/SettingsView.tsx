@@ -1,9 +1,10 @@
 import React, { useRef, useState } from 'react'
-import { Settings, Bell, Tags, Download, Upload } from 'lucide-react'
+import { Settings, Bell, Tags, Download, Upload, Palette } from 'lucide-react'
 import type { NotificationSettingKey } from '@shared/ipc-types'
 import { HelpLink } from '../ui/HelpLink'
 import { Modal } from '../ui/Modal'
 import { useConfirm } from '../../context/ConfirmContext'
+import { useTheme, type ThemePreference } from '../../context/ThemeContext'
 import { notifyFailure } from '../../lib/failures'
 import type { DiffLine } from '../../lib/diff'
 import { saveTextFile } from '../../lib/saveFile'
@@ -178,11 +179,11 @@ export const SettingsView: React.FC<Props> = ({ profileId, profileName, servers 
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-[#212529] dark:text-white flex items-center gap-2.5">
-          <Settings className="w-5 h-5 text-[#017cb6]" />
+          <Settings className="w-5 h-5 text-fg-link" />
           <span className="flex-1">Settings</span>
           <HelpLink slug="settings" />
         </h1>
-        <p className="text-xs text-[#6c757d] dark:text-[#adb5bd] mt-1">
+        <p className="text-xs text-fg-muted dark:text-[#adb5bd] mt-1">
           Preferences for this device. They are not saved to your BinaryLane account.
         </p>
       </div>
@@ -201,7 +202,7 @@ export const SettingsView: React.FC<Props> = ({ profileId, profileName, servers 
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <div className="font-medium text-[#212529] dark:text-white">Notify me about</div>
-              <p className="mt-0.5 text-[11px] leading-relaxed text-[#6c757d] dark:text-[#adb5bd]">{summary || 'Loading…'}</p>
+              <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-fg-muted dark:text-[#adb5bd]">{summary || 'Loading…'}</p>
             </div>
             <button
               type="button"
@@ -219,11 +220,16 @@ export const SettingsView: React.FC<Props> = ({ profileId, profileName, servers 
           </Note>
         </Card>
 
+        {/* --- Appearance --- */}
+        <Card title="Appearance" icon={Palette}>
+          <ThemeChoice />
+        </Card>
+
         {/* --- Tags --- */}
         <Card title="Tags" icon={Tags}>
           <div>
             <div className="font-medium text-[#212529] dark:text-white">Export and import tags</div>
-            <p className="mt-0.5 text-[11px] leading-relaxed text-[#6c757d] dark:text-[#adb5bd]">{tagSummary}</p>
+            <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-fg-muted dark:text-[#adb5bd]">{tagSummary}</p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={() => void exportTags()} disabled={!profileId || inUse.length === 0 || exporting} className={tagButton}>
@@ -247,7 +253,7 @@ export const SettingsView: React.FC<Props> = ({ profileId, profileName, servers 
             />
           </div>
           {tagStatus && (
-            <p role="status" className="text-[11px] leading-relaxed text-[#212529] dark:text-[#f8f9fa]">
+            <p role="status" className="text-[0.6875rem] leading-relaxed text-[#212529] dark:text-[#f8f9fa]">
               {tagStatus}
             </p>
           )}
@@ -280,7 +286,7 @@ export const SettingsView: React.FC<Props> = ({ profileId, profileName, servers 
         >
           <div className="p-4 space-y-4 text-xs text-[#212529] dark:text-white">
             {!on && (
-              <p className="text-[11px] leading-relaxed text-[#6c757d] dark:text-[#adb5bd]">
+              <p className="text-[0.6875rem] leading-relaxed text-fg-muted dark:text-[#adb5bd]">
                 Show notifications is off, so none of these are shown. Turn it on to change them.
               </p>
             )}
@@ -313,7 +319,7 @@ const Card: React.FC<{ title: string; icon: React.FC<{ className?: string }>; ch
 }) => (
   <div className="bg-white dark:bg-[#2b3035] border border-[#dee2e6] dark:border-[#373b3e] rounded-lg shadow-sm">
     <div className="px-4 py-2.5 border-b border-[#dee2e6] dark:border-[#373b3e] flex items-center gap-2">
-      <Icon className="w-4 h-4 text-[#017cb6]" />
+      <Icon className="w-4 h-4 text-fg-link" />
       <h3 className="font-semibold text-xs text-[#495057] dark:text-[#ced4da]">{title}</h3>
     </div>
     <div className="p-4 space-y-4 text-xs">{children}</div>
@@ -330,7 +336,7 @@ const Setting: React.FC<{
   <div className={`flex items-start justify-between gap-4 ${disabled ? 'opacity-60' : ''}`}>
     <div className="min-w-0">
       <div className="font-medium text-[#212529] dark:text-white">{label}</div>
-      <p className="mt-0.5 text-[11px] leading-relaxed text-[#6c757d] dark:text-[#adb5bd]">{description}</p>
+      <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-fg-muted dark:text-[#adb5bd]">{description}</p>
     </div>
     <Switch label={label} checked={checked} disabled={disabled} onChange={onChange} />
   </div>
@@ -361,8 +367,48 @@ const Switch: React.FC<{ label: string; checked: boolean; disabled?: boolean; on
   </button>
 )
 
+const THEME_CHOICES: ReadonlyArray<{ value: ThemePreference; label: string }> = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' }
+]
+
+const ThemeChoice: React.FC = () => {
+  const { preference, setPreference } = useTheme()
+  return (
+    <fieldset>
+      <legend className="font-medium text-[#212529] dark:text-white">Theme</legend>
+      <p className="mt-0.5 text-[0.6875rem] leading-relaxed text-fg-muted">
+        System follows your operating system's light or dark setting and changes when it does.
+      </p>
+      <div className="mt-2 inline-flex rounded border border-[#ced4da] dark:border-[#495057] overflow-hidden">
+        {THEME_CHOICES.map((c) => (
+          <label
+            key={c.value}
+            className={`px-3 py-1.5 text-xs font-medium cursor-pointer has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:-outline-offset-2 has-[:focus-visible]:outline-[var(--focus-ring)] ${
+              preference === c.value
+                ? 'bg-[#017cb6] text-white'
+                : 'bg-white dark:bg-[#343a40] text-[#212529] dark:text-white hover:bg-[#f1f3f5] dark:hover:bg-[#3d444b]'
+            }`}
+          >
+            <input
+              type="radio"
+              name="theme"
+              value={c.value}
+              checked={preference === c.value}
+              onChange={() => setPreference(c.value)}
+              className="sr-only"
+            />
+            {c.label}
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  )
+}
+
 const Note: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="pt-2.5 border-t border-[#dee2e6] dark:border-[#373b3e] text-[11px] text-[#6c757d] dark:text-[#adb5bd] leading-relaxed">
+  <div className="pt-2.5 border-t border-[#dee2e6] dark:border-[#373b3e] text-[0.6875rem] text-fg-muted dark:text-[#adb5bd] leading-relaxed">
     {children}
   </div>
 )

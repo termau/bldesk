@@ -1,7 +1,7 @@
 import { HelpLink } from '../ui/HelpLink'
 import { Modal } from '../ui/Modal'
 import { LoadError } from '../ui/LoadError'
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { useIsMutating, useQueryClient } from '@tanstack/react-query'
 import { Globe, Plus, Trash2, Search, RefreshCw, Loader2, ChevronLeft, ChevronRight, ExternalLink } from 'lucide-react'
 import { BinaryLaneClient } from '../../api/client'
@@ -51,7 +51,7 @@ const DelegationBadge: React.FC<{
           ? 'Authority is delegated to BinaryLane, so the records in this zone are the ones resolving.'
           : `Authority is elsewhere (${(domain.current_nameservers || []).join(', ')}). The records here exist but nothing is using them.`
       }
-      className={`px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide ${
+      className={`px-1.5 py-0.5 rounded text-[0.5625rem] font-semibold uppercase tracking-wide ${
         isLocal
           ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
           : 'bg-amber-500/15 text-amber-700 dark:text-amber-400'
@@ -83,14 +83,14 @@ const WEB_ONLY_FEATURES = [
 ]
 
 const WebOnlyRegistration: React.FC<{ domain: string }> = ({ domain }) => (
-  <div className="px-4 py-2.5 border-b border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529] text-[11px] text-[#6c757d] dark:text-[#adb5bd]">
+  <div className="px-4 py-2.5 border-b border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529] text-[0.6875rem] text-fg-muted dark:text-[#adb5bd]">
     <span>Managed on the web: </span>
     {WEB_ONLY_FEATURES.map((label, i) => (
       <React.Fragment key={label}>
         {i > 0 && <span className="opacity-50"> · </span>}
         <button
           onClick={() => window.bldeskApi?.openExternal?.(domainWebUrl(domain))}
-          className="text-[#017cb6] dark:text-[#4db2e0] hover:underline"
+          className="text-fg-link dark:text-[#4db2e0] hover:underline"
         >
           {label}
         </button>
@@ -102,19 +102,92 @@ const WebOnlyRegistration: React.FC<{ domain: string }> = ({ domain }) => (
 
 const DOMAINS_PER_PAGE = 25
 
-const MenuItem: React.FC<{ onClick: () => void; disabled?: boolean; children: React.ReactNode }> = ({
+const MenuItem: React.FC<{ onClick: () => void; disabled?: boolean; danger?: boolean; children: React.ReactNode }> = ({
   onClick,
   disabled,
+  danger,
   children
 }) => (
   <button
+    type="button"
+    role="menuitem"
+    tabIndex={-1}
     onClick={onClick}
     disabled={disabled}
-    className="w-full text-left px-3 py-1.5 hover:bg-[#017cb6]/10 text-[#212529] dark:text-slate-200 transition disabled:opacity-40 disabled:hover:bg-transparent"
+    className={`w-full text-left px-3 py-1.5 transition disabled:opacity-40 disabled:hover:bg-transparent focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--focus-ring)] ${
+      danger
+        ? 'text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 focus:bg-rose-500/10'
+        : 'text-[#212529] dark:text-slate-200 hover:bg-[#017cb6]/10 focus:bg-[#017cb6]/10'
+    }`}
   >
     {children}
   </button>
 )
+
+/*
+ * The domain list's right-click menu, also opened by the keyboard's menu key or Shift+F10. As in PickMenu, focus moves into it and
+ * the arrow keys, Home and End move between its items; Escape or Tab closes it and focus returns to the domain. It says it closes on
+ * Escape (data-dismissible), so Android's Back closes it too. It is measured once drawn and kept inside the window.
+ */
+const DomainMenu: React.FC<{ x: number; y: number; label: string; onClose: () => void; children: React.ReactNode }> = ({
+  x,
+  y,
+  label,
+  onClose,
+  children
+}) => {
+  const ref = useRef<HTMLDivElement>(null)
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+
+  // Placed before it is painted, and straight onto the element so it is never hidden while focus moves into it.
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const { width, height } = el.getBoundingClientRect()
+    el.style.left = `${Math.max(8, Math.min(x, document.documentElement.clientWidth - width - 8))}px`
+    el.style.top = `${Math.max(8, Math.min(y, window.innerHeight - height - 8))}px`
+  }, [x, y])
+
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>('[role=menuitem]:not(:disabled)')?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
+      closeRef.current()
+    }
+    document.addEventListener('keydown', onKey, true)
+    return () => document.removeEventListener('keydown', onKey, true)
+  }, [])
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      return onClose()
+    }
+    const items = Array.from(ref.current?.querySelectorAll<HTMLElement>('[role=menuitem]:not(:disabled)') ?? [])
+    const at = items.indexOf(document.activeElement as HTMLElement)
+    const to = e.key === 'ArrowDown' ? at + 1 : e.key === 'ArrowUp' ? at - 1 : e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : null
+    if (to === null || items.length === 0) return
+    e.preventDefault()
+    items[(to + items.length) % items.length].focus()
+  }
+
+  return (
+    <div
+      ref={ref}
+      role="menu"
+      aria-label={label}
+      data-dismissible="true"
+      onKeyDown={onKeyDown}
+      className="fixed z-50 min-w-[190px] max-h-[calc(100vh-16px)] overflow-y-auto bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg shadow-xl py-1 text-xs"
+      style={{ left: x, top: y }}
+    >
+      {children}
+    </div>
+  )
+}
 
 /** What a record carries besides its data, in the order its zone-file line reads them. */
 function recordExtras(r: { type?: string; priority?: number | null; weight?: number | null; port?: number | null; flags?: number | null; tag?: string | null }): string {
@@ -133,6 +206,7 @@ function recordExtras(r: { type?: string; priority?: number | null; weight?: num
 }
 
 export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => {
+  const uid = useId()
   const queryClient = useQueryClient()
   const refreshCache = useDnsCacheRefreshMutation(client, profileId)
   const refreshKey = dnsCacheRefreshMutationKey(profileId)
@@ -159,14 +233,19 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
 
   const domainsQuery = useDomains(client)
   const nameserversQuery = useLocalNameservers(client)
-  const [menu, setMenu] = useState<{ x: number; y: number; domain: any } | null>(null)
+  const [menu, setMenu] = useState<{ x: number; y: number; domain: any; opener: HTMLElement } | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
   const localNameservers = nameserversQuery.data || []
 
+  // Focus goes back to the domain the menu was opened on, so the keyboard carries on from there.
+  const closeMenu = () => {
+    menu?.opener.focus()
+    setMenu(null)
+  }
   const copy = (label: string, text: string) => {
     navigator.clipboard.writeText(text)
     setCopied(label)
-    setMenu(null)
+    closeMenu()
     setTimeout(() => setCopied(null), 1600)
   }
   const recordsQuery = useDomainRecords(client, selectedDomain)
@@ -352,10 +431,10 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-[#212529] dark:text-white flex items-center gap-2.5">
-            <Globe className="w-5 h-5 text-[#017cb6]" />
+            <Globe className="w-5 h-5 text-fg-link" />
             <span>DNS Zones & Domains</span>
           </h1>
-          <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-0.5">
+          <p className="text-xs text-fg-muted dark:text-slate-400 mt-0.5">
             Manage authoritative DNS records across anycast nameservers with instant propagation.
           </p>
         </div>
@@ -380,10 +459,11 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
         <div className="bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark:border-[#373b3e] shadow-sm flex flex-col overflow-hidden">
           <div className="p-3 border-b border-[#ced4da] dark:border-[#373b3e] bg-[#f1f1f1] dark:bg-[#262a2e]">
             <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[#6c757d]" />
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-fg-muted" />
               <input
                 type="text"
                 placeholder="Filter domains..."
+                aria-label="Filter domains"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] text-xs text-[#212529] dark:text-white pl-8 pr-3 py-1.5 rounded focus:outline-none focus:border-[#017cb6]"
@@ -393,7 +473,7 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
 
           <div className="flex-1 overflow-y-auto divide-y divide-[#ced4da]/60 dark:divide-[#373b3e]">
             {domainsQuery.isLoading && (
-              <div className="p-4 text-center text-xs text-[#6c757d]">Loading domains...</div>
+              <div className="p-4 text-center text-xs text-fg-muted">Loading domains...</div>
             )}
 
             {domainsQuery.isError && (
@@ -403,7 +483,7 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
             )}
 
             {!domainsQuery.isLoading && !domainsQuery.isError && filteredDomains.length === 0 && (
-              <div className="p-6 text-center text-xs text-[#6c757d]">No DNS zones found</div>
+              <div className="p-6 text-center text-xs text-fg-muted">No DNS zones found</div>
             )}
 
             {visibleDomains.map((domain) => {
@@ -414,25 +494,25 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
                   onClick={() => handleSelectDomain(domain.name)}
                   onContextMenu={(e) => {
                     e.preventDefault()
-                    setMenu({ x: e.clientX, y: e.clientY, domain })
+                    setMenu({ x: e.clientX, y: e.clientY, domain, opener: e.currentTarget })
                   }}
                   className={`w-full text-left p-3 text-xs transition flex items-center justify-between gap-2 ${
                     isSelected
-                      ? 'bg-[#017cb6]/10 text-[#017cb6] font-semibold border-l-4 border-[#017cb6]'
+                      ? 'bg-[#017cb6]/10 text-fg-link font-semibold border-l-4 border-[#017cb6]'
                       : 'hover:bg-[#f8f9fa] dark:hover:bg-[#32383e] text-[#212529] dark:text-slate-200'
                   }`}
                 >
                   <span className="font-mono truncate">{domain.name}</span>
                   <span className="flex items-center gap-2 flex-shrink-0">
                     <DelegationBadge domain={domain} localNameservers={localNameservers} />
-                    {domain.ttl != null && <span className="text-[10px] text-[#6c757d]">TTL {domain.ttl}s</span>}
+                    {domain.ttl != null && <span className="text-[0.625rem] text-fg-muted">TTL {domain.ttl}s</span>}
                   </span>
                 </button>
               )
             })}
 
             {filteredDomains.length > DOMAINS_PER_PAGE && (
-              <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529] text-[10px] text-[#6c757d] dark:text-[#adb5bd]">
+              <div className="flex items-center justify-between gap-2 px-3 py-2 border-t border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529] text-[0.625rem] text-fg-muted dark:text-[#adb5bd]">
                 <span>
                   {(currentPage - 1) * DOMAINS_PER_PAGE + 1}&ndash;
                   {Math.min(currentPage * DOMAINS_PER_PAGE, filteredDomains.length)} of {filteredDomains.length}
@@ -473,7 +553,7 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
                   <h3 className="font-bold text-sm text-[#212529] dark:text-white font-mono">
                     {selectedDomain}
                   </h3>
-                  <span className="text-[11px] text-[#6c757d] dark:text-slate-400">
+                  <span className="text-[0.6875rem] text-fg-muted dark:text-slate-400">
                     {recordsQuery.data ? `${records.length} ${records.length === 1 ? 'record' : 'records'} configured` : recordsQuery.isError ? 'Records not read' : 'Reading records…'}
                   </span>
                 </div>
@@ -498,7 +578,7 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
               {/* Records Table */}
               <div className="flex-1 overflow-y-auto">
                 {recordsQuery.isLoading && (
-                  <div className="p-8 text-center text-xs text-[#6c757d]">Loading records...</div>
+                  <div className="p-8 text-center text-xs text-fg-muted">Loading records...</div>
                 )}
 
                 {recordsQuery.isError && (
@@ -508,7 +588,7 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
                 )}
 
                 {!recordsQuery.isLoading && !recordsQuery.isError && records.length === 0 && (
-                  <div className="p-8 text-center text-xs text-[#6c757d]">
+                  <div className="p-8 text-center text-xs text-fg-muted">
                     No custom DNS records in this zone yet.
                   </div>
                 )}
@@ -516,7 +596,7 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
                 {!recordsQuery.isLoading && records.length > 0 && (
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
-                      <tr className="bg-[#f8f9fa] dark:bg-[#212529] border-b border-[#ced4da] dark:border-[#373b3e] text-[#6c757d] font-medium">
+                      <tr className="bg-[#f8f9fa] dark:bg-[#212529] border-b border-[#ced4da] dark:border-[#373b3e] text-fg-muted font-medium">
                         <th className="py-2 px-4 w-20">Type</th>
                         <th className="py-2 px-4">Name</th>
                         <th className="py-2 px-4">Target / Data</th>
@@ -528,21 +608,21 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
                       {records.map((r) => (
                         <tr key={r.id} className="hover:bg-[#f8f9fa] dark:hover:bg-[#32383e] transition">
                           <td className="py-2 px-4">
-                            <span className="px-1.5 py-0.5 text-[10px] font-bold rounded bg-[#017cb6]/10 text-[#017cb6]">
+                            <span className="px-1.5 py-0.5 text-[0.625rem] font-bold rounded bg-[#017cb6]/10 text-fg-link">
                               {r.type}
                             </span>
                           </td>
                           <td className="py-2 px-4 font-mono font-medium">{r.name}</td>
                           {/* A phone leaves this column about ten characters, and a long value then breaks letter by letter: give it room and let the table scroll. */}
-                          <td className="py-2 px-4 min-w-[14rem] font-mono text-[#6c757d] dark:text-slate-300 break-all">
-                            {recordExtras(r) && <div className="mb-0.5 text-[10px] text-[#017cb6]">{recordExtras(r)}</div>}
+                          <td className="py-2 px-4 min-w-[14rem] font-mono text-fg-muted dark:text-slate-300 break-all">
+                            {recordExtras(r) && <div className="mb-0.5 text-[0.625rem] text-fg-link">{recordExtras(r)}</div>}
                             {r.data}
                           </td>
-                          <td className="py-2 px-4 text-center font-mono text-[#6c757d]">{r.ttl}</td>
+                          <td className="py-2 px-4 text-center font-mono text-fg-muted">{r.ttl}</td>
                           <td className="py-2 px-4 text-right">
                             <button
                               onClick={() => handleDeleteRecord(r.id, r.name, r.type)}
-                              className="text-[#6c757d] hover:text-rose-500 p-1 rounded transition"
+                              className="text-fg-muted hover:text-rose-500 p-1 rounded transition"
                               title="Delete Record"
                             >
                               <Trash2 className="w-3.5 h-3.5" />
@@ -556,8 +636,8 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
               </div>
             </>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-xs text-[#6c757d]">
-              <Globe className="w-8 h-8 text-[#6c757d]/50 mb-2" />
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-xs text-fg-muted">
+              <Globe className="w-8 h-8 text-fg-muted/50 mb-2" />
               <span>Select a domain zone on the left to manage records</span>
             </div>
           )}
@@ -579,7 +659,7 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
                 type="button"
                 onClick={() => setIsAddingRecord(false)}
                 disabled={isSubmitting}
-                className="px-3 py-1.5 text-xs text-[#6c757d] hover:text-[#212529] dark:hover:text-white disabled:opacity-40"
+                className="px-3 py-1.5 text-xs text-fg-muted hover:text-[#212529] dark:hover:text-white disabled:opacity-40"
               >
                 Cancel
               </button>
@@ -597,10 +677,11 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
           <div className="p-5 space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-[#495057] dark:text-[#ced4da] mb-1">
+                <label htmlFor={`${uid}-type`} className="block text-xs font-medium text-[#495057] dark:text-[#ced4da] mb-1">
                   Record Type
                 </label>
                 <select
+                  id={`${uid}-type`}
                   value={recordType}
                   onChange={(e) => setRecordType(e.target.value)}
                   className="w-full bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] text-xs text-[#212529] dark:text-white px-3 py-2 rounded focus:outline-none focus:border-[#017cb6]"
@@ -617,10 +698,11 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-[#495057] dark:text-[#ced4da] mb-1">
+                <label htmlFor={`${uid}-host`} className="block text-xs font-medium text-[#495057] dark:text-[#ced4da] mb-1">
                   Host / Subdomain
                 </label>
                 <input
+                  id={`${uid}-host`}
                   type="text"
                   required
                   placeholder="@ or www"
@@ -642,8 +724,9 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
               <div className="grid grid-cols-2 gap-3">
                 <NumberField label="Flags" value={recordFlags} onChange={setRecordFlags} max={255} />
                 <div>
-                  <label className="block text-xs font-medium text-[#495057] dark:text-[#ced4da] mb-1">Tag</label>
+                  <label htmlFor={`${uid}-tag`} className="block text-xs font-medium text-[#495057] dark:text-[#ced4da] mb-1">Tag</label>
                   <select
+                    id={`${uid}-tag`}
                     value={recordTag}
                     onChange={(e) => setRecordTag(e.target.value)}
                     className="w-full bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] text-xs text-[#212529] dark:text-white px-3 py-2 rounded focus:outline-none focus:border-[#017cb6]"
@@ -657,10 +740,11 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
             )}
 
             <div>
-              <label className="block text-xs font-medium text-[#495057] dark:text-[#ced4da] mb-1">
+              <label htmlFor={`${uid}-data`} className="block text-xs font-medium text-[#495057] dark:text-[#ced4da] mb-1">
                 Target / Value
               </label>
               <input
+                id={`${uid}-data`}
                 type="text"
                 required
                 placeholder="e.g. 103.x.x.x or hostname.com"
@@ -676,12 +760,9 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
           screen, and it is the thing most often needed elsewhere. */}
       {menu && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setMenu(null)} onContextMenu={(e) => { e.preventDefault(); setMenu(null) }} />
-          <div
-            className="fixed z-50 min-w-[190px] bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg shadow-xl py-1 text-xs"
-            style={{ left: Math.min(menu.x, window.innerWidth - 210), top: Math.min(menu.y, window.innerHeight - 150) }}
-          >
-            <div className="px-3 py-1.5 font-mono text-[10px] text-[#6c757d] border-b border-[#ced4da] dark:border-[#373b3e] truncate">
+          <div className="fixed inset-0 z-40" onClick={closeMenu} onContextMenu={(e) => { e.preventDefault(); closeMenu() }} />
+          <DomainMenu key={`${menu.domain.name} ${menu.x} ${menu.y}`} x={menu.x} y={menu.y} label={menu.domain.name} onClose={closeMenu}>
+            <div aria-hidden="true" className="px-3 py-1.5 font-mono text-[0.625rem] text-fg-muted border-b border-[#ced4da] dark:border-[#373b3e] truncate">
               {menu.domain.name}
             </div>
             <MenuItem onClick={() => copy('name', menu.domain.name)}>Copy domain name</MenuItem>
@@ -691,7 +772,7 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
                 // has no API surface at all — the domains endpoints only cover DNS
                 // zones and records — so these can only be managed on the web.
                 window.bldeskApi?.openExternal?.(domainWebUrl(menu.domain.name))
-                setMenu(null)
+                closeMenu()
               }}
             >
               Manage registration on the web
@@ -705,25 +786,25 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
             <MenuItem onClick={() => copy('zone', menu.domain.zone_file || '')} disabled={!menu.domain.zone_file}>
               Copy zone file
             </MenuItem>
-            <div className="my-1 border-t border-[#ced4da] dark:border-[#373b3e]" />
-            <button
+            <div role="separator" className="my-1 border-t border-[#ced4da] dark:border-[#373b3e]" />
+            <MenuItem
+              danger
               disabled={removeBusy}
               onClick={() => {
                 const d = menu.domain
-                setMenu(null)
+                closeMenu()
                 void handleRemoveDnsHosting(d)
               }}
-              className="w-full text-left px-3 py-1.5 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 transition"
             >
               Remove DNS hosting...
-            </button>
-          </div>
+            </MenuItem>
+          </DomainMenu>
         </>
       )}
 
 
       {copied && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 rounded-md bg-[#212529] text-white text-xs shadow-lg">
+        <div role="status" className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 rounded-md bg-[#212529] text-white text-xs shadow-lg">
           Copied {copied === 'name' ? 'domain name' : copied === 'nameservers' ? 'nameservers' : 'zone file'}
         </div>
       )}
@@ -732,20 +813,25 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
 }
 
 /** A whole-number field for a DNS record (priority, weight, port, flags), checked by the browser against the reference's range. */
-const NumberField: React.FC<{ label: string; value: string; onChange: (v: string) => void; max: number; hint?: string }> = ({ label, value, onChange, max, hint }) => (
-  <div>
-    <label className="block text-xs font-medium text-[#495057] dark:text-[#ced4da] mb-1">{label}</label>
-    <input
-      type="number"
-      required
-      min={0}
-      max={max}
-      step={1}
-      inputMode="numeric"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] text-xs text-[#212529] dark:text-white px-3 py-2 rounded font-mono focus:outline-none focus:border-[#017cb6]"
-    />
-    {hint && <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-1">{hint}</p>}
-  </div>
-)
+const NumberField: React.FC<{ label: string; value: string; onChange: (v: string) => void; max: number; hint?: string }> = ({ label, value, onChange, max, hint }) => {
+  const id = useId()
+  return (
+    <div>
+      <label htmlFor={id} className="block text-xs font-medium text-[#495057] dark:text-[#ced4da] mb-1">{label}</label>
+      <input
+        id={id}
+        aria-describedby={hint ? `${id}-hint` : undefined}
+        type="number"
+        required
+        min={0}
+        max={max}
+        step={1}
+        inputMode="numeric"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] text-xs text-[#212529] dark:text-white px-3 py-2 rounded font-mono focus:outline-none focus:border-[#017cb6]"
+      />
+      {hint && <p id={`${id}-hint`} className="text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-1">{hint}</p>}
+    </div>
+  )
+}

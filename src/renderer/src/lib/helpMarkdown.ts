@@ -66,7 +66,7 @@ function inline(text: string, remote: boolean, depth = 0): ReactNode[] {
     else {
       const href = match[4]
       const allowed = remote ? isHelpArticle(href) : /^(https?:\/\/|help:|bldesk:)/.test(href)
-      nodes.push(allowed ? h('a', { key, href, className: 'text-[#017cb6] dark:text-sky-400 underline break-words', onClick: (event: React.MouseEvent) => { event.preventDefault(); openHelpHref(href, remote) } }, inline(match[3], remote, depth + 1)) : match[3])
+      nodes.push(allowed ? h('a', { key, href, className: 'text-fg-link dark:text-sky-400 underline break-words', onClick: (event: React.MouseEvent) => { event.preventDefault(); openHelpHref(href, remote) } }, inline(match[3], remote, depth + 1)) : match[3])
     }
     start = pattern.lastIndex
   }

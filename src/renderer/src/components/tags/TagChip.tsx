@@ -1,6 +1,7 @@
 import React from 'react'
 import { X } from 'lucide-react'
 import { customChipStyle, isTagColorKey, normaliseHex, type ChipStyle, type TagColorKey } from '../../lib/tags'
+import { isComposing } from '../../lib/ime'
 
 /**
  * How each tag colour is drawn, in the light and the dark theme. The text is always `@name`, so colour is never the
@@ -121,7 +122,7 @@ export const TagChip: React.FC<TagChipProps> = ({ tag, color: given, onEdit, onR
         '--tag-bd-d': custom.dark.border
       } as React.CSSProperties)
     : undefined
-  const text = size === 'md' ? 'text-xs' : 'text-[11px]'
+  const text = size === 'md' ? 'text-xs' : 'text-[0.6875rem]'
   const pad = size === 'md' ? 'px-2.5 py-1' : 'px-2 py-0.5'
   const name = `@${tag}`
   return (
@@ -145,7 +146,7 @@ export const TagChip: React.FC<TagChipProps> = ({ tag, color: given, onEdit, onR
             onEdit(e.currentTarget)
           }}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === 'F2') {
+            if ((e.key === 'Enter' && !isComposing(e)) || e.key === 'F2') {
               e.preventDefault()
               e.stopPropagation()
               onEdit(e.currentTarget)
@@ -184,7 +185,7 @@ export const TagOverflowChip: React.FC<{ tags: string[]; size?: 'sm' | 'md' }> =
   return (
     <span
       title={`${tags.length} more: ${names}`}
-      className={`inline-flex items-center rounded-full border leading-none font-normal no-underline select-none ${size === 'md' ? 'text-xs px-2.5 py-1' : 'text-[11px] px-2 py-0.5'} ${TAG_STYLES.slate.chip}`}
+      className={`inline-flex items-center rounded-full border leading-none font-normal no-underline select-none ${size === 'md' ? 'text-xs px-2.5 py-1' : 'text-[0.6875rem] px-2 py-0.5'} ${TAG_STYLES.slate.chip}`}
     >
       <span aria-hidden="true">+{tags.length}</span>
       <span className="sr-only">{`${tags.length} more tags: ${names}`}</span>

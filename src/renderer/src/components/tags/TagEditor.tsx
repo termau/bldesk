@@ -18,6 +18,7 @@ import { TagColourPicker } from './TagColourPicker'
 import { useTagState } from './useTagState'
 import { useVisualViewport } from '../../lib/useVisualViewport'
 import { safeAreaInsets } from '../../lib/safeArea'
+import { isComposing } from '../../lib/ime'
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
@@ -104,7 +105,7 @@ export const TagEditorBody: React.FC<BodyProps> = ({ profileId, tag, serverId, l
         }}
       >
         <div className="flex items-center justify-between gap-2">
-          <span className="font-semibold text-[13px]">Edit tag</span>
+          <span className="font-semibold text-[0.8125rem]">Edit tag</span>
           <TagChip tag={target || '…'} color={color} className="max-w-[170px]" />
         </div>
 
@@ -113,7 +114,7 @@ export const TagEditorBody: React.FC<BodyProps> = ({ profileId, tag, serverId, l
             Name
           </label>
           <div className="flex items-center rounded border border-[#ced4da] dark:border-[#495057] bg-[#f8f9fa] dark:bg-[#212529] focus-within:border-[#017cb6]">
-            <span className="pl-2 text-[#6c757d] dark:text-[#adb5bd]">@</span>
+            <span className="pl-2 text-fg-muted dark:text-[#adb5bd]">@</span>
             <input
               id={nameId}
               data-tag-editor-name
@@ -124,7 +125,7 @@ export const TagEditorBody: React.FC<BodyProps> = ({ profileId, tag, serverId, l
                 setError('')
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && !isComposing(e)) {
                   e.preventDefault()
                   commit()
                 }
@@ -140,7 +141,7 @@ export const TagEditorBody: React.FC<BodyProps> = ({ profileId, tag, serverId, l
               className="w-full bg-transparent px-1.5 py-1.5 focus:outline-none"
             />
           </div>
-          <div id={noteId} data-tag-editor-note className="mt-1.5 space-y-1 text-[11px] text-[#495057] dark:text-[#adb5bd]">
+          <div id={noteId} data-tag-editor-note className="mt-1.5 space-y-1 text-[0.6875rem] text-[#495057] dark:text-[#adb5bd]">
             {error ? (
               <p role="alert" className="text-red-700 dark:text-red-300">
                 {error}

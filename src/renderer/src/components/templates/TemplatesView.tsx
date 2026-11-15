@@ -74,7 +74,7 @@ const card = 'bg-white dark:bg-[#2b3035] rounded-lg border border-[#ced4da] dark
 const input = 'w-full px-2.5 py-1.5 text-xs rounded border bg-white dark:bg-[#212529] border-[#ced4da] dark:border-[#495057] text-[#212529] dark:text-white outline-none focus:border-[#017cb6]'
 const btn = 'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border border-[#ced4da] dark:border-[#495057] hover:border-[#017cb6] disabled:opacity-40 text-[#212529] dark:text-white'
 const btnPrimary = 'inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium rounded bg-[#017cb6] hover:bg-[#016594] text-white disabled:opacity-40 shadow-sm'
-const label = 'block text-[11px] font-semibold uppercase tracking-wide text-[#6c757d] dark:text-slate-400 mb-1'
+const label = 'block text-[0.6875rem] font-semibold uppercase tracking-wide text-fg-muted dark:text-slate-400 mb-1'
 
 // File types for Android's Save as and Open dialogs. Android does not know .yaml, and what its dialogs do with the file name
 // depends on the type: a YAML type keeps ".yaml" but, when the name is taken, numbers after it ("a.yaml (1)"); text/plain adds
@@ -295,8 +295,8 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
     <div className="h-full flex flex-col overflow-hidden p-4 md:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
-          <h2 className="text-lg font-bold text-[#212529] dark:text-white flex items-center gap-2"><LayoutTemplate className="w-5 h-5 text-[#017cb6]" />Templates</h2>
-          <p className="text-xs text-[#6c757d] dark:text-slate-400">A template is a whole server: plan, image, network, firewall rules, tags and cloud-init with variables. Build one, fill in the blanks, get the same box every time.</p>
+          <h2 className="text-lg font-bold text-[#212529] dark:text-white flex items-center gap-2"><LayoutTemplate className="w-5 h-5 text-fg-link" />Templates</h2>
+          <p className="text-xs text-fg-muted dark:text-slate-400">A template is a whole server: plan, image, network, firewall rules, tags and cloud-init with variables. Build one, fill in the blanks, get the same box every time.</p>
         </div>
         {/* Wraps: with the reveal button present the row is wider than a phone
             and the help `?` was clipped past the edge (#67). */}
@@ -322,9 +322,9 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
         <div className="mb-3 space-y-1.5">
           {jobs.map((j) => (
             <div key={j.id} className={`flex items-start gap-2 px-3 py-2 rounded border text-xs ${j.status === 'failed' ? 'border-rose-300 bg-rose-50 dark:bg-rose-900/20 dark:border-rose-800' : j.status === 'done' ? 'border-emerald-300 bg-emerald-50 dark:bg-emerald-900/20 dark:border-emerald-800' : 'border-[#017cb6]/40 bg-[#017cb6]/5'}`}>
-              {j.status === 'done' ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> : j.status === 'failed' ? <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" /> : <Loader2 className="w-4 h-4 animate-spin text-[#017cb6] shrink-0" />}
+              {j.status === 'done' ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" /> : j.status === 'failed' ? <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" /> : <Loader2 className="w-4 h-4 animate-spin text-fg-link shrink-0" />}
               <div className="flex-1 min-w-0 text-[#212529] dark:text-white">
-                <span className="font-semibold">{j.serverName}</span>{j.serverId ? <span className="font-mono text-[#6c757d]"> #{j.serverId}</span> : null} from “{j.templateName}” — {j.detail}
+                <span className="font-semibold">{j.serverName}</span>{j.serverId ? <span className="font-mono text-fg-muted"> #{j.serverId}</span> : null} from “{j.templateName}” — {j.detail}
               </div>
               {(j.status === 'done' || j.status === 'failed') && <button onClick={() => dismissTemplateJob(j.id)}><X className="w-3.5 h-3.5" /></button>}
             </div>
@@ -339,18 +339,18 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
         <div className={`${card} flex flex-col min-h-0 max-h-64 lg:max-h-none`}>
           <div className="p-2 border-b border-[#ced4da] dark:border-[#373b3e]">
             <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-[#6c757d]" />
+              <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-fg-muted" />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search templates" className={`${input} pl-8`} />
             </div>
           </div>
           <div className="flex-1 overflow-y-auto">
-            {visible.length === 0 && <p className="p-4 text-xs text-[#6c757d]">No templates match.</p>}
+            {visible.length === 0 && <p className="p-4 text-xs text-fg-muted">No templates match.</p>}
             {[false, true].map((builtin) => {
               const group = visible.filter((i) => !!i.builtin === builtin)
               if (!group.length) return null
               return (
                 <div key={String(builtin)}>
-                  <div className="px-3 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[#6c757d] dark:text-slate-500 flex items-center gap-1.5">
+                  <div className="px-3 pt-3 pb-1 text-[0.625rem] font-semibold uppercase tracking-wider text-fg-muted dark:text-slate-500 flex items-center gap-1.5">
                     {builtin ? <><Sparkles className="w-3 h-3" />Starters</> : <><FileCode2 className="w-3 h-3" />Mine</>}
                   </div>
                   {group.map((i) => (
@@ -363,7 +363,7 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
                         {i.error && <AlertTriangle className="w-3 h-3 text-rose-500" />}
                         {i.template.name || i.slug}
                       </div>
-                      <div className="text-[11px] text-[#6c757d] dark:text-slate-400 truncate">{i.error ? i.error : describeTemplate(i.template)}</div>
+                      <div className="text-[0.6875rem] text-fg-muted dark:text-slate-400 truncate">{i.error ? i.error : describeTemplate(i.template)}</div>
                     </button>
                   ))}
                 </div>
@@ -371,7 +371,7 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
             })}
           </div>
           {!stored.length && (
-            <div className="p-3 border-t border-[#ced4da] dark:border-[#373b3e] text-[11px] text-[#6c757d] dark:text-slate-400">
+            <div className="p-3 border-t border-[#ced4da] dark:border-[#373b3e] text-[0.6875rem] text-fg-muted dark:text-slate-400">
               Nothing of your own yet. Duplicate a starter, or open a server and choose <span className="font-semibold">Save server as template</span>.
             </div>
           )}
@@ -391,7 +391,7 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
               onDelete={() => void handleDelete(selected)}
             />
           ) : (
-            <div className={`${card} p-8 text-center text-xs text-[#6c757d]`}>Pick a template.</div>
+            <div className={`${card} p-8 text-center text-xs text-fg-muted`}>Pick a template.</div>
           )}
         </div>
       </div>
@@ -448,7 +448,7 @@ export const TemplatesView: React.FC<TemplatesViewProps> = ({ client, servers, p
 
 const Stat: React.FC<{ label: string; value?: React.ReactNode; muted?: boolean }> = ({ label, value, muted }) => (
   <div className="px-3 py-2 rounded border border-[#e9ecef] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529]">
-    <div className="text-[10px] uppercase tracking-wide text-[#6c757d] dark:text-slate-500">{label}</div>
+    <div className="text-[0.625rem] uppercase tracking-wide text-fg-muted dark:text-slate-500">{label}</div>
     <div className={`text-xs font-mono truncate ${muted || value === undefined ? 'text-[#adb5bd]' : 'text-[#212529] dark:text-white'}`}>{value ?? 'form default'}</div>
   </div>
 )
@@ -476,12 +476,12 @@ const TemplateDetail: React.FC<{
           <div className="min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <h3 className="text-base font-bold text-[#212529] dark:text-white">{t.name}</h3>
-              {item.builtin && <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-[#f1ca00]/20 text-[#7a6500] dark:text-[#f1ca00]">STARTER</span>}
-              {(t.labels ?? []).filter((l) => l !== 'starter').map((l) => <span key={l} className="px-1.5 py-0.5 rounded text-[10px] bg-[#e9ecef] dark:bg-[#373b3e] text-[#495057] dark:text-slate-300">{l}</span>)}
+              {item.builtin && <span className="px-1.5 py-0.5 rounded text-[0.625rem] font-semibold bg-[#f1ca00]/20 text-[#7a6500] dark:text-[#f1ca00]">STARTER</span>}
+              {(t.labels ?? []).filter((l) => l !== 'starter').map((l) => <span key={l} className="px-1.5 py-0.5 rounded text-[0.625rem] bg-[#e9ecef] dark:bg-[#373b3e] text-[#495057] dark:text-slate-300">{l}</span>)}
             </div>
-            {t.description && <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-1 max-w-2xl">{t.description}</p>}
+            {t.description && <p className="text-xs text-fg-muted dark:text-slate-400 mt-1 max-w-2xl">{t.description}</p>}
             {t.source?.server_name && (
-              <p className="text-[11px] text-[#6c757d] dark:text-slate-500 mt-1">
+              <p className="text-[0.6875rem] text-fg-muted dark:text-slate-500 mt-1">
                 Captured from <span className="font-mono">{t.source.server_name}</span>{t.source.server_id ? ` #${t.source.server_id}` : ''}{t.source.captured_at ? ` on ${new Date(t.source.captured_at).toLocaleDateString()}` : ''}{source ? '' : t.source.server_id ? ' (no longer on this account)' : ''}
               </p>
             )}
@@ -498,7 +498,7 @@ const TemplateDetail: React.FC<{
       </div>
 
       <div className={`${card} p-5`}>
-        <h4 className="text-xs font-bold text-[#212529] dark:text-white mb-3 flex items-center gap-1.5"><ServerIcon className="w-3.5 h-3.5 text-[#017cb6]" />Server</h4>
+        <h4 className="text-xs font-bold text-[#212529] dark:text-white mb-3 flex items-center gap-1.5"><ServerIcon className="w-3.5 h-3.5 text-fg-link" />Server</h4>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
           <Stat label="Region" value={s.region} />
           <Stat label="Plan" value={s.size} />
@@ -509,15 +509,15 @@ const TemplateDetail: React.FC<{
           <Stat label="VPC" value={s.vpc} />
           <Stat label="SSH keys" value={s.sshKeys ? (s.sshKeys.length ? s.sshKeys.join(', ') : 'none') : undefined} />
         </div>
-        {s.tags?.length ? <p className="mt-3 text-xs text-[#6c757d] dark:text-slate-400">Tags applied locally: {s.tags.map((x) => <span key={x} className="font-mono text-[#212529] dark:text-white">@{x} </span>)}</p> : null}
+        {s.tags?.length ? <p className="mt-3 text-xs text-fg-muted dark:text-slate-400">Tags applied locally: {s.tags.map((x) => <span key={x} className="font-mono text-[#212529] dark:text-white">@{x} </span>)}</p> : null}
       </div>
 
       <div className={`${card} p-5`}>
-        <h4 className="text-xs font-bold text-[#212529] dark:text-white mb-3 flex items-center gap-1.5"><Shield className="w-3.5 h-3.5 text-[#017cb6]" />Firewall rules {s.firewallRules?.length ? <span className="text-[#6c757d] font-normal">({s.firewallRules.length}, applied top to bottom, first match wins)</span> : null}</h4>
+        <h4 className="text-xs font-bold text-[#212529] dark:text-white mb-3 flex items-center gap-1.5"><Shield className="w-3.5 h-3.5 text-fg-link" />Firewall rules {s.firewallRules?.length ? <span className="text-fg-muted font-normal">({s.firewallRules.length}, applied top to bottom, first match wins)</span> : null}</h4>
         {s.firewallRules?.length ? (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
-              <thead><tr className="text-left text-[10px] uppercase tracking-wide text-[#6c757d]"><th className="py-1 pr-3">Action</th><th className="py-1 pr-3">Proto</th><th className="py-1 pr-3">Ports</th><th className="py-1 pr-3">From</th><th className="py-1">Description</th></tr></thead>
+              <thead><tr className="text-left text-[0.625rem] uppercase tracking-wide text-fg-muted"><th className="py-1 pr-3">Action</th><th className="py-1 pr-3">Proto</th><th className="py-1 pr-3">Ports</th><th className="py-1 pr-3">From</th><th className="py-1">Description</th></tr></thead>
               <tbody>
                 {s.firewallRules.map((r, i) => (
                   <tr key={i} className="border-t border-[#e9ecef] dark:border-[#373b3e]">
@@ -525,34 +525,34 @@ const TemplateDetail: React.FC<{
                     <td className="py-1.5 pr-3 font-mono">{r.protocol}</td>
                     <td className="py-1.5 pr-3 font-mono">{r.destination_ports?.join(', ') || 'any'}</td>
                     <td className="py-1.5 pr-3 font-mono">{r.source_addresses.join(', ')}</td>
-                    <td className="py-1.5 text-[#6c757d] dark:text-slate-400">{r.description}</td>
+                    <td className="py-1.5 text-fg-muted dark:text-slate-400">{r.description}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        ) : <p className="text-xs text-[#6c757d]">None — the server keeps whatever BinaryLane's default is (everything open).</p>}
+        ) : <p className="text-xs text-fg-muted">None — the server keeps whatever BinaryLane's default is (everything open).</p>}
       </div>
 
       <div className={`${card} p-5`}>
-        <h4 className="text-xs font-bold text-[#212529] dark:text-white mb-3 flex items-center gap-1.5"><Braces className="w-3.5 h-3.5 text-[#017cb6]" />Variables {vars.length ? <span className="text-[#6c757d] font-normal">({vars.length}, asked for when you apply)</span> : null}</h4>
+        <h4 className="text-xs font-bold text-[#212529] dark:text-white mb-3 flex items-center gap-1.5"><Braces className="w-3.5 h-3.5 text-fg-link" />Variables {vars.length ? <span className="text-fg-muted font-normal">({vars.length}, asked for when you apply)</span> : null}</h4>
         {vars.length ? (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {vars.map((v) => (
               <div key={v.name} className="px-3 py-2 rounded border border-[#e9ecef] dark:border-[#373b3e]">
-                <div className="flex items-center gap-2"><span className="font-mono text-xs text-[#212529] dark:text-white">{'{{'}{v.name}{'}}'}</span>{v.secret && <span className="text-[10px] px-1 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">secret</span>}{v.required === false && <span className="text-[10px] text-[#6c757d]">optional</span>}</div>
-                <div className="text-[11px] text-[#6c757d] dark:text-slate-400">{v.label && v.label !== v.name ? `${v.label}. ` : ''}{v.description ?? ''}{v.default !== undefined && !v.secret ? <span className="font-mono"> default {v.default}</span> : null}</div>
+                <div className="flex items-center gap-2"><span className="font-mono text-xs text-[#212529] dark:text-white">{'{{'}{v.name}{'}}'}</span>{v.secret && <span className="text-[0.625rem] px-1 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">secret</span>}{v.required === false && <span className="text-[0.625rem] text-fg-muted">optional</span>}</div>
+                <div className="text-[0.6875rem] text-fg-muted dark:text-slate-400">{v.label && v.label !== v.name ? `${v.label}. ` : ''}{v.description ?? ''}{v.default !== undefined && !v.secret ? <span className="font-mono"> default {v.default}</span> : null}</div>
               </div>
             ))}
           </div>
-        ) : <p className="text-xs text-[#6c757d]">None. <span className="font-mono">{'{{hostname}}'}</span> is always available.</p>}
+        ) : <p className="text-xs text-fg-muted">None. <span className="font-mono">{'{{hostname}}'}</span> is always available.</p>}
       </div>
 
       <div className={`${card} p-5`}>
-        <h4 className="text-xs font-bold text-[#212529] dark:text-white mb-3 flex items-center gap-1.5"><FileCode2 className="w-3.5 h-3.5 text-[#017cb6]" />Cloud-init</h4>
+        <h4 className="text-xs font-bold text-[#212529] dark:text-white mb-3 flex items-center gap-1.5"><FileCode2 className="w-3.5 h-3.5 text-fg-link" />Cloud-init</h4>
         {s.cloudInit ? (
-          <pre className="text-[11px] font-mono leading-relaxed whitespace-pre overflow-x-auto p-3 rounded bg-[#f8f9fa] dark:bg-[#212529] border border-[#e9ecef] dark:border-[#373b3e] text-[#212529] dark:text-slate-200 max-h-[32rem] overflow-y-auto">{s.cloudInit}</pre>
-        ) : <p className="text-xs text-[#6c757d]">No user data. The server boots the stock image.</p>}
+          <pre className="text-[0.6875rem] font-mono leading-relaxed whitespace-pre overflow-x-auto p-3 rounded bg-[#f8f9fa] dark:bg-[#212529] border border-[#e9ecef] dark:border-[#373b3e] text-[#212529] dark:text-slate-200 max-h-[32rem] overflow-y-auto">{s.cloudInit}</pre>
+        ) : <p className="text-xs text-fg-muted">No user data. The server boots the stock image.</p>}
       </div>
     </div>
   )
@@ -644,7 +644,7 @@ const TemplateEditor: React.FC<{
         </div>
 
         <section>
-          <h4 className="text-xs font-bold text-[#212529] dark:text-white mb-2 flex items-center gap-1.5"><ServerIcon className="w-3.5 h-3.5 text-[#017cb6]" />Server</h4>
+          <h4 className="text-xs font-bold text-[#212529] dark:text-white mb-2 flex items-center gap-1.5"><ServerIcon className="w-3.5 h-3.5 text-fg-link" />Server</h4>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <div>
               <label className={label}>Region</label>
@@ -700,7 +700,7 @@ const TemplateEditor: React.FC<{
             </div>
             <label className="col-span-2 md:col-span-4 flex items-center gap-2 text-xs text-[#212529] dark:text-white">
               <input type="checkbox" checked={!!t.spec.options?.offsite_backups} onChange={(e) => opt({ offsite_backups: e.target.checked })} />Offsite backups
-              <span className="text-[#6c757d] dark:text-slate-400">(needs at least one daily, weekly or monthly slot)</span>
+              <span className="text-fg-muted dark:text-slate-400">(needs at least one daily, weekly or monthly slot)</span>
             </label>
             <div className="col-span-2 md:col-span-4">
               <label className={label}>SSH keys (by name)</label>
@@ -711,9 +711,9 @@ const TemplateEditor: React.FC<{
                   </label>
                 ))}
                 {(t.spec.sshKeys ?? []).filter((n) => !keys.some((k) => k.name === n)).map((n) => <span key={n} className="text-xs text-amber-600">{n} (not on this account)</span>)}
-                {!keys.length && <span className="text-xs text-[#6c757d]">None on the account; the form picks the default key.</span>}
+                {!keys.length && <span className="text-xs text-fg-muted">None on the account; the form picks the default key.</span>}
               </div>
-              <p className="mt-1.5 text-[11px] text-[#6c757d] dark:text-slate-400">
+              <p className="mt-1.5 text-[0.6875rem] text-fg-muted dark:text-slate-400">
                 {t.spec.sshKeys === undefined
                   ? "No keys chosen: the account's default keys are deployed."
                   : t.spec.sshKeys.length === 0
@@ -732,7 +732,7 @@ const TemplateEditor: React.FC<{
 
         <section>
           <div className="flex items-center justify-between mb-2">
-            <h4 className="text-xs font-bold text-[#212529] dark:text-white flex items-center gap-1.5"><Shield className="w-3.5 h-3.5 text-[#017cb6]" />Firewall rules <span className="font-normal text-[#6c757d]">— first match wins; end with a drop or everything else is allowed</span></h4>
+            <h4 className="text-xs font-bold text-[#212529] dark:text-white flex items-center gap-1.5"><Shield className="w-3.5 h-3.5 text-fg-link" />Firewall rules <span className="font-normal text-fg-muted">— first match wins; end with a drop or everything else is allowed</span></h4>
             <button type="button" className={btn} onClick={() => spec({ firewallRules: [...rules, { action: 'accept', protocol: 'tcp', destination_ports: ['22'], source_addresses: ['0.0.0.0/0'], destination_addresses: ['0.0.0.0/0'], description: '' }] })}><Plus className="w-3 h-3" />Rule</button>
           </div>
           {rules.length ? (
@@ -744,11 +744,11 @@ const TemplateEditor: React.FC<{
                   <input className={input} value={r.destination_ports?.join(', ') ?? ''} disabled={r.protocol === 'icmp' || r.protocol === 'all'} onChange={(e) => setRule(i, { destination_ports: csv(e.target.value) })} placeholder="ports" />
                   <input className={input} value={r.source_addresses.join(', ')} onChange={(e) => setRule(i, { source_addresses: csv(e.target.value) })} placeholder="from: 0.0.0.0/0, {{admin_cidr}}" />
                   <input className={input} value={r.description ?? ''} onChange={(e) => setRule(i, { description: e.target.value })} placeholder="description" />
-                  <button type="button" className="text-[#6c757d] hover:text-rose-600" onClick={() => spec({ firewallRules: rules.filter((_, j) => j !== i) })}><X className="w-3.5 h-3.5" /></button>
+                  <button type="button" className="text-fg-muted hover:text-rose-600" onClick={() => spec({ firewallRules: rules.filter((_, j) => j !== i) })}><X className="w-3.5 h-3.5" /></button>
                 </div>
               ))}
             </div>
-          ) : <p className="text-xs text-[#6c757d]">No rules: the server is created with BinaryLane's default (open).</p>}
+          ) : <p className="text-xs text-fg-muted">No rules: the server is created with BinaryLane's default (open).</p>}
           {rules.some((r) => [...r.source_addresses, ...r.destination_addresses].some(isIpv6)) && (
             <p className="mt-1.5 text-xs text-amber-600 dark:text-amber-400">BinaryLane's external firewall covers IPv4 only. IPv6 addresses are left out when the template is applied, and a rule with only IPv6 sources is not written.</p>
           )}
@@ -756,7 +756,7 @@ const TemplateEditor: React.FC<{
 
         <section>
           <div className="flex items-center justify-between mb-2">
-            <h4 className="text-xs font-bold text-[#212529] dark:text-white flex items-center gap-1.5"><Braces className="w-3.5 h-3.5 text-[#017cb6]" />Variables <span className="font-normal text-[#6c757d]">— write {'{{name}}'} anywhere in the cloud-init or firewall rules; {'{{hostname}}'} is built in</span></h4>
+            <h4 className="text-xs font-bold text-[#212529] dark:text-white flex items-center gap-1.5"><Braces className="w-3.5 h-3.5 text-fg-link" />Variables <span className="font-normal text-fg-muted">— write {'{{name}}'} anywhere in the cloud-init or firewall rules; {'{{hostname}}'} is built in</span></h4>
             <div className="flex gap-2">
               {undeclared.length > 0 && <button type="button" className={btn} onClick={() => setT((x) => ({ ...x, variables: [...(x.variables ?? []), ...undeclared.map((name) => ({ name, required: true }))] }))}><Wand2 className="w-3 h-3" />Declare {undeclared.join(', ')}</button>}
               <button type="button" className={btn} onClick={() => setT((x) => ({ ...x, variables: [...(x.variables ?? []), { name: '', required: true }] }))}><Plus className="w-3 h-3" />Variable</button>
@@ -764,7 +764,7 @@ const TemplateEditor: React.FC<{
           </div>
           {vars.length ? (
             <div className="space-y-1.5">
-              <div className="grid grid-cols-[1fr_1fr_1.6fr_1fr_60px_60px_28px] gap-1.5 text-[10px] uppercase tracking-wide text-[#6c757d] px-0.5"><span>name</span><span>label</span><span>description</span><span>default</span><span>secret</span><span>required</span><span /></div>
+              <div className="grid grid-cols-[1fr_1fr_1.6fr_1fr_60px_60px_28px] gap-1.5 text-[0.625rem] uppercase tracking-wide text-fg-muted px-0.5"><span>name</span><span>label</span><span>description</span><span>default</span><span>secret</span><span>required</span><span /></div>
               {vars.map((v, i) => (
                 <div key={i} className="grid grid-cols-[1fr_1fr_1.6fr_1fr_60px_60px_28px] gap-1.5 items-center">
                   <input className={`${input} font-mono`} value={v.name} onChange={(e) => setVar(i, { name: e.target.value.replace(/[^a-zA-Z0-9_]/g, '_') })} placeholder="db_password" />
@@ -773,24 +773,24 @@ const TemplateEditor: React.FC<{
                   <input className={input} value={v.secret ? '' : (v.default ?? '')} disabled={!!v.secret} onChange={(e) => setVar(i, { default: e.target.value })} placeholder={v.secret ? 'never stored' : 'optional'} />
                   <input type="checkbox" className="justify-self-center" checked={!!v.secret} onChange={(e) => setVar(i, { secret: e.target.checked, default: e.target.checked ? undefined : v.default })} />
                   <input type="checkbox" className="justify-self-center" checked={v.required !== false} onChange={(e) => setVar(i, { required: e.target.checked })} />
-                  <button type="button" className="text-[#6c757d] hover:text-rose-600" onClick={() => setT((x) => ({ ...x, variables: vars.filter((_, j) => j !== i) }))}><X className="w-3.5 h-3.5" /></button>
+                  <button type="button" className="text-fg-muted hover:text-rose-600" onClick={() => setT((x) => ({ ...x, variables: vars.filter((_, j) => j !== i) }))}><X className="w-3.5 h-3.5" /></button>
                 </div>
               ))}
             </div>
-          ) : <p className="text-xs text-[#6c757d]">None declared{undeclared.length ? `; the cloud-init uses ${undeclared.map((u) => `{{${u}}}`).join(', ')}, which will be asked for anyway` : ''}.</p>}
+          ) : <p className="text-xs text-fg-muted">None declared{undeclared.length ? `; the cloud-init uses ${undeclared.map((u) => `{{${u}}}`).join(', ')}, which will be asked for anyway` : ''}.</p>}
         </section>
 
         <section>
-          <h4 className="text-xs font-bold text-[#212529] dark:text-white mb-2 flex items-center gap-1.5"><FileCode2 className="w-3.5 h-3.5 text-[#017cb6]" />Cloud-init user data</h4>
+          <h4 className="text-xs font-bold text-[#212529] dark:text-white mb-2 flex items-center gap-1.5"><FileCode2 className="w-3.5 h-3.5 text-fg-link" />Cloud-init user data</h4>
           <textarea
             value={t.spec.cloudInit ?? ''}
             onChange={(e) => spec({ cloudInit: e.target.value })}
             rows={12}
             spellCheck={false}
             placeholder={'#cloud-config\npackages:\n  - nginx\nruncmd:\n  - echo "{{hostname}} ready"'}
-            className="w-full px-3 py-2 text-[11px] font-mono leading-relaxed bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded outline-none focus:border-[#017cb6] text-[#212529] dark:text-white"
+            className="w-full px-3 py-2 text-[0.6875rem] font-mono leading-relaxed bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded outline-none focus:border-[#017cb6] text-[#212529] dark:text-white"
           />
-          <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-1">Anything Ansible would do on a fresh box can be done here at first boot: packages, files, users, services, scripts. Runs once, as root, on images that support user data.</p>
+          <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-1">Anything Ansible would do on a fresh box can be done here at first boot: packages, files, users, services, scripts. Runs once, as root, on images that support user data.</p>
         </section>
       </div>
     </Modal>
@@ -839,7 +839,7 @@ const ApplyTemplateModal: React.FC<{
       }
     >
       <div className="p-4 space-y-3">
-        <p className="text-xs text-[#6c757d] dark:text-slate-400">{describeTemplate(template)}. The create form opens next with everything filled in, so you can still change your mind before anything is built.</p>
+        <p className="text-xs text-fg-muted dark:text-slate-400">{describeTemplate(template)}. The create form opens next with everything filled in, so you can still change your mind before anything is built.</p>
         <div>
           <label className={label}>Hostname</label>
           <input className={input} value={hostname} onChange={(e) => setHostname(e.target.value)} placeholder="web-01" autoFocus />
@@ -857,12 +857,12 @@ const ApplyTemplateModal: React.FC<{
               />
               {v.secret && <button type="button" className={btn} onClick={() => setValues({ ...values, [v.name]: randomSecret() })} title="Generate a random value"><Wand2 className="w-3.5 h-3.5" /></button>}
             </div>
-            {v.description && <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-0.5">{v.description}</p>}
-            {v.secret && <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-0.5">Goes into the server's user data only. Copy it somewhere safe now; BLDesk does not keep it.</p>}
+            {v.description && <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-0.5">{v.description}</p>}
+            {v.secret && <p className="text-[0.6875rem] text-amber-600 dark:text-amber-400 mt-0.5">Goes into the server's user data only. Copy it somewhere safe now; BLDesk does not keep it.</p>}
           </div>
         ))}
         {template.spec.firewallRules?.length ? (
-          <p className="text-[11px] text-[#6c757d] dark:text-slate-400">After BinaryLane accepts the create, BLDesk waits for the build and applies the {template.spec.firewallRules.length} firewall rule{template.spec.firewallRules.length === 1 ? '' : 's'}{template.spec.tags?.length ? ` and tags it ${template.spec.tags.map((x) => `@${x}`).join(' ')}` : ''}. That lands in History.</p>
+          <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400">After BinaryLane accepts the create, BLDesk waits for the build and applies the {template.spec.firewallRules.length} firewall rule{template.spec.firewallRules.length === 1 ? '' : 's'}{template.spec.tags?.length ? ` and tags it ${template.spec.tags.map((x) => `@${x}`).join(' ')}` : ''}. That lands in History.</p>
         ) : null}
       </div>
     </Modal>
@@ -887,8 +887,8 @@ const PasteImportModal: React.FC<{ onClose: () => void; onImport: (text: string)
     <Modal title="Paste a template" icon={ClipboardPaste} onClose={onClose} size="lg" as="form" onSubmit={submit} busy={busy}
       footer={<div className="flex items-center justify-between gap-3 p-4"><span className="text-xs text-rose-600">{err}</span><div className="flex gap-2"><button type="button" className={btn} onClick={onClose}>Cancel</button><button type="submit" className={btnPrimary} disabled={busy || !text.trim()}>Import</button></div></div>}>
       <div className="p-4">
-      <p className="text-xs text-[#6c757d] dark:text-slate-400 mb-2">A template or bundle exported from BLDesk, or plain cloud-init starting with <span className="font-mono">#cloud-config</span> (it becomes a cloud-init-only template you can flesh out).</p>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={16} spellCheck={false} className="w-full px-3 py-2 text-[11px] font-mono bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded outline-none focus:border-[#017cb6] text-[#212529] dark:text-white" autoFocus />
+      <p className="text-xs text-fg-muted dark:text-slate-400 mb-2">A template or bundle exported from BLDesk, or plain cloud-init starting with <span className="font-mono">#cloud-config</span> (it becomes a cloud-init-only template you can flesh out).</p>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={16} spellCheck={false} className="w-full px-3 py-2 text-[0.6875rem] font-mono bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded outline-none focus:border-[#017cb6] text-[#212529] dark:text-white" autoFocus />
       </div>
     </Modal>
   )

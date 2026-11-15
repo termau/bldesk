@@ -164,9 +164,41 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
     return () => ro.disconnect()
   }, [])
 
+  /*
+   * Pan and zoom gestures write the transform straight onto the world group, at most once a frame, and commit it to
+   * `view` when the gesture ends: setting state on every move re-rendered every card and line while dragging.
+   * `liveView` is the transform on screen; handlers start from it, not from `view`, which can be a gesture behind.
+   */
+  const worldRef = useRef<SVGGElement>(null)
+  const liveView = useRef(view)
+  const frame = useRef(0)
+  const wheelIdle = useRef<ReturnType<typeof setTimeout>>()
+  const paint = (v: { x: number; y: number; k: number }) => worldRef.current?.setAttribute('transform', `translate(${v.x} ${v.y}) scale(${v.k})`)
+  const previewView = (next: { x: number; y: number; k: number }) => {
+    liveView.current = next
+    if (frame.current) return
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0
+      paint(liveView.current)
+    })
+  }
+  const commitView = useCallback((next: { x: number; y: number; k: number }) => {
+    cancelAnimationFrame(frame.current)
+    frame.current = 0
+    clearTimeout(wheelIdle.current)
+    liveView.current = next
+    // React skips the attribute when the committed value matches its last render, which a gesture may have moved since.
+    paint(next)
+    setView(next)
+  }, [])
+  useEffect(() => () => {
+    cancelAnimationFrame(frame.current)
+    clearTimeout(wheelIdle.current)
+  }, [])
+
   const fit = useCallback(() => {
-    setView(fitTransform(layout.width, layout.height, viewport.w, viewport.h))
-  }, [layout.width, layout.height, viewport.w, viewport.h])
+    commitView(fitTransform(layout.width, layout.height, viewport.w, viewport.h))
+  }, [layout.width, layout.height, viewport.w, viewport.h, commitView])
 
   // Fit once the first real layout exists, then leave the user's view alone.
   useEffect(() => {
@@ -176,28 +208,43 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
     }
   }, [layout.nodes.length, viewport.w, fit])
 
-  const zoomBy = (factor: number, cx?: number, cy?: number) =>
-    setView((v) => {
-      const k = Math.min(3, Math.max(0.2, v.k * factor))
-      const px = cx ?? viewport.w / 2
-      const py = cy ?? viewport.h / 2
-      // Zoom about the pointer: keep the world point under the cursor fixed.
-      return { k, x: px - ((px - v.x) * k) / v.k, y: py - ((py - v.y) * k) / v.k }
-    })
+  const zoomed = (v: { x: number; y: number; k: number }, factor: number, cx?: number, cy?: number) => {
+    const k = Math.min(3, Math.max(0.2, v.k * factor))
+    const px = cx ?? viewport.w / 2
+    const py = cy ?? viewport.h / 2
+    // Zoom about the pointer: keep the world point under the cursor fixed.
+    return { k, x: px - ((px - v.x) * k) / v.k, y: py - ((py - v.y) * k) / v.k }
+  }
+  const zoomBy = (factor: number) => commitView(zoomed(liveView.current, factor))
 
-  const onWheel = (e: React.WheelEvent) => {
+  // A native listener, because React's wheel listener is passive: its preventDefault was ignored, so the page
+  // scrolled and Ctrl + wheel zoomed the whole app as well as the map.
+  const onWheel = (e: WheelEvent) => {
+    // The detail panel scrolls itself.
+    if ((e.target as Element | null)?.closest?.('[data-map-panel]')) return
     e.preventDefault()
     const rect = containerRef.current?.getBoundingClientRect()
     const cx = e.clientX - (rect?.left ?? 0)
     const cy = e.clientY - (rect?.top ?? 0)
-    if (e.ctrlKey || e.metaKey) zoomBy(e.deltaY < 0 ? 1.12 : 1 / 1.12, cx, cy)
-    else setView((v) => ({ ...v, x: v.x - e.deltaX, y: v.y - e.deltaY }))
+    const v = liveView.current
+    previewView(e.ctrlKey || e.metaKey ? zoomed(v, e.deltaY < 0 ? 1.12 : 1 / 1.12, cx, cy) : { ...v, x: v.x - e.deltaX, y: v.y - e.deltaY })
+    clearTimeout(wheelIdle.current)
+    wheelIdle.current = setTimeout(() => commitView(liveView.current), 150)
   }
+  const onWheelRef = useRef(onWheel)
+  onWheelRef.current = onWheel
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const listener = (e: WheelEvent) => onWheelRef.current(e)
+    el.addEventListener('wheel', listener, { passive: false })
+    return () => el.removeEventListener('wheel', listener)
+  }, [])
 
   const drag = useRef<{ x: number; y: number; vx: number; vy: number; moved: boolean } | null>(null)
   const onMouseDown = (e: React.MouseEvent) => {
     if (e.button !== 0) return
-    drag.current = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false }
+    drag.current = { x: e.clientX, y: e.clientY, vx: liveView.current.x, vy: liveView.current.y, moved: false }
   }
   const onMouseMove = (e: React.MouseEvent) => {
     const d = drag.current
@@ -205,7 +252,7 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
     const dx = e.clientX - d.x
     const dy = e.clientY - d.y
     if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true
-    setView((v) => ({ ...v, x: d.vx + dx, y: d.vy + dy }))
+    previewView({ ...liveView.current, x: d.vx + dx, y: d.vy + dy })
   }
   /*
    * Touch: one finger pans, two pinch to zoom.
@@ -231,7 +278,7 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
   }
 
   const startPan = (t: React.Touch): void => {
-    touch.current = { mode: 'pan', x: t.clientX, y: t.clientY, vx: view.x, vy: view.y }
+    touch.current = { mode: 'pan', x: t.clientX, y: t.clientY, vx: liveView.current.x, vy: liveView.current.y }
   }
 
   const onTouchStart = (e: React.TouchEvent): void => {
@@ -245,7 +292,7 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
         dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY),
         cx: mid.x,
         cy: mid.y,
-        from: { ...view }
+        from: { ...liveView.current }
       }
     }
   }
@@ -255,7 +302,7 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
     if (!t) return
     if (t.mode === 'pan' && e.touches.length === 1) {
       const p = e.touches[0]
-      setView((v) => ({ ...v, x: t.vx + (p.clientX - t.x), y: t.vy + (p.clientY - t.y) }))
+      previewView({ ...liveView.current, x: t.vx + (p.clientX - t.x), y: t.vy + (p.clientY - t.y) })
     } else if (t.mode === 'pinch' && e.touches.length === 2 && t.dist > 0) {
       const [a, b] = [e.touches[0], e.touches[1]]
       const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)
@@ -267,7 +314,7 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
        * span produced no movement at all - a pinch could zoom but never drag.
        */
       const mid = localPoint((a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2)
-      setView({
+      previewView({
         k,
         x: mid.x - ((t.cx - t.from.x) * k) / t.from.k,
         y: mid.y - ((t.cy - t.from.y) * k) / t.from.k
@@ -279,13 +326,17 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
     // Lifting one finger of a pinch continues as a pan from where the view is
     // now, rather than snapping back to where the pinch began.
     if (e.touches.length === 1) startPan(e.touches[0])
-    else if (e.touches.length === 0) touch.current = null
+    else if (e.touches.length === 0 && touch.current) {
+      touch.current = null
+      commitView(liveView.current)
+    }
   }
 
   const onMouseUp = () => {
     const d = drag.current
     drag.current = null
     if (d && !d.moved) setSelected(null)
+    else if (d) commitView(liveView.current)
   }
 
   // --- Derived: what to highlight
@@ -414,10 +465,10 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
       <div className="flex flex-wrap items-center justify-between gap-3 px-6 pt-5 pb-3">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2.5">
-            <Waypoints className="w-5 h-5 text-[#017cb6]" />
+            <Waypoints className="w-5 h-5 text-fg-link" />
             Network Map
           </h1>
-          <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-0.5">
+          <p className="text-xs text-fg-muted dark:text-slate-400 mt-0.5">
             {counts.servers} servers · {vpcsUnread ? 'VPCs not read' : `${counts.vpcs} VPC${counts.vpcs === 1 ? '' : 's'}`} · {lbsUnread ? 'load balancers not read' : `${counts.lbs} load balancer${counts.lbs === 1 ? '' : 's'}`}
             {counts.exposedSsh > 0 && <span className="text-rose-600 dark:text-rose-400"> · SSH reachable from the internet on {counts.exposedSsh}</span>}
             {firewallUnread > 0 && !fleet.isLoading && (
@@ -430,14 +481,14 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
             )}
           </p>
           {exportStatus && (
-            <p role="status" className="text-xs text-[#6c757d] dark:text-slate-400 mt-0.5">
+            <p role="status" className="text-xs text-fg-muted dark:text-slate-400 mt-0.5">
               {exportStatus}
             </p>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <div className="relative">
-            <Search className="w-3.5 h-3.5 text-[#6c757d] absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <Search className="w-3.5 h-3.5 text-fg-muted absolute left-2.5 top-1/2 -translate-y-1/2" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -447,7 +498,7 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
           </div>
           <label className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded cursor-pointer select-none">
             <input type="checkbox" checked={showPublic} onChange={(e) => setShowPublic(e.target.checked)} />
-            <Globe className="w-3.5 h-3.5 text-[#6c757d]" /> Public paths
+            <Globe className="w-3.5 h-3.5 text-fg-muted" /> Public paths
           </label>
           <div className="flex items-center bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded overflow-hidden">
             <button onClick={() => zoomBy(1 / 1.25)} className="px-2 py-1.5 hover:bg-[#f1f1f1] dark:hover:bg-[#343a40]" title="Zoom out">
@@ -476,9 +527,8 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
       <div className="flex-1 relative min-h-0 mx-6 mb-6 rounded-lg border border-[#ced4da] dark:border-[#373b3e] overflow-hidden bg-white dark:bg-[#1c2024]">
         <div
           ref={containerRef}
-          className={`absolute inset-0 ${drag.current ? 'cursor-grabbing' : 'cursor-grab'}`}
+          className="absolute inset-0 cursor-grab active:cursor-grabbing"
           style={{ touchAction: 'none' }}
-          onWheel={onWheel}
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={onMouseUp}
@@ -516,7 +566,7 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
             <rect data-bg width="100%" height="100%" fill="transparent" />
             <rect width="100%" height="100%" fill="url(#map-grid)" pointerEvents="none" />
 
-            <g data-world transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
+            <g data-world ref={worldRef} transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
               {/* VPC boxes with a region column header inside each */}
               {layout.groups.map((g) => (
                 <g key={g.id}>
@@ -666,12 +716,12 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
           </svg>
 
           {/* Legend */}
-          <div className="absolute left-3 bottom-3 flex flex-wrap items-center gap-x-3 gap-y-1 px-2.5 py-1.5 rounded bg-white/85 dark:bg-[#2b3035]/85 backdrop-blur border border-[#ced4da] dark:border-[#373b3e] text-[10px] text-[#495057] dark:text-slate-300 pointer-events-none">
+          <div className="absolute left-3 bottom-3 flex flex-wrap items-center gap-x-3 gap-y-1 px-2.5 py-1.5 rounded bg-white/85 dark:bg-[#2b3035]/85 backdrop-blur border border-[#ced4da] dark:border-[#373b3e] text-[0.625rem] text-[#495057] dark:text-slate-300 pointer-events-none">
             <span className="flex items-center gap-1"><span className="inline-block w-1.5 h-3 rounded-sm" style={{ background: C.ok }} /> reachable ports</span>
             <span className="flex items-center gap-1"><span className="inline-block w-1.5 h-3 rounded-sm" style={{ background: C.off }} /> admin port open to the world</span>
             <span className="flex items-center gap-1"><span className="inline-block w-1.5 h-3 rounded-sm" style={{ background: C.amber }} /> no rules / shadowed</span>
             <span className="flex items-center gap-1"><span className="inline-block w-5 h-0.5" style={{ background: C.brand }} /> load balancer → backend</span>
-            <span className="text-[#6c757d]">drag to pan · ⌘/Ctrl + wheel to zoom · click a node</span>
+            <span className="text-fg-muted">drag to pan · ⌘/Ctrl + wheel to zoom · click a node</span>
           </div>
 
           {/* Detail panel */}
@@ -682,14 +732,14 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
               // would unmount this panel before its buttons' click fires.
               onMouseDown={(e) => e.stopPropagation()}
               onMouseUp={(e) => e.stopPropagation()}
-              onWheel={(e) => e.stopPropagation()}
+              data-map-panel
             >
               <div className="flex items-start justify-between gap-2 p-3 border-b border-[#ced4da] dark:border-[#373b3e]">
                 <div className="min-w-0">
                   <div className="font-bold text-sm truncate">{selectedNode.kind === 'lb' ? selectedNode.lb!.name : selectedNode.kind === 'server' ? selectedNode.server!.name : 'Internet'}</div>
-                  <div className="text-[10px] uppercase tracking-wider text-[#6c757d]">{selectedNode.kind === 'lb' ? 'Load balancer' : selectedNode.kind === 'server' ? 'Server' : 'Edge'}</div>
+                  <div className="text-[0.625rem] uppercase tracking-wider text-fg-muted">{selectedNode.kind === 'lb' ? 'Load balancer' : selectedNode.kind === 'server' ? 'Server' : 'Edge'}</div>
                 </div>
-                <button onClick={() => setSelected(null)} className="text-[#6c757d] hover:text-[#212529] dark:hover:text-white" aria-label="Close">
+                <button onClick={() => setSelected(null)} className="text-fg-muted hover:text-[#212529] dark:hover:text-white" aria-label="Close">
                   <X className="w-4 h-4" />
                 </button>
               </div>
@@ -743,7 +793,7 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
                     <Row k="Entry" v={lb.protocols.join(', ') || 'no forwarding rules'} mono />
                     <Row k="Region" v={lb.region || 'anycast'} />
                     <div>
-                      <div className="text-[#6c757d] mb-1">Backends ({lb.serverIds.length})</div>
+                      <div className="text-fg-muted mb-1">Backends ({lb.serverIds.length})</div>
                       <ul className="space-y-0.5">
                         {lb.serverIds.map((id) => {
                           const s = model.mapServers.find((x) => x.id === id)
@@ -763,7 +813,7 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
           )}
 
           {layout.nodes.length <= 1 && !loading && (
-            <div className="absolute inset-0 flex items-center justify-center text-xs text-[#6c757d]">No servers on this account yet.</div>
+            <div className="absolute inset-0 flex items-center justify-center text-xs text-fg-muted">No servers on this account yet.</div>
           )}
         </div>
       </div>
@@ -773,7 +823,7 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
 
 const Row: React.FC<{ k: string; v: string; mono?: boolean; tone?: 'ok' | 'bad' | 'warn' }> = ({ k, v, mono, tone }) => (
   <div className="flex items-start justify-between gap-3">
-    <span className="text-[#6c757d] dark:text-slate-400 flex-shrink-0">{k}</span>
+    <span className="text-fg-muted dark:text-slate-400 flex-shrink-0">{k}</span>
     <span
       className={`text-right break-all ${mono ? 'font-mono' : ''} ${tone === 'ok' ? 'text-emerald-600 dark:text-emerald-400' : tone === 'bad' ? 'text-rose-600 dark:text-rose-400' : tone === 'warn' ? 'text-amber-700 dark:text-amber-300' : ''}`}
     >

@@ -41,7 +41,11 @@ const CONTENT_SECURITY_POLICY = [
   "object-src 'none'",
   "base-uri 'none'",
   "frame-src 'none'",
-  "form-action 'none'"
+  "form-action 'none'",
+  // Script-injection sinks (innerHTML and the like) accept only values from a named policy. The one policy is the
+  // release-notes parser in UpdateMenu.tsx, which parses notes into a detached document and rebuilds them as React elements.
+  "require-trusted-types-for 'script'",
+  "trusted-types bldesk-release-notes"
 ].join('; ')
 
 function contentSecurityPolicyPlugin() {

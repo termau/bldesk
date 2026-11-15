@@ -1,5 +1,51 @@
 # Help verification
 
+## Confirm focus, context menu and update popover keys (15 November 2026, UI review against modern web guidance)
+
+Sources: `context/ConfirmContext.tsx` (`ConfirmDialog`: `cancelFirst`, the focus
+effect and the document Enter handler), `components/ui/Modal.tsx`,
+`components/servers/ServerContextMenu.tsx` (`move`, the Escape listener, `run`,
+`refocus`), `components/layout/UpdateMenu.tsx` (the Escape listener), and
+`docs/help/shortcuts.md` and `docs/help/confirm-and-history.md`.
+
+A review with a red button (`destructive` or `irreversible`) and nothing to type
+or choose (no `typeToConfirm`, no `reason`) now focuses Cancel when it opens. The
+document Enter handler skips a focused button, so Enter activates Cancel there,
+and Space does too; the ↵ hint is shown on the confirm button only when focus does
+not start on Cancel. A blue (`normal`) review still focuses its confirm button.
+In the server context menu, ArrowUp, ArrowDown, Home and End move between enabled
+items, Escape and Tab close it and focus what had it before the menu opened, and
+an item gives focus back the same way before it runs. Escape on the update
+popover closes it and focuses the version button.
+
+## Settings: theme choice (15 November 2026, UI review against modern web guidance)
+
+Sources: `components/settings/SettingsView.tsx` (`ThemeChoice`, the “Appearance”
+card), `context/ThemeContext.tsx`, `components/layout/DarkModeToggle.tsx`,
+`src/renderer/public/theme-init.js` and `docs/help/settings.md`.
+
+The card's legend, button labels and description are quoted from `ThemeChoice`.
+“System” is the default because `readPreference` returns it when nothing valid is
+saved, and the theme follows the operating system through a `change` listener on
+`prefers-color-scheme`. The navigation switch calls `toggleTheme`, which saves an
+explicit “Light” or “Dark”, so the help says it stops following the system.
+
+## Firewall cell problems and the DNS zone menu (15 November 2026, UI review against modern web guidance)
+
+Sources: `components/firewall/FirewallRulesEditor.tsx` (`typed`, `left`, the
+`shownProblems` call), `lib/firewallDraft.ts` (`shownProblems`,
+`rowsWithProblems`), `components/firewall/FirewallManager.tsx` (`badRows`,
+`canSave`), `components/dns/DnsManager.tsx` (`DomainMenu`, `MenuItem`,
+`closeMenu`), and `docs/help/firewall.md` and `docs/help/shortcuts.md`.
+
+A firewall cell's problem is hidden from its first keystroke until the cell
+loses focus (`typed` sets it, `left` clears it on blur), then shown and said once
+through the list's polite live region. Save changes is still gated on
+`rowsWithProblems`, which counts every problem whether shown or not. The DNS
+zone list's right-click menu moves between enabled items with ArrowUp,
+ArrowDown, Home and End, and Escape (a document listener) or Tab closes it and
+focuses the zone it was opened on, as choosing an item does.
+
 ## History: every caller follows a shared action (3 November 2026, #362, after 1.0.63-beta.4)
 
 Sources: `ActionTrackerContext.tsx`, `lib/changelog.ts`, `ServerList.tsx`,

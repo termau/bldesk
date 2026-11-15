@@ -531,10 +531,10 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-bold text-[#212529] dark:text-white flex items-center gap-2.5">
-            <Archive className="w-5 h-5 text-[#017cb6]" />
+            <Archive className="w-5 h-5 text-fg-link" />
             <span>Server Backups</span>
           </h1>
-          <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-0.5">
+          <p className="text-xs text-fg-muted dark:text-slate-400 mt-0.5">
             Take an on-demand point-in-time backup, or mount a backup image as a live secondary drive for file recovery.
           </p>
         </div>
@@ -542,11 +542,11 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
         <div className="flex flex-wrap items-center gap-3">
           {!pinnedServerId && (
             <div className="flex items-center gap-2 bg-white dark:bg-[#2b3035] px-3 py-1.5 border border-[#ced4da] dark:border-[#373b3e] rounded shadow-sm">
-              <Server className="w-3.5 h-3.5 text-[#017cb6]" />
+              <Server className="w-3.5 h-3.5 text-fg-link" />
               <select
                 value={activeServerId || ''}
                 onChange={(e) => setSelectedServerId(Number(e.target.value))}
-                className="bg-transparent text-xs text-[#212529] dark:text-white focus:outline-none cursor-pointer max-w-[160px]"
+                className="bg-transparent text-xs text-[#212529] dark:text-white focus-ring rounded cursor-pointer max-w-[160px]"
               >
                 {servers.map((s) => (
                   <option key={s.id} value={s.id} className="bg-white dark:bg-[#2b3035]">
@@ -568,7 +568,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
           <button
             onClick={() => setIsImportingImage(true)}
             disabled={!activeServer || !client}
-            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-[#017cb6] border border-[#017cb6] rounded hover:bg-[#017cb6]/10 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium text-fg-link border border-[#017cb6] rounded hover:bg-[#017cb6]/10 disabled:opacity-50"
           >
             <Upload className="w-4 h-4" />
             <span>Import Image</span>
@@ -582,13 +582,13 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
         <div className="bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg p-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
           <div className="flex items-center gap-3 min-w-0 flex-1 basis-60">
             <div className="w-9 h-9 flex-shrink-0 rounded bg-[#017cb6]/10 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-[#017cb6]" />
+              <Clock className="w-5 h-5 text-fg-link" />
             </div>
             <div>
               <div className="text-xs font-bold text-[#212529] dark:text-white flex items-center gap-2">
                 <span>Automated Daily Backups</span>
                 <span
-                  className={`px-2 py-0.5 text-[10px] font-semibold rounded-full ${
+                  className={`px-2 py-0.5 text-[0.625rem] font-semibold rounded-full ${
                     isAutoBackupEnabled
                       ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
                       : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30'
@@ -597,7 +597,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
                   {isAutoBackupEnabled ? 'Enabled' : weeklyOrMonthlyOnly ? 'No daily' : 'Disabled'}
                 </span>
               </div>
-              <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-0.5">
+              <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-0.5">
                 {isAutoBackupEnabled
                   ? "BinaryLane takes automated daily backups. The Backup Schedule below shows when they run. Weekly and monthly backups are set in the Backups section of the server's Change Plan."
                   : weeklyOrMonthlyOnly
@@ -605,7 +605,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
                     : "Automated backups are currently turned off for this server. The button enables daily backups and keeps two of them; weekly, monthly and offsite backups are set in the Backups section of the server's Change Plan."}
               </p>
               {noSchedule && (
-                <p className="text-[11px] font-medium text-amber-700 dark:text-amber-400 mt-1.5" role="note">
+                <p className="text-[0.6875rem] font-medium text-amber-700 dark:text-amber-400 mt-1.5" role="note">
                   {NO_SCHEDULED_BACKUPS_WARNING}
                 </p>
               )}
@@ -632,13 +632,13 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
           <div className="min-w-0 flex-1 basis-60">
             <div className="text-xs font-bold text-[#212529] dark:text-white">Backup Schedule</div>
             {schedule ? (
-              <div className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-0.5 space-y-0.5">
+              <div className="text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-0.5 space-y-0.5">
                 <p>Backups run at about {formatHour(schedule.hour)}, Australia/Sydney time.</p>
                 {shownFields.includes('dayOfWeek') && <p>Weekly backups run on {formatWeekday(schedule.dayOfWeek)}.</p>}
                 {shownFields.includes('dayOfMonth') && <p>Monthly backups run on the {formatDayOfMonth(schedule.dayOfMonth)}.</p>}
               </div>
             ) : (
-              <p className="text-[11px] text-[#6c757d] dark:text-slate-400 mt-0.5">BinaryLane did not report when this server's backups run.</p>
+              <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400 mt-0.5">BinaryLane did not report when this server's backups run.</p>
             )}
           </div>
           {schedule && (
@@ -659,7 +659,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
       {activeBackupAction && (
         <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg p-3.5 flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-3">
-            <Loader2 className="w-4 h-4 text-[#017cb6] animate-spin flex-shrink-0" />
+            <Loader2 className="w-4 h-4 text-fg-link animate-spin flex-shrink-0" />
             <div>
               <h4 className="text-xs font-bold text-[#212529] dark:text-white">
                 {activeBackupAction.type === 'take_backup'
@@ -668,12 +668,12 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
                   ? 'Restoring Disk Image...'
                   : 'Backup Task in Progress...'}
               </h4>
-              <p className="text-[11px] text-[#6c757d] dark:text-slate-400">
+              <p className="text-[0.6875rem] text-fg-muted dark:text-slate-400">
                 The hypervisor is actively creating your backup. It will appear in the table below automatically once ready.
               </p>
             </div>
           </div>
-          <span className="px-2.5 py-1 text-[10px] font-bold rounded-full bg-blue-100 dark:bg-blue-900/60 text-[#017cb6] dark:text-blue-300 animate-pulse flex-shrink-0">
+          <span className="px-2.5 py-1 text-[0.625rem] font-bold rounded-full bg-blue-100 dark:bg-blue-900/60 text-fg-link dark:text-blue-300 animate-pulse flex-shrink-0">
             Capturing Image
           </span>
         </div>
@@ -683,13 +683,13 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
       <div className="bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg shadow-sm overflow-hidden flex flex-col flex-shrink-0">
         <div className="p-3.5 bg-[#f1f1f1] dark:bg-[#262a2e] border-b border-[#ced4da] dark:border-[#373b3e] flex items-center justify-between">
           <h3 className="font-bold text-xs text-[#495057] dark:text-[#ced4da] flex items-center gap-2">
-            <HardDrive className="w-4 h-4 text-[#017cb6]" />
+            <HardDrive className="w-4 h-4 text-fg-link" />
             <span>Available Disk Images for {activeServer?.name || `Server #${activeServerId}`}</span>
           </h3>
           <button
             onClick={handleDetach}
             disabled={detachBackupMutation.isPending}
-            className="text-[11px] text-[#6c757d] hover:text-amber-500 hover:underline"
+            className="text-[0.6875rem] text-fg-muted hover:text-amber-500 hover:underline"
             title="Unmount secondary drive"
           >
             Detach Secondary Backup Disk
@@ -697,8 +697,8 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
         </div>
 
         {backupsQuery.isLoading && (
-          <div className="p-12 text-center text-xs text-[#6c757d]">
-            <Loader2 className="w-6 h-6 animate-spin text-[#017cb6] mx-auto mb-2" />
+          <div className="p-12 text-center text-xs text-fg-muted">
+            <Loader2 className="w-6 h-6 animate-spin text-fg-link mx-auto mb-2" />
             <span>Querying disk images...</span>
           </div>
         )}
@@ -728,13 +728,13 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
         )}
 
         {!backupsQuery.isLoading && !backupsQuery.isError && backups.length === 0 && (
-          <div className="p-12 text-center text-xs text-[#6c757d] space-y-2">
-            <Disc className="w-8 h-8 text-[#6c757d]/50 mx-auto" />
+          <div className="p-12 text-center text-xs text-fg-muted space-y-2">
+            <Disc className="w-8 h-8 text-fg-muted/50 mx-auto" />
             <div className="font-semibold text-[#212529] dark:text-white">No Backups Found</div>
-            <p className="text-[#6c757d] max-w-sm mx-auto text-[11px]">
+            <p className="text-fg-muted max-w-sm mx-auto text-[0.6875rem]">
               Take a backup before making configuration changes, so there is something to roll back to.
             </p>
-            {noSchedule && <p className="text-[#6c757d] max-w-sm mx-auto text-[11px]">{NO_SCHEDULED_BACKUPS_EMPTY}</p>}
+            {noSchedule && <p className="text-fg-muted max-w-sm mx-auto text-[0.6875rem]">{NO_SCHEDULED_BACKUPS_EMPTY}</p>}
             <button
               onClick={() => setIsTakingBackup(true)}
               className="mt-2 px-3.5 py-1.5 bg-[#017cb6] hover:bg-[#016594] text-white text-xs font-medium rounded transition shadow-sm"
@@ -752,7 +752,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
           <div className="overflow-x-auto">
             <table className="w-full min-w-max text-left text-xs border-collapse">
             <thead>
-              <tr className="bg-[#f8f9fa] dark:bg-[#212529] border-b border-[#ced4da] dark:border-[#373b3e] text-[#6c757d]">
+              <tr className="bg-[#f8f9fa] dark:bg-[#212529] border-b border-[#ced4da] dark:border-[#373b3e] text-fg-muted">
                 <th className="py-2.5 px-4">Name / Label</th>
                 <th className="py-2.5 px-4">Created Date</th>
                 <th className="py-2.5 px-4">Min Disk Size</th>
@@ -767,17 +767,17 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
                 return (
                   <tr key={img.id} className="hover:bg-[#f8f9fa] dark:hover:bg-[#32383e] transition">
                     <td className="py-3 px-4">
-                      <div className="font-bold text-[#017cb6]">{img.name || `Image #${img.id}`}</div>
-                      <div className="text-[11px] text-[#6c757d] dark:text-slate-400 font-mono">#{img.id}</div>
+                      <div className="font-bold text-fg-link">{img.name || `Image #${img.id}`}</div>
+                      <div className="text-[0.6875rem] text-fg-muted dark:text-slate-400 font-mono">#{img.id}</div>
                     </td>
-                    <td className="py-3 px-4 text-[#6c757d] dark:text-slate-300">
+                    <td className="py-3 px-4 text-fg-muted dark:text-slate-300">
                       {img.created_at ? new Date(img.created_at).toLocaleString() : '—'}
                     </td>
                     <td className="py-3 px-4 font-mono font-medium text-[#212529] dark:text-white">
                       {img.min_disk_size || activeServer?.disk || 20} GB
                     </td>
                     <td className="py-3 px-4">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-[#017cb6]/10 text-[#017cb6] uppercase" title={isIso ? ISO_IMAGE_RESTRICTION : undefined}>
+                      <span className="px-2 py-0.5 rounded text-[0.625rem] font-semibold bg-[#017cb6]/10 text-fg-link uppercase" title={isIso ? ISO_IMAGE_RESTRICTION : undefined}>
                         {isIso ? 'ISO' : img.type || 'backup'}
                       </span>
                     </td>
@@ -787,7 +787,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
                           <button
                             onClick={() => handleDownload(img.id, img.name)}
                             disabled={isProcessing}
-                            className="px-2.5 py-1 text-[11px] font-medium text-[#212529] dark:text-slate-200 bg-[#f1f1f1] dark:bg-[#343a40] hover:bg-[#e9ecef] rounded transition flex items-center gap-1"
+                            className="px-2.5 py-1 text-[0.6875rem] font-medium text-[#212529] dark:text-slate-200 bg-[#f1f1f1] dark:bg-[#343a40] hover:bg-[#e9ecef] rounded transition flex items-center gap-1"
                             title="Download compressed disk image"
                           >
                             <Download className="w-3 h-3" />
@@ -797,7 +797,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
                         <button
                           onClick={() => handleAttach(img.id, img.name)}
                           disabled={isProcessing}
-                          className="px-2.5 py-1 text-[11px] font-medium text-[#212529] dark:text-slate-200 bg-[#f1f1f1] dark:bg-[#343a40] hover:bg-[#e9ecef] rounded transition flex items-center gap-1"
+                          className="px-2.5 py-1 text-[0.6875rem] font-medium text-[#212529] dark:text-slate-200 bg-[#f1f1f1] dark:bg-[#343a40] hover:bg-[#e9ecef] rounded transition flex items-center gap-1"
                           title={isIso ? 'Attach ISO as a read-only additional drive' : 'Mount as secondary drive to extract files'}
                         >
                           {isProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : <HardDrive className="w-3 h-3" />}
@@ -807,14 +807,14 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
                           <button
                             onClick={() => handleRestore(img.id, img.name)}
                             disabled={isProcessing}
-                            className="px-2.5 py-1 text-[11px] font-medium text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 rounded transition border border-rose-200 dark:border-rose-800 flex items-center gap-1"
+                            className="px-2.5 py-1 text-[0.6875rem] font-medium text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 rounded transition border border-rose-200 dark:border-rose-800 flex items-center gap-1"
                             title="Restore server back to this point in time"
                           >
                             <RotateCcw className="w-3 h-3" />
                             <span>Restore</span>
                           </button>
                         )}
-                        {isIso && <span className="text-[11px] text-[#6c757d] dark:text-slate-400" title={ISO_IMAGE_RESTRICTION}>Attach only</span>}
+                        {isIso && <span className="text-[0.6875rem] text-fg-muted dark:text-slate-400" title={ISO_IMAGE_RESTRICTION}>Attach only</span>}
                       </div>
                     </td>
                   </tr>
@@ -846,7 +846,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
                 type="button"
                 onClick={() => setIsChangingSchedule(false)}
                 disabled={scheduleMutation.isPending || changing}
-                className="px-3 py-1.5 text-xs text-[#6c757d] hover:text-[#212529] dark:hover:text-white disabled:opacity-50"
+                className="px-3 py-1.5 text-xs text-fg-muted hover:text-[#212529] dark:hover:text-white disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -862,13 +862,13 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
           }
         >
           <div className="p-5 space-y-4 text-xs">
-            <p className="text-[#6c757d] dark:text-slate-400">
+            <p className="text-fg-muted dark:text-slate-400">
               Sets when BinaryLane runs the scheduled backups of {activeServer?.name}. The hour and the days are in Australia/Sydney time, whichever region the server is in.
             </p>
             {shownFields.map((field) => (
               <div key={field}>
                 <label className="block font-medium text-[#495057] dark:text-[#ced4da] mb-1">
-                  {SCHEDULE_NAMES[field]} <span className="font-normal text-[#6c757d] dark:text-slate-400">({SCHEDULE_HINTS[field]})</span>
+                  {SCHEDULE_NAMES[field]} <span className="font-normal text-fg-muted dark:text-slate-400">({SCHEDULE_HINTS[field]})</span>
                 </label>
                 <select
                   value={draft[field]}
@@ -904,7 +904,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
                 type="button"
                 onClick={() => setIsTakingBackup(false)}
                 disabled={takeBackupMutation.isPending || taking}
-                className="px-3 py-1.5 text-xs text-[#6c757d] hover:text-[#212529] dark:hover:text-white disabled:opacity-50"
+                className="px-3 py-1.5 text-xs text-fg-muted hover:text-[#212529] dark:hover:text-white disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -920,7 +920,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
           }
         >
           <div className="p-5 space-y-4 text-xs">
-            <p className="text-[#6c757d] dark:text-slate-400">
+            <p className="text-fg-muted dark:text-slate-400">
               Captures a full point-in-time image of the active disk drive for {activeServer?.name}.
             </p>
 
@@ -949,7 +949,7 @@ export const BackupManager: React.FC<BackupManagerProps> = ({ client, initialSer
                 )}
               </select>
               {chosenSlot === 'temporary' && (
-                <p className="mt-1 text-[11px] text-[#6c757d] dark:text-slate-400">{TEMPORARY_BACKUP_TERMS}</p>
+                <p className="mt-1 text-[0.6875rem] text-fg-muted dark:text-slate-400">{TEMPORARY_BACKUP_TERMS}</p>
               )}
             </div>
 

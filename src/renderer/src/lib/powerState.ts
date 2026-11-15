@@ -136,7 +136,8 @@ export function usePowerState(client: BinaryLaneClient | null, servers: ServerRe
           try {
             const { data, error } = await client.GET('/v2/samplesets/{server_id}/latest', {
               params: { path: { server_id: id } },
-              signal: AbortSignal.timeout(15_000)
+              signal: AbortSignal.timeout(15_000),
+              priority: 'low'
             })
             if (error) return null
             const end = data?.sample_set?.period?.end ?? null

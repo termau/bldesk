@@ -38,12 +38,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
             <div className="relative">
               <Icon className={`w-5 h-5 ${isActive ? 'text-[#f1ca00]' : 'text-slate-300'}`} />
               {item.badge !== undefined && (
-                <span className="absolute -top-1 -right-2 px-1 text-[9px] font-bold bg-[#017cb6] text-white rounded-full">
+                <span className="absolute -top-1 -right-2 px-1 text-[0.5625rem] font-bold bg-[#017cb6] text-white rounded-full">
                   {item.badge}
                 </span>
               )}
             </div>
-            <span className="text-[10px] tracking-tight mt-0.5">{item.label}</span>
+            <span className="text-[0.625rem] tracking-tight mt-0.5">{item.label}</span>
           </button>
         )
       })}
@@ -54,7 +54,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
         className="flex flex-col items-center justify-center w-14 py-1 text-slate-300 hover:text-white transition"
       >
         <Menu className="w-5 h-5 text-slate-300" />
-        <span className="text-[10px] tracking-tight mt-0.5">More</span>
+        <span className="text-[0.625rem] tracking-tight mt-0.5">More</span>
       </button>
     </nav>
   )

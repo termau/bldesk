@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   Search,
@@ -59,6 +59,8 @@ import {
 import type { ActiveTab, ServerSubTab } from '../layout/Sidebar'
 import { isModalOpen } from '../ui/Modal'
 import { notifyFailure } from '../../lib/failures'
+import { isComposing } from '../../lib/ime'
+import { holdLayer } from '../../lib/dialogLayer'
 
 type ServerResponse = components['schemas']['Server']
 
@@ -158,6 +160,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   const replaceMap = useRef(new Map<number, string>())
   const checkRun = useRef(0)
   const inputRef = useRef<HTMLInputElement>(null)
+  const overlayRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const ids = useId()
+  const listId = `${ids}-list`
+  const optionId = (idx: number) => `${ids}-opt-${idx}`
+  // What had focus when it opened, read while rendering (the input's autoFocus takes focus before an effect runs).
+  const opener = useRef<Element | null | undefined>(undefined)
+  if (isOpen && opener.current === undefined) opener.current = document.activeElement
 
   const queryClient = useQueryClient()
   const serverAction = useServerActionMutation(client)
@@ -190,6 +200,26 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       setNotice(null)
     }
   }, [isOpen])
+
+  // While open, the page behind it is inert; on closing, focus goes back to what opened it, unless a command has put it
+  // somewhere since.
+  useEffect(() => {
+    if (!isOpen) return
+    const release = overlayRef.current ? holdLayer(overlayRef.current) : () => {}
+    return () => {
+      release()
+      const back = opener.current
+      opener.current = undefined
+      const now = document.activeElement
+      if (back instanceof HTMLElement && back.isConnected && (!now || now === document.body)) back.focus()
+    }
+  }, [isOpen])
+
+  // A stage change can take away the focused control (Run, Done): focus stays in the palette, on its input.
+  useEffect(() => {
+    if (!isOpen) return
+    if (!overlayRef.current?.contains(document.activeElement)) inputRef.current?.focus()
+  }, [isOpen, stage])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -740,6 +770,14 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     setSelectedIndex(0)
   }, [query])
 
+  // The arrow keys bring the chosen row into view; the pointer choosing one does not scroll the list under it.
+  const arrowed = useRef(false)
+  useEffect(() => {
+    if (!arrowed.current) return
+    arrowed.current = false
+    listRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [selectedIndex])
+
   // ---------------------------------------------------------------------
   // Execution
   // ---------------------------------------------------------------------
@@ -759,9 +797,21 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     }
   }
 
+  // On the panel, so Escape and Enter work wherever focus is in it. A focused button keeps its own Enter and Space.
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (stage === 'running') {
       e.preventDefault()
+      return
+    }
+    // Mid-composition, Enter, Escape and the arrows belong to the input method.
+    if (isComposing(e)) return
+    if (e.key === 'Enter' && e.target instanceof HTMLButtonElement) return
+    // Tab stays in the palette (it is a completion key in the input when the row has one).
+    if (e.key === 'Tab' && !(stage === 'input' && rows[selectedIndex]?.fill)) {
+      const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('input, button:not([disabled])')).filter((el) => el.getClientRects().length > 0)
+      const at = items.indexOf(document.activeElement as HTMLElement)
+      e.preventDefault()
+      items[(at + (e.shiftKey ? -1 : 1) + items.length) % items.length]?.focus()
       return
     }
     if (stage === 'confirm') {
@@ -784,9 +834,11 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
     if (e.key === 'ArrowDown') {
       e.preventDefault()
+      arrowed.current = true
       setSelectedIndex((prev) => (prev + 1) % Math.max(1, rows.length))
     } else if (e.key === 'ArrowUp') {
       e.preventDefault()
+      arrowed.current = true
       setSelectedIndex((prev) => (prev - 1 + rows.length) % Math.max(1, rows.length))
     } else if (e.key === 'Tab') {
       const fill = rows[selectedIndex]?.fill
@@ -813,11 +865,11 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       case 'ok':
         return 'text-[#212529] dark:text-slate-200 hover:bg-[#f8f9fa] dark:hover:bg-[#32383e]'
       case 'skip':
-        return 'text-[#6c757d] dark:text-slate-500 hover:bg-[#f8f9fa] dark:hover:bg-[#32383e]'
+        return 'text-fg-muted dark:text-slate-500 hover:bg-[#f8f9fa] dark:hover:bg-[#32383e]'
       case 'bad':
         return 'text-rose-600 dark:text-rose-400'
       case 'muted':
-        return 'text-[#6c757d] dark:text-slate-400'
+        return 'text-fg-muted dark:text-slate-400'
       default:
         return 'hover:bg-[#f8f9fa] dark:hover:bg-[#32383e] text-[#212529] dark:text-slate-200'
     }
@@ -829,39 +881,49 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       : tone === 'skip'
         ? 'bg-amber-500/10 text-amber-800 dark:text-amber-200 border-amber-500/30'
         : tone === 'muted'
-          ? 'bg-black/[0.03] dark:bg-white/[0.04] text-[#6c757d] dark:text-slate-400 border-transparent'
+          ? 'bg-black/[0.03] dark:bg-white/[0.04] text-fg-muted dark:text-slate-400 border-transparent'
           : 'bg-[#017cb6]/10 text-[#015f8c] dark:text-[#5fc3f0] border-[#017cb6]/30'
 
   const HeaderIcon = header?.icon
 
   return (
     <div
+      ref={overlayRef}
       onClick={stage === 'running' ? undefined : close}
       className="fixed inset-0 z-50 flex items-start justify-center pt-20 overlay-safe bg-black/60 backdrop-blur-sm animate-in fade-in duration-100"
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command palette"
         onClick={(e) => e.stopPropagation()}
+        onKeyDown={handleKeyDown}
         className="w-full max-w-xl bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg shadow-2xl overflow-hidden flex flex-col"
       >
         {/* Search / command input */}
         <div className="flex items-center gap-3 px-4 py-3.5 border-b border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529]">
-          {verb ? <Zap className="w-4 h-4 text-[#f1ca00]" /> : <Search className="w-4 h-4 text-[#017cb6]" />}
+          {verb ? <Zap className="w-4 h-4 text-[#f1ca00]" /> : <Search className="w-4 h-4 text-fg-link" />}
           <input
             ref={inputRef}
             autoFocus
             type="text"
+            role="combobox"
+            aria-label="Search or type a command"
+            aria-autocomplete="list"
+            aria-controls={listId}
+            aria-expanded={stage === 'input' && rows.length > 0}
+            aria-activedescendant={stage === 'input' && rows[selectedIndex] ? optionId(selectedIndex) : undefined}
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
             placeholder="Search, or type a command: restart wp-*, ssh jumpbox, backup db …"
             value={query}
-            disabled={stage === 'running'}
-            readOnly={stage === 'confirm' || stage === 'done'}
+            // Read-only rather than disabled while it runs, so the input keeps focus and the keys still reach the palette.
+            readOnly={stage !== 'input'}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={handleKeyDown}
-            className="w-full bg-transparent text-sm font-mono text-[#212529] dark:text-white placeholder-[#6c757d] placeholder:font-sans focus:outline-none disabled:opacity-60"
+            className={`w-full bg-transparent text-sm font-mono text-[#212529] dark:text-white placeholder-[#6c757d] placeholder:font-sans outline-none rounded-sm ${stage === 'running' ? 'opacity-60' : ''}`}
           />
-          <kbd className="px-2 py-0.5 text-[10px] bg-black/10 dark:bg-black/40 text-[#6c757d] dark:text-slate-300 rounded border border-[#ced4da] dark:border-[#373b3e] font-mono">
+          <kbd className="px-2 py-0.5 text-[0.625rem] bg-black/10 dark:bg-black/40 text-fg-muted dark:text-slate-300 rounded border border-[#ced4da] dark:border-[#373b3e] font-mono">
             ESC
           </kbd>
         </div>
@@ -872,7 +934,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             <HeaderIcon className={`w-3.5 h-3.5 flex-shrink-0 ${header.icon === Loader2 ? 'animate-spin' : ''}`} />
             <span className="truncate">{header.text}</span>
             {primary && (
-              <span className="ml-auto flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider opacity-80 flex-shrink-0">
+              <span className="ml-auto flex items-center gap-1 text-[0.625rem] uppercase font-bold tracking-wider opacity-80 flex-shrink-0">
                 <CornerDownLeft className="w-3 h-3" /> {plan ? 'review' : 'apply'}
               </span>
             )}
@@ -887,7 +949,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         {(stage === 'confirm' || stage === 'running') && plan && (
           <div className="p-4 space-y-3 max-h-[calc(100vh-8rem)] overflow-y-auto">
             <div className="flex items-center gap-2 text-sm font-semibold text-[#212529] dark:text-white">
-              {stage === 'running' ? <Loader2 className="w-4 h-4 animate-spin text-[#017cb6]" /> : <AlertTriangle className="w-4 h-4 text-[#f1ca00]" />}
+              {stage === 'running' ? <Loader2 className="w-4 h-4 animate-spin text-fg-link" /> : <AlertTriangle className="w-4 h-4 text-[#f1ca00]" />}
               <span>
                 {stage === 'running' ? 'Submitting' : 'Confirm'}: {plan.label} on {plan.targets.length} {plan.targets.length === 1 ? 'target' : 'targets'}
               </span>
@@ -900,9 +962,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               ))}
             </ul>
             {parsed?.kind === 'backup' && (
-              <p className="text-xs text-[#6c757d] dark:text-slate-400">{TEMPORARY_BACKUP_TERMS}</p>
+              <p className="text-xs text-fg-muted dark:text-slate-400">{TEMPORARY_BACKUP_TERMS}</p>
             )}
-            {checking && <p className="text-xs text-[#6c757d] dark:text-slate-400">Checking which backups would be replaced…</p>}
+            {checking && <p className="text-xs text-fg-muted dark:text-slate-400">Checking which backups would be replaced…</p>}
             {replaceLines.length > 0 && (
               <div className="p-2.5 rounded border border-amber-300 dark:border-amber-900 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 text-xs leading-relaxed space-y-1">
                 <p>If a server has no free temporary slot, BinaryLane replaces its oldest temporary backup that is not locked or attached, and the replaced backup will no longer be available. The backup that would be replaced on each server is listed below.</p>
@@ -941,7 +1003,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             <div className="text-sm font-semibold text-[#212529] dark:text-white">
               {outcomes.filter((o) => o.ok).length} of {outcomes.length} submitted
               {outcomes.some((o) => o.ok) && (
-                <span className="font-normal text-xs text-[#6c757d] dark:text-slate-400"> — progress is tracked in the toasts</span>
+                <span className="font-normal text-xs text-fg-muted dark:text-slate-400"> — progress is tracked in the toasts</span>
               )}
             </div>
             <ul className="max-h-56 overflow-y-auto text-xs font-mono space-y-1">
@@ -966,9 +1028,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
 
         {/* Results list */}
         {stage === 'input' && (
-          <div className="max-h-80 overflow-y-auto p-2 space-y-1">
+          <div ref={listRef} id={listId} role={rows.length > 0 ? 'listbox' : undefined} aria-label="Results" className="max-h-80 overflow-y-auto p-2 space-y-1">
             {rows.length === 0 ? (
-              <div className="p-8 text-center text-xs text-[#6c757d]">
+              <div className="p-8 text-center text-xs text-fg-muted">
                 {parsed ? 'Nothing to act on yet.' : 'No matching commands or cloud resources found.'}
               </div>
             ) : (
@@ -979,12 +1041,16 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                 return (
                   <div
                     key={item.id}
+                    id={optionId(idx)}
+                    role="option"
+                    aria-selected={isSelected}
+                    aria-disabled={actionable ? undefined : true}
                     onClick={() => (item.onEnter ? item.onEnter() : primary?.())}
                     onMouseEnter={() => setSelectedIndex(idx)}
                     className={`flex items-center justify-between p-2.5 rounded text-xs transition ${actionable ? 'cursor-pointer' : 'cursor-default'} ${toneClass(item.tone, isSelected)}`}
                   >
                     <div className="flex items-center gap-3 truncate">
-                      <div className={`p-1.5 rounded ${isSelected ? 'bg-white/20 text-white' : 'bg-black/[0.05] dark:bg-white/[0.06] text-[#017cb6]'}`}>
+                      <div className={`p-1.5 rounded ${isSelected ? 'bg-white/20 text-white' : 'bg-black/[0.05] dark:bg-white/[0.06] text-fg-link'}`}>
                         <Icon className="w-4 h-4" />
                       </div>
                       <div className="truncate">
@@ -997,13 +1063,13 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
                           )}
                         </div>
                         {item.subtitle && (
-                          <div className={`text-[11px] truncate ${isSelected ? 'text-white/80' : 'text-[#6c757d] dark:text-slate-400'}`}>{item.subtitle}</div>
+                          <div className={`text-[0.6875rem] truncate ${isSelected ? 'text-white/80' : 'text-fg-muted dark:text-slate-400'}`}>{item.subtitle}</div>
                         )}
                       </div>
                     </div>
                     <span
-                      className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ml-2 flex-shrink-0 ${
-                        isSelected ? 'bg-white/20 text-white' : 'bg-black/[0.05] dark:bg-black/30 text-[#6c757d]'
+                      className={`text-[0.625rem] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded ml-2 flex-shrink-0 ${
+                        isSelected ? 'bg-white/20 text-white' : 'bg-black/[0.05] dark:bg-black/30 text-fg-muted'
                       }`}
                     >
                       {item.category}
@@ -1016,7 +1082,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         )}
 
         {/* Footer */}
-        <div className="px-4 py-2 bg-[#f1f1f1] dark:bg-[#262a2e] border-t border-[#ced4da] dark:border-[#373b3e] text-[11px] text-[#6c757d] flex items-center justify-between">
+        <div className="px-4 py-2 bg-[#f1f1f1] dark:bg-[#262a2e] border-t border-[#ced4da] dark:border-[#373b3e] text-[0.6875rem] text-fg-muted flex items-center justify-between">
           <div className="flex items-center gap-3">
             {stage === 'confirm' ? (
               <>
@@ -1034,7 +1100,7 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
               </>
             )}
           </div>
-          <span className="font-semibold text-[#017cb6]">{verb ? 'BLDesk Command Engine' : 'Type ? for commands'}</span>
+          <span className="font-semibold text-fg-link">{verb ? 'BLDesk Command Engine' : 'Type ? for commands'}</span>
         </div>
       </div>
     </div>

@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
+import { flushSync } from 'react-dom'
 import { Modal } from '../ui/Modal'
 import { LinkOut, TOS_URL, REFUND_URL } from '../ui/LinkOut'
 import { recordChange, updateChange } from '../../lib/changelog'
-import { X, Loader2, AlertTriangle, Check, ChevronDown, Plus, KeyRound } from 'lucide-react'
+import { Loader2, AlertTriangle, Check, ChevronDown, Plus, KeyRound } from 'lucide-react'
 import { BinaryLaneClient } from '../../api/client'
 import { components } from '@shared/api/schema'
 import {
@@ -115,6 +116,13 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
   const [cloudInit, setCloudInit] = useState('')
   const [agreed, setAgreed] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  /** What a failed submit is about, so its message shows beside that part of the form and focus goes there. */
+  const [errorField, setErrorField] = useState<'os' | 'plan' | 'agree' | null>(null)
+  const osRef = useRef<HTMLDivElement>(null)
+  const planRef = useRef<HTMLDivElement>(null)
+  const agreeRef = useRef<HTMLInputElement>(null)
+  const errorRef = useRef<HTMLDivElement>(null)
+  const uid = useId()
   const [addKeyOpen, setAddKeyOpen] = useState(false)
   const [generateOpen, setGenerateOpen] = useState(false)
   /** Key id -> private key path, for pairs generated in this form. */
@@ -244,7 +252,10 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
     const refresh = () => {
       void listServerTemplates()
         .then((items) => setTemplates(items.filter((i) => !i.error && i.template.spec.cloudInit)))
-        .catch((err) => setErrorMsg(err.message || 'Could not load templates.'))
+        .catch((err) => {
+          setErrorField(null)
+          setErrorMsg(err.message || 'Could not load templates.')
+        })
     }
     refresh()
     window.addEventListener(TEMPLATES_EVENT, refresh)
@@ -451,16 +462,40 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
   // out and BinaryLane deploys the account's defaults.
   const sshKeysSent = sshKeysQuery.data !== undefined || keysTouchedRef.current ? selectedKeys : undefined
 
+  // Shows the message, then moves focus to what it is about (or to the message itself) so it is read out and in view.
+  const fail = (message: string, field: 'os' | 'plan' | 'agree' | null = null) => {
+    flushSync(() => {
+      setErrorMsg(message)
+      setErrorField(field)
+    })
+    const radio = (sel: string) => planRef.current?.querySelector<HTMLInputElement>(sel)
+    const target =
+      (field === 'os' ? osRef.current?.querySelector<HTMLButtonElement>('button:not(:disabled)')
+        : field === 'plan' ? radio('input[type=radio]:checked:not(:disabled)') ?? radio('input[type=radio]:not(:disabled)')
+        : field === 'agree' ? agreeRef.current
+        : null) ??
+      // With nothing there that can take focus, the message itself does.
+      errorRef.current
+    target?.focus()
+  }
+  const clearError = (field: 'os' | 'plan' | 'agree') => {
+    if (errorField !== field) return
+    setErrorMsg(null)
+    setErrorField(null)
+  }
+  const errorId = `${uid}-error`
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setErrorMsg(null)
-    if (!image?.slug) return setErrorMsg('Choose an operating system.')
-    if (!selectedSize) return setErrorMsg('Choose a plan.')
+    setErrorField(null)
+    if (!image?.slug) return fail('Choose an operating system.', 'os')
+    if (!selectedSize) return fail('Choose a plan.', 'plan')
     const blocked = planUnavailableReason(selectedSize, region, image)
-    if (blocked) return setErrorMsg(blocked.message)
-    if (!agreed) return setErrorMsg('You need to accept the Terms of Service and refund policy.')
+    if (blocked) return fail(blocked.message, 'plan')
+    if (!agreed) return fail('You need to accept the Terms of Service and refund policy.', 'agree')
     // A template that names keys cannot be honoured without the account's key list: sending none would contradict it.
-    if (prefillRef.current?.sshKeyNames?.length && sshKeysQuery.data === undefined) return setErrorMsg("Your SSH keys could not be loaded, so the template's keys cannot be selected. Try again in a moment.")
+    if (prefillRef.current?.sshKeyNames?.length && sshKeysQuery.data === undefined) return fail("Your SSH keys could not be loaded, so the template's keys cannot be selected. Try again in a moment.")
 
     // The form is the review, so this records rather than confirms — and the
     // id must be resolved either side of the request or History says
@@ -520,7 +555,7 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
       onClose()
     } catch (err: any) {
       void updateChange(changeId, { outcome: 'failed', detail: err?.message })
-      setErrorMsg(err.message || 'Failed to create the server.')
+      fail(err.message || 'Failed to create the server.')
     }
   }
 
@@ -547,7 +582,7 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
     <>
     <Modal title="Add a Cloud Server" onClose={onClose} size="xl" align="top" as="form" onSubmit={handleSubmit} busy={createServer.isPending} labelledBy="create-server-title">
         {loading ? (
-          <div className="p-12 flex items-center justify-center gap-2 text-xs text-[#6c757d]">
+          <div className="p-12 flex items-center justify-center gap-2 text-xs text-fg-muted">
             <Loader2 className="w-4 h-4 animate-spin" /> Loading plans and images...
           </div>
         ) : (
@@ -563,7 +598,7 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                   </button>
                 </div>
               )}
-              <TileRow>
+              <TileRow label="Location">
                 {regions.map((r: any) => (
                   <Tile key={r.slug} selected={region === r.slug} onClick={() => setRegion(r.slug)} disabled={!r.available}>
                     {r.name}
@@ -571,36 +606,39 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                 ))}
               </TileRow>
 
-              <TileRow className="mt-3.5">
-                {distros.map((d) => (
-                  <Tile key={d} selected={distro === d} onClick={() => setDistro(d)} className="flex-col gap-2 py-3 px-5 min-w-[104px]">
-                    <img
-                      src={logoForDistribution(d)}
-                      alt=""
-                      className={`w-8 h-8 sm:w-11 sm:h-11 object-contain transition ${distro === d ? '' : 'grayscale opacity-60'}`}
-                    />
-                    <span>{d}</span>
-                  </Tile>
-                ))}
-              </TileRow>
+              <div ref={osRef}>
+                <TileRow className="mt-3.5" label="Operating system" describedBy={errorField === 'os' ? errorId : undefined}>
+                  {distros.map((d) => (
+                    <Tile key={d} selected={distro === d} onClick={() => { setDistro(d); clearError('os') }} className="flex-col gap-2 py-3 px-5 min-w-[104px]">
+                      <img
+                        src={logoForDistribution(d)}
+                        alt=""
+                        className={`w-8 h-8 sm:w-11 sm:h-11 object-contain transition ${distro === d ? '' : 'grayscale opacity-60'}`}
+                      />
+                      <span>{d}</span>
+                    </Tile>
+                  ))}
+                </TileRow>
 
-              {versions.length > 0 && (
-                <>
-                  <div className="text-sm font-semibold text-[#212529] dark:text-white mt-4 mb-2">Select Version</div>
-                  <TileRow>
-                    {versions.map((v) => (
-                      <Tile key={v.slug} selected={image?.slug === v.slug} onClick={() => setImageSlug(v.slug || null)}>
-                        {(v as any).name?.trim() || v.slug}
-                      </Tile>
-                    ))}
-                  </TileRow>
-                </>
-              )}
+                {versions.length > 0 && (
+                  <>
+                    <div id={`${uid}-version`} className="text-sm font-semibold text-[#212529] dark:text-white mt-4 mb-2">Select Version</div>
+                    <TileRow labelledBy={`${uid}-version`}>
+                      {versions.map((v) => (
+                        <Tile key={v.slug} selected={image?.slug === v.slug} onClick={() => { setImageSlug(v.slug || null); clearError('os') }}>
+                          {(v as any).name?.trim() || v.slug}
+                        </Tile>
+                      ))}
+                    </TileRow>
+                  </>
+                )}
+              </div>
+              <FormError ref={errorRef} id={errorId} message={errorField === 'os' ? errorMsg : null} />
             </Section>
 
             {/* ---------- 2. plan ---------- */}
             <Section step={2} title="Choose your Cloud Server resources">
-              <TileRow>
+              <TileRow label="Plan type">
                 {planTypes.map((t) => (
                   <Tile key={t.slug} selected={planType === t.slug} onClick={() => setPlanType(t.slug)}>
                     {t.name}
@@ -615,10 +653,10 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                  * the whole form sideways, which clipped the left edge of every
                  * label and dropdown below it.
                  */}
-              <div className="mt-3 border border-[#ced4da] dark:border-[#373b3e] rounded overflow-x-auto">
-                <table className="w-full text-[10px] sm:text-xs whitespace-nowrap">
+              <div ref={planRef} className="mt-3 border border-[#ced4da] dark:border-[#373b3e] rounded overflow-x-auto">
+                <table className="w-full text-[0.625rem] sm:text-xs whitespace-nowrap">
                   <thead>
-                    <tr className="bg-[#f8f9fa] dark:bg-[#212529] text-[#6c757d] text-left">
+                    <tr className="bg-[#f8f9fa] dark:bg-[#212529] text-fg-muted text-left">
                       <th className="py-1.5 px-1 sm:py-2 sm:px-3 font-semibold text-center">Processor</th>
                       <th className="py-1.5 px-1 sm:py-2 sm:px-3 font-semibold text-center">Memory</th>
                       <th className="py-1.5 px-1 sm:py-2 sm:px-3 font-semibold text-center">Storage</th>
@@ -630,10 +668,16 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                     {plans.map((p) => {
                       const blocked = planUnavailableReason(p, region, image)
                       const isSel = sizeSlug === p.slug
+                      const choose = () => {
+                        if (blocked) return
+                        setSizeSlug(p.slug)
+                        clearError('plan')
+                      }
                       return (
                         <tr
                           key={p.slug}
-                          onClick={() => !blocked && setSizeSlug(p.slug)}
+                          id={`${uid}-plan-${p.slug}`}
+                          onClick={choose}
                           title={blocked?.message || undefined}
                           className={`${
                             blocked
@@ -643,7 +687,21 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                         >
                           <td className="py-1.5 px-1 sm:py-2 sm:px-3 text-center">
                             <span className="flex items-center gap-1 sm:gap-2">
-                              <Radio selected={isSel} blocked={!!blocked} />
+                              {blocked && <BlockedMark />}
+                              {/* A real radio, so the plans are a group the keyboard moves through; it is named by its row. */}
+                              <input
+                                type="radio"
+                                name={`${uid}-plan`}
+                                checked={isSel}
+                                disabled={!!blocked}
+                                onChange={choose}
+                                onClick={(e) => e.stopPropagation()}
+                                aria-labelledby={`${uid}-plan-${p.slug}`}
+                                title={blocked?.message || undefined}
+                                aria-invalid={errorField === 'plan'}
+                                aria-describedby={errorField === 'plan' ? errorId : undefined}
+                                className={blocked ? 'sr-only' : 'w-3 h-3 sm:w-3.5 sm:h-3.5 m-0 shrink-0 cursor-pointer'}
+                              />
                               <span className="text-[#212529] dark:text-white">
                                 {p.vcpus} {p.vcpu_units || 'VCPU'}
                                 {p.vcpus === 1 ? '' : 's'}
@@ -652,14 +710,14 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                           </td>
                           <td className="py-1.5 px-1 sm:py-2 sm:px-3 text-center">
                             {isSel && memoryChoices(p).length > 1 ? (
-                              <Select value={memory} onChange={(v) => setMemoryMb(v)} options={memoryChoices(p).map((m) => ({ value: m, label: `${m / 1024} GB` }))} />
+                              <Select label="Memory" value={memory} onChange={(v) => setMemoryMb(v)} options={memoryChoices(p).map((m) => ({ value: m, label: `${m / 1024} GB` }))} />
                             ) : (
                               <span className="text-[#212529] dark:text-white">{p.memory / 1024} GB</span>
                             )}
                           </td>
                           <td className="py-1.5 px-1 sm:py-2 sm:px-3 text-center">
                             {isSel && diskChoices(p, image).length > 1 ? (
-                              <Select value={disk} onChange={(v) => { diskChosenRef.current = true; setDiskGb(v) }} options={diskChoices(p, image).map((d) => ({ value: d, label: `${d} GB` }))} />
+                              <Select label="Storage" value={disk} onChange={(v) => { diskChosenRef.current = true; setDiskGb(v) }} options={diskChoices(p, image).map((d) => ({ value: d, label: `${d} GB` }))} />
                             ) : (
                               <span className="text-[#212529] dark:text-white">
                                 {defaultDisk(p)} GB{p.storage_description ? ` ${p.storage_description.trim()}` : ''}
@@ -678,6 +736,7 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
 
                 <PlanBlockNotes blocks={planBlocks as PlanBlock[]} />
               </div>
+              <FormError ref={errorRef} id={errorId} message={errorField === 'plan' ? errorMsg : null} />
             </Section>
 
             {/* ---------- 3. settings ---------- */}
@@ -694,8 +753,10 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                 </button>
               }
             >
-              <Field label="Hostname" hint="Optional. Such as vps01.yourcompany.com. It does not matter if you do not yet own this domain name. If you leave it blank, BinaryLane names the server.">
+              <Field label="Hostname" htmlFor={`${uid}-hostname`} hint="Optional. Such as vps01.yourcompany.com. It does not matter if you do not yet own this domain name. If you leave it blank, BinaryLane names the server.">
                 <input
+                  id={`${uid}-hostname`}
+                  aria-describedby={`${uid}-hostname-hint`}
                   value={hostname}
                   onChange={(e) => setHostname(e.target.value)}
                   placeholder="server.example.com"
@@ -719,7 +780,7 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                     ] as const
                   ).map(([val, label]) => (
                     <label key={val} className="flex items-center gap-2 text-xs cursor-pointer">
-                      <input type="radio" checked={simpleBackups === val} onChange={() => setSimpleBackups(val)} />
+                      <input type="radio" name={`${uid}-backups`} checked={simpleBackups === val} onChange={() => setSimpleBackups(val)} />
                       <span className="text-[#212529] dark:text-white">{label}</span>
                     </label>
                   ))}
@@ -760,19 +821,20 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                           </Tile>
                         )
                       })}
-                      <Tile selected={false} onClick={() => setAddKeyOpen(true)}>
+                      <Tile onClick={() => setAddKeyOpen(true)}>
                         <Plus className="w-3 h-3" /> Add SSH Key
                       </Tile>
                       {canGenerateKeyPair() && (
-                        <Tile selected={false} onClick={() => setGenerateOpen(true)}>
+                        <Tile onClick={() => setGenerateOpen(true)}>
                           <KeyRound className="w-3 h-3" /> Generate Key Pair
                         </Tile>
                       )}
                     </TileRow>
                   </Field>
 
-                  <Field label="IP Addresses" hint="Additional IP addresses may be purchased for approved uses including multiple SSL certificates.">
+                  <Field label="IP Addresses" htmlFor={`${uid}-ips`} hint="Additional IP addresses may be purchased for approved uses including multiple SSL certificates.">
                     <Select
+                      id={`${uid}-ips`}
                       value={ipCount}
                       onChange={setIpCount}
                       options={Array.from({ length: selectedSize?.options?.ipv4_addresses_max || 1 }, (_, i) => ({
@@ -792,8 +854,9 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                         ] as const
                       ).map(([label, value, setter, word]) => (
                         <div key={word}>
-                          <div className="text-[11px] text-[#6c757d] dark:text-[#adb5bd] mb-1">{label}</div>
+                          <label htmlFor={`${uid}-${word}`} className="block text-[0.6875rem] text-fg-muted dark:text-[#adb5bd] mb-1">{label}</label>
                           <Select
+                            id={`${uid}-${word}`}
                             value={value}
                             onChange={setter as (v: number) => void}
                             options={Array.from({ length: 11 }, (_, n) => ({
@@ -829,19 +892,20 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                     {cloudInitOn && (
                       <>
                         <div className="mt-2 flex flex-wrap gap-2">
-                          <select defaultValue="" onChange={(e) => { const item = templates.find((t) => t.slug === e.target.value); if (item?.template.spec.cloudInit) setCloudInit(item.template.spec.cloudInit); e.currentTarget.value = '' }} className="px-2.5 py-1.5 text-xs rounded border bg-white dark:bg-[#212529] border-[#ced4da] dark:border-[#373b3e]">
+                          <select aria-label="Load cloud-init from template" defaultValue="" onChange={(e) => { const item = templates.find((t) => t.slug === e.target.value); if (item?.template.spec.cloudInit) setCloudInit(item.template.spec.cloudInit); e.currentTarget.value = '' }} className="px-2.5 py-1.5 text-xs rounded border bg-white dark:bg-[#212529] border-[#ced4da] dark:border-[#373b3e]">
                             <option value="">Load cloud-init from template…</option>
                             {templates.map((item) => <option key={item.slug} value={item.slug}>{item.template.name}</option>)}
                           </select>
-                          <span className="text-[11px] text-[#6c757d] dark:text-slate-400 self-center">Templates with variables are applied from the Templates tab, which fills them in.</span>
+                          <span className="text-[0.6875rem] text-fg-muted dark:text-slate-400 self-center">Templates with variables are applied from the Templates tab, which fills them in.</span>
                         </div>
                         <textarea
+                          aria-label="Cloud-init user data"
                           value={cloudInit}
                           onChange={(e) => setCloudInit(e.target.value)}
                           rows={8}
                           spellCheck={false}
                           placeholder={'#cloud-config\npackages:\n  - nginx'}
-                          className="mt-2 w-full px-2.5 py-2 text-[11px] font-mono bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded outline-none focus:border-[#017cb6] text-[#212529] dark:text-white"
+                          className="mt-2 w-full px-2.5 py-2 text-[0.6875rem] font-mono bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded outline-none focus:border-[#017cb6] text-[#212529] dark:text-white"
                         />
                       </>
                     )}
@@ -853,12 +917,12 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
               <div className="mt-4 p-3 rounded border border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529] text-xs space-y-2">
                 <div className="font-bold text-sm text-[#212529] dark:text-white">Billing</div>
                 <div className="flex gap-8">
-                  <span className="text-[#6c757d] dark:text-[#adb5bd]">Monthly Total</span>
+                  <span className="text-fg-muted dark:text-[#adb5bd]">Monthly Total</span>
                   <span className="text-[#212529] dark:text-white">
                     {selectedSize ? `$${monthlyTotal.toFixed(2)}${taxNote ? ` ${taxNote}` : ''}` : '—'}
                   </span>
                 </div>
-                <p className="text-[#6c757d] dark:text-[#adb5bd] leading-relaxed">
+                <p className="text-fg-muted dark:text-[#adb5bd] leading-relaxed">
                   BinaryLane has no minimum contract length and you may cancel your Server any time.
                 </p>
               </div>
@@ -882,26 +946,31 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                       cloudInit: cloudInitOn && cloudInit.trim() ? cloudInit : undefined
                     }
                   })}
-                  className="mt-3 text-xs text-[#017cb6] hover:underline"
+                  className="mt-3 text-xs text-fg-link hover:underline"
                 >
                   Save this form as a template instead
                 </button>
               )}
 
               <label className="flex items-center gap-2 text-xs mt-3 cursor-pointer">
-                <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
+                <input
+                  ref={agreeRef}
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={(e) => {
+                    setAgreed(e.target.checked)
+                    clearError('agree')
+                  }}
+                  aria-invalid={errorField === 'agree'}
+                  aria-describedby={errorField === 'agree' ? errorId : undefined}
+                />
                 <span className="text-[#212529] dark:text-white">
                   I agree to the{' '}
                   <LinkOut href={TOS_URL}>Terms of Service</LinkOut> and <LinkOut href={REFUND_URL}>refund policy</LinkOut>.
                 </span>
               </label>
 
-              {errorMsg && (
-                <div className="mt-3 flex items-start gap-2 p-2.5 rounded border border-rose-300 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs">
-                  <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                  <span className="break-words">{errorMsg}</span>
-                </div>
-              )}
+              <FormError ref={errorRef} id={errorId} message={errorField === 'os' || errorField === 'plan' ? null : errorMsg} />
 
               <button
                 type="submit"
@@ -974,8 +1043,8 @@ const Section: React.FC<{ step: number; title: string; action?: React.ReactNode;
 }) => (
   <section>
     <div className="flex items-center justify-between gap-3 mb-2">
-      <h4 className="flex items-center gap-2 text-sm font-bold text-[#017cb6]">
-        <span className="w-5 h-5 shrink-0 rounded-full bg-[#f1ca00] text-[#212529] text-[11px] font-bold flex items-center justify-center">
+      <h4 className="flex items-center gap-2 text-sm font-bold text-fg-link">
+        <span className="w-5 h-5 shrink-0 rounded-full bg-[#f1ca00] text-[#212529] text-[0.6875rem] font-bold flex items-center justify-center">
           {step}
         </span>
         {title}
@@ -991,14 +1060,28 @@ const Section: React.FC<{ step: number; title: string; action?: React.ReactNode;
  * once there is room. `flex flex-wrap` alone left ragged, left-bunched rows on a
  * narrow screen because the items keep their intrinsic width.
  */
-const TileRow: React.FC<{ children: React.ReactNode; className?: string; cols?: string }> = ({
+const TileRow: React.FC<{ children: React.ReactNode; className?: string; cols?: string; label?: string; labelledBy?: string; describedBy?: string }> = ({
   children,
   className = '',
-  cols = 'grid-cols-3'
-}) => <div className={`grid ${cols} gap-2 sm:flex sm:flex-wrap ${className}`}>{children}</div>
+  cols = 'grid-cols-3',
+  label,
+  labelledBy,
+  describedBy
+}) => (
+  <div
+    role={label || labelledBy ? 'group' : undefined}
+    aria-label={label}
+    aria-labelledby={labelledBy}
+    aria-describedby={describedBy}
+    className={`grid ${cols} gap-2 sm:flex sm:flex-wrap ${className}`}
+  >
+    {children}
+  </div>
+)
 
+/** A choice tile, or (without `selected`) a plain action button in the same style. */
 const Tile: React.FC<{
-  selected: boolean
+  selected?: boolean
   disabled?: boolean
   onClick: () => void
   className?: string
@@ -1008,6 +1091,7 @@ const Tile: React.FC<{
     type="button"
     disabled={disabled}
     onClick={onClick}
+    aria-pressed={selected}
     className={`flex items-center justify-center gap-2 px-2.5 py-2 text-xs sm:px-4 sm:py-2.5 sm:text-sm font-medium rounded border transition ${
       selected
         ? 'bg-[#6c757d] text-white border-[#6c757d]'
@@ -1018,28 +1102,36 @@ const Tile: React.FC<{
   </button>
 )
 
-const Radio: React.FC<{ selected: boolean; blocked: boolean }> = ({ selected, blocked }) => blocked ? <BlockedMark /> : (
-  <span
-    className={`w-3 h-3 sm:w-3.5 sm:h-3.5 rounded-full border flex items-center justify-center flex-shrink-0 ${
-      blocked ? 'border-[#adb5bd]' : selected ? 'border-[#017cb6]' : 'border-[#ced4da] dark:border-[#6c757d]'
-    }`}
-  >
-    {selected && <span className="w-2 h-2 rounded-full bg-[#017cb6]" />}
-    {blocked && <X className="w-2.5 h-2.5 text-[#adb5bd]" />}
-  </span>
-)
+/*
+ * A submit error, shown beside the part of the form it is about. The container is always in the page so a message
+ * put into it is announced; `id` is what the invalid control's aria-describedby names.
+ */
+const FormError = React.forwardRef<HTMLDivElement, { id: string; message: string | null }>(({ id, message }, ref) => (
+  <div aria-live="polite">
+    {message && (
+      <div ref={ref} id={id} tabIndex={-1} className="mt-3 flex items-start gap-2 p-2.5 rounded border border-rose-300 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 text-xs outline-none">
+        <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+        <span className="break-words">{message}</span>
+      </div>
+    )}
+  </div>
+))
 
 const Select: React.FC<{
   value: number
   onChange: (v: number) => void
   options: { value: number; label: string }[]
-}> = ({ value, onChange, options }) => (
+  id?: string
+  label?: string
+}> = ({ value, onChange, options, id, label }) => (
   <span className="relative inline-flex items-center">
     <select
+      id={id}
+      aria-label={label}
       value={value}
       onClick={(e) => e.stopPropagation()}
       onChange={(e) => onChange(Number(e.target.value))}
-      className="appearance-none pl-1.5 pr-5 py-0.5 text-[11px] sm:pl-2 sm:pr-6 sm:py-1 sm:text-xs bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded outline-none focus:border-[#017cb6] text-[#212529] dark:text-white"
+      className="appearance-none pl-1.5 pr-5 py-0.5 text-[0.6875rem] sm:pl-2 sm:pr-6 sm:py-1 sm:text-xs bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded outline-none focus:border-[#017cb6] text-[#212529] dark:text-white"
     >
       {options.map((o) => (
         <option key={o.value} value={o.value}>
@@ -1051,13 +1143,28 @@ const Select: React.FC<{
   </span>
 )
 
-const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode }> = ({ label, hint, children }) => (
-  <div className="py-2.5 border-b border-[#ced4da]/60 dark:border-[#373b3e] last:border-0 space-y-1.5">
-    {hint && <p className="text-[11px] text-[#6c757d] dark:text-[#adb5bd] leading-relaxed">{hint}</p>}
-    <div className="text-[11px] text-[#6c757d] dark:text-[#adb5bd]">{label}</div>
-    {children}
-  </div>
-)
+/*
+ * With `htmlFor` the label names that one control (and the hint is `${htmlFor}-hint`, for its aria-describedby);
+ * without it the field holds several controls and is a group named by the label.
+ */
+const Field: React.FC<{ label: string; hint?: string; htmlFor?: string; children: React.ReactNode }> = ({ label, hint, htmlFor, children }) => {
+  const labelId = useId()
+  return (
+    <div
+      role={htmlFor ? undefined : 'group'}
+      aria-labelledby={htmlFor ? undefined : labelId}
+      className="py-2.5 border-b border-[#ced4da]/60 dark:border-[#373b3e] last:border-0 space-y-1.5"
+    >
+      {hint && <p id={htmlFor ? `${htmlFor}-hint` : undefined} className="text-[0.6875rem] text-fg-muted dark:text-[#adb5bd] leading-relaxed">{hint}</p>}
+      {htmlFor ? (
+        <label id={labelId} htmlFor={htmlFor} className="block text-[0.6875rem] text-fg-muted dark:text-[#adb5bd]">{label}</label>
+      ) : (
+        <div id={labelId} className="text-[0.6875rem] text-fg-muted dark:text-[#adb5bd]">{label}</div>
+      )}
+      {children}
+    </div>
+  )
+}
 
 const AddSshKeyDialog: React.FC<{
   onCancel: () => void
@@ -1106,7 +1213,7 @@ const AddSshKeyDialog: React.FC<{
     >
       <div className="p-4 space-y-3 text-xs">
           <label className="block space-y-1">
-            <span className="text-[#6c757d] dark:text-[#adb5bd]">Name</span>
+            <span className="text-fg-muted dark:text-[#adb5bd]">Name</span>
             <input
               autoFocus
               value={name}
@@ -1115,15 +1222,15 @@ const AddSshKeyDialog: React.FC<{
             />
           </label>
           <label className="block space-y-1">
-            <span className="text-[#6c757d] dark:text-[#adb5bd]">Public Key</span>
+            <span className="text-fg-muted dark:text-[#adb5bd]">Public Key</span>
             <textarea
               value={publicKey}
               onChange={(e) => setPublicKey(e.target.value)}
               rows={5}
               spellCheck={false}
-              className="w-full px-2.5 py-1.5 font-mono text-[11px] bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded outline-none focus:border-[#017cb6] text-[#212529] dark:text-white"
+              className="w-full px-2.5 py-1.5 font-mono text-[0.6875rem] bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded outline-none focus:border-[#017cb6] text-[#212529] dark:text-white"
             />
-            <span className="block text-[10px] text-[#6c757d]">
+            <span className="block text-[0.625rem] text-fg-muted">
               Paste your public key in OpenSSH "authorized_keys" format.
             </span>
           </label>

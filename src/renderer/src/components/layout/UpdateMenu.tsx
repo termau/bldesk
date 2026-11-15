@@ -1,8 +1,9 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { ArrowDownToLine, CheckCircle2, CloudOff, Loader2, RefreshCw, AlertTriangle, RotateCw, ChevronDown } from 'lucide-react'
 import { UpdateChannel, UpdaterState } from '@shared/ipc-types'
 import { renderHelpMarkdown } from '../../lib/helpMarkdown'
 import { notifyFailure } from '../../lib/failures'
+import { isModalOpen } from '../ui/Modal'
 
 /*
  * Release notes, rendered without innerHTML. Desktop notes are GitHub-rendered
@@ -41,10 +42,31 @@ function noteNodes(nodes: NodeListOf<ChildNode> | ChildNode[], key = 'n'): React
   })
 }
 
+/*
+ * Under the build's Trusted Types policy, DOMParser takes only TrustedHTML. This policy passes the notes through as
+ * they are: the parsed document is never inserted, only read by noteNodes above. It is created once and kept on
+ * window, because a second createPolicy with the same name is refused (a hot reload runs this module again). Where
+ * Trusted Types does not exist (an older Android WebView) the string is passed as it is.
+ */
+type NotesPolicy = { createHTML: (raw: string) => unknown }
+const POLICY_NAME = 'bldesk-release-notes'
+const POLICY_KEY = '__bldeskReleaseNotesPolicy'
+
+function notesPolicy(): NotesPolicy | null {
+  const w = window as unknown as Record<string, unknown> & {
+    trustedTypes?: { createPolicy: (name: string, rules: { createHTML: (s: string) => string }) => NotesPolicy }
+  }
+  if (!w.trustedTypes) return null
+  if (!w[POLICY_KEY]) w[POLICY_KEY] = w.trustedTypes.createPolicy(POLICY_NAME, { createHTML: (s) => s })
+  return w[POLICY_KEY] as NotesPolicy
+}
+
 export function renderReleaseNotes(raw: string): React.ReactNode[] {
   if (!raw) return []
   if (/<(?:h[1-6]|p|div|ul|ol|li|table|blockquote|a|strong|em|code)\b/i.test(raw)) {
-    return noteNodes(new DOMParser().parseFromString(raw, 'text/html').body.childNodes)
+    const policy = notesPolicy()
+    const html = (policy ? policy.createHTML(raw) : raw) as string
+    return noteNodes(new DOMParser().parseFromString(html, 'text/html').body.childNodes)
   }
   // Markdown (Android): the help renderer builds React elements too, and in its
   // remote mode it turns no link into an action.
@@ -56,15 +78,15 @@ const ReleaseNotesView: React.FC<{ notes: string }> = ({ notes }) => {
 
   return (
     <div
-      className="text-[11px] leading-relaxed text-[#495057] dark:text-[#adb5bd] max-h-36 overflow-y-auto border-l-2 border-[#017cb6]/40 pl-2.5 my-1 space-y-1 select-text
+      className="text-[0.6875rem] leading-relaxed text-[#495057] dark:text-[#adb5bd] max-h-36 overflow-y-auto border-l-2 border-[#017cb6]/40 pl-2.5 my-1 space-y-1 select-text
         [&_h2]:text-xs [&_h2]:font-bold [&_h2]:text-[#212529] dark:[&_h2]:text-white [&_h2]:mt-2 [&_h2]:mb-0.5
-        [&_h3]:text-[11px] [&_h3]:font-semibold [&_h3]:text-[#212529] dark:[&_h3]:text-gray-200 [&_h3]:mt-1.5 [&_h3]:mb-0.5
+        [&_h3]:text-[0.6875rem] [&_h3]:font-semibold [&_h3]:text-[#212529] dark:[&_h3]:text-gray-200 [&_h3]:mt-1.5 [&_h3]:mb-0.5
         [&_p]:my-0.5
         [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:my-1 [&_ul]:space-y-0.5
         [&_ol]:list-decimal [&_ol]:pl-4 [&_ol]:my-1 [&_ol]:space-y-0.5
         [&_li]:my-0.5
-        [&_a]:text-[#017cb6] dark:[&_a]:text-[#38bdf8] [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:opacity-80
-        [&_code]:font-mono [&_code]:text-[10px] [&_code]:bg-black/5 dark:[&_code]:bg-white/10 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded
+        [&_a]:text-fg-link dark:[&_a]:text-[#38bdf8] [&_a]:underline [&_a]:underline-offset-2 hover:[&_a]:opacity-80
+        [&_code]:font-mono [&_code]:text-[0.625rem] [&_code]:bg-black/5 dark:[&_code]:bg-white/10 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded
         [&_hr]:my-1.5 [&_hr]:border-black/10 dark:[&_hr]:border-white/10
         [&_strong]:font-semibold [&_strong]:text-[#212529] dark:[&_strong]:text-gray-100"
     >
@@ -102,6 +124,9 @@ export const UpdateMenu: React.FC = () => {
   const state = useUpdaterState()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const panel = useRef<HTMLDivElement>(null)
+  const panelId = useId()
 
   // The Restart button stands in for the menu while an update is ready, so a Restart that did not install is reported
   // where the user is looking, not in the menu.
@@ -115,8 +140,13 @@ export const UpdateMenu: React.FC = () => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
+      // Escape (and so Android's Back) closes it and gives focus back to the version button; a dialog on top has its own.
+      if (e.key !== 'Escape' || e.defaultPrevented || isModalOpen()) return
+      e.preventDefault()
+      setOpen(false)
+      trigger.current?.focus()
     }
+    panel.current?.focus()
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
     return () => {
@@ -139,7 +169,7 @@ export const UpdateMenu: React.FC = () => {
         <button
           onClick={install}
           title={`Restart to install BLDesk ${state.availableVersion}`}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-slate-900 bg-[#f1ca00] hover:bg-[#ffd633] rounded-md transition shadow"
+          className="flex items-center gap-1.5 px-2.5 py-1 text-[0.6875rem] font-semibold text-slate-900 bg-[#f1ca00] hover:bg-[#ffd633] rounded-md transition shadow"
         >
           <RotateCw className="w-3 h-3 animate-spin" />
           <span>Restart to update</span>
@@ -148,18 +178,29 @@ export const UpdateMenu: React.FC = () => {
         <button
           onClick={install}
           title={`Download and install BLDesk v${state.availableVersion}`}
-          className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-slate-900 bg-[#f1ca00] hover:bg-[#ffd633] rounded-md transition shadow"
+          className="flex items-center gap-1.5 px-2.5 py-1 text-[0.6875rem] font-semibold text-slate-900 bg-[#f1ca00] hover:bg-[#ffd633] rounded-md transition shadow"
         >
           <ArrowDownToLine className="w-3.5 h-3.5" />
           <span>Update v{state.availableVersion}</span>
         </button>
       ) : (
         <button
+          ref={trigger}
           onClick={() => setOpen((o) => !o)}
           title={`BLDesk v${state.currentVersion} (${state.channel} channel)`}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-controls={open ? panelId : undefined}
           className="relative flex items-center gap-1.5 px-2 py-0.5 text-xs text-slate-300 hover:text-white bg-black/25 hover:bg-black/40 border border-white/10 hover:border-white/20 rounded-md transition shadow-inner font-mono"
         >
-          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin text-[#f1ca00]" /> : <span>v{state.currentVersion}</span>}
+          {busy ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#f1ca00]" aria-hidden="true" />
+              <span className="sr-only">BLDesk v{state.currentVersion}</span>
+            </>
+          ) : (
+            <span>v{state.currentVersion}</span>
+          )}
           {state.status === 'installing' && state.installPhase && (
             <span className="font-sans">{state.installPhase === 'checking' ? 'Checking' : state.installPhase === 'authorising' ? 'Waiting for password' : 'Installing'}</span>
           )}
@@ -175,11 +216,18 @@ export const UpdateMenu: React.FC = () => {
           popup hung from it, which ran off the left of the screen. There the popup is fixed to the viewport, still
           just under the button, 8px (or the safe-area inset) clear of both edges and as wide as fits, up to 320px. */}
       {open && (
-        <div className="absolute right-0 top-full mt-1.5 w-80 max-sm:fixed max-sm:top-auto max-sm:left-[max(0.5rem,env(safe-area-inset-left,0px))] max-sm:right-[max(0.5rem,env(safe-area-inset-right,0px))] max-sm:ml-auto max-sm:w-auto max-sm:max-w-80 bg-white dark:bg-[#2b3035] text-[#212529] dark:text-[#f8f9fa] border border-[#ced4da] dark:border-[#373b3e] rounded-lg shadow-xl z-50 p-3 text-xs space-y-3 select-text">
+        <div
+          ref={panel}
+          id={panelId}
+          role="dialog"
+          aria-label="BLDesk updates"
+          tabIndex={-1}
+          data-dismissible="true"
+          className="outline-none absolute right-0 top-full mt-1.5 w-80 max-sm:fixed max-sm:top-auto max-sm:left-[max(0.5rem,env(safe-area-inset-left,0px))] max-sm:right-[max(0.5rem,env(safe-area-inset-right,0px))] max-sm:ml-auto max-sm:w-auto max-sm:max-w-80 bg-white dark:bg-[#2b3035] text-[#212529] dark:text-[#f8f9fa] border border-[#ced4da] dark:border-[#373b3e] rounded-lg shadow-xl z-50 p-3 text-xs space-y-3 select-text">
           <div className="flex items-center justify-between">
             <div>
               <div className="font-bold">BLDesk</div>
-              <div className="font-mono text-[#6c757d]">v{state.currentVersion}</div>
+              <div className="font-mono text-fg-muted">v{state.currentVersion}</div>
             </div>
             <StatusPill state={state} />
           </div>
@@ -195,7 +243,7 @@ export const UpdateMenu: React.FC = () => {
           )}
 
           {state.status === 'installing' && (
-            <div className="text-[11px] text-[#6c757d] dark:text-[#adb5bd]">
+            <div className="text-[0.6875rem] text-fg-muted dark:text-[#adb5bd]">
               {state.installPhase === 'checking'
                 ? `Checking whether a newer version than ${state.availableVersion} has been published before installing.`
                 : state.installPhase === 'authorising'
@@ -207,16 +255,16 @@ export const UpdateMenu: React.FC = () => {
           )}
 
           {state.status === 'check-failed' && (
-            <div className="text-[11px] text-[#6c757d] dark:text-[#adb5bd] space-y-1">
+            <div className="text-[0.6875rem] text-fg-muted dark:text-[#adb5bd] space-y-1">
               <div>Couldn't reach the update feed, so this build can't be confirmed as current.</div>
               {state.error && (
-                <div className="font-mono text-[10px] opacity-70 break-words max-h-16 overflow-y-auto">{state.error}</div>
+                <div className="font-mono text-[0.625rem] opacity-70 break-words max-h-16 overflow-y-auto">{state.error}</div>
               )}
             </div>
           )}
 
           {state.status === 'error' && state.error && (
-            <div className="text-[11px] text-rose-600 dark:text-rose-400 break-words max-h-16 overflow-y-auto">{state.error}</div>
+            <div className="text-[0.6875rem] text-rose-600 dark:text-rose-400 break-words max-h-16 overflow-y-auto">{state.error}</div>
           )}
 
           {state.status === 'downloading' && (
@@ -230,7 +278,7 @@ export const UpdateMenu: React.FC = () => {
           )}
 
           <div className="flex items-center justify-between gap-2">
-            <label className="flex items-center gap-1.5 text-[#6c757d] dark:text-[#adb5bd]">
+            <label className="flex items-center gap-1.5 text-fg-muted dark:text-[#adb5bd]">
               <span>Channel</span>
               <select
                 value={state.channel}
@@ -254,12 +302,12 @@ export const UpdateMenu: React.FC = () => {
           </div>
 
           {!state.supported && (
-            <div className="text-[11px] text-[#6c757d] dark:text-[#adb5bd]">
+            <div className="text-[0.6875rem] text-fg-muted dark:text-[#adb5bd]">
               Auto-update is only available in packaged desktop builds.
             </div>
           )}
           {state.lastCheckedAt && state.supported && (
-            <div className="text-[10px] text-[#6c757d]">Last checked {new Date(state.lastCheckedAt).toLocaleString()}</div>
+            <div className="text-[0.625rem] text-fg-muted">Last checked {new Date(state.lastCheckedAt).toLocaleString()}</div>
           )}
         </div>
       )}
@@ -268,18 +316,18 @@ export const UpdateMenu: React.FC = () => {
 }
 
 const StatusPill: React.FC<{ state: UpdaterState }> = ({ state }) => {
-  const base = 'flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold'
+  const base = 'flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.625rem] font-semibold'
   switch (state.status) {
     case 'checking':
       return (
-        <span className={`${base} bg-black/5 dark:bg-white/10 text-[#6c757d] dark:text-[#adb5bd]`}>
+        <span className={`${base} bg-black/5 dark:bg-white/10 text-fg-muted dark:text-[#adb5bd]`}>
           <Loader2 className="w-3 h-3 animate-spin" /> Checking
         </span>
       )
     case 'available':
     case 'downloading':
       return (
-        <span className={`${base} bg-[#017cb6]/15 text-[#017cb6]`}>
+        <span className={`${base} bg-[#017cb6]/15 text-fg-link`}>
           <ArrowDownToLine className="w-3 h-3" /> {state.availableVersion ?? 'Update'} {state.progress != null ? `${state.progress}%` : ''}
         </span>
       )
@@ -303,7 +351,7 @@ const StatusPill: React.FC<{ state: UpdaterState }> = ({ state }) => {
       )
     case 'check-failed':
       return (
-        <span className={`${base} bg-black/5 dark:bg-white/10 text-[#6c757d] dark:text-[#adb5bd]`}>
+        <span className={`${base} bg-black/5 dark:bg-white/10 text-fg-muted dark:text-[#adb5bd]`}>
           <CloudOff className="w-3 h-3" /> Couldn't check
         </span>
       )
@@ -315,7 +363,7 @@ const StatusPill: React.FC<{ state: UpdaterState }> = ({ state }) => {
       )
     default:
       return state.supported ? null : (
-        <span className={`${base} bg-black/5 dark:bg-white/10 text-[#6c757d] dark:text-[#adb5bd]`}>Dev build</span>
+        <span className={`${base} bg-black/5 dark:bg-white/10 text-fg-muted dark:text-[#adb5bd]`}>Dev build</span>
       )
   }
 }

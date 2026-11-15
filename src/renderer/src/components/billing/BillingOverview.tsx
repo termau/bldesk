@@ -90,18 +90,18 @@ export const BillingOverview: React.FC<BillingOverviewProps> = ({ client }) => {
       {/* Header */}
       <div>
         <h1 className="text-xl font-bold text-[#212529] dark:text-white flex items-center gap-2.5">
-          <Receipt className="w-5 h-5 text-[#017cb6]" />
+          <Receipt className="w-5 h-5 text-fg-link" />
           <span className="flex-1">Usage, Billing &amp; Invoices</span>
           <HelpLink slug="billing" />
         </h1>
-        <p className="text-xs text-[#6c757d] dark:text-slate-400 mt-0.5">
+        <p className="text-xs text-fg-muted dark:text-slate-400 mt-0.5">
           Real-time account balance, data transfer, and tax invoice history.
         </p>
       </div>
 
       {/* A failed check must not read as "nothing unpaid": say that it could not be made. */}
       {unpaidQuery.isError && !unpaidQuery.data && (
-        <div role="alert" className="flex items-center gap-2 text-[11px] text-rose-700 dark:text-rose-300">
+        <div role="alert" className="flex items-center gap-2 text-[0.6875rem] text-rose-700 dark:text-rose-300">
           <span>Couldn't check whether any invoices are unpaid.</span>
           <button onClick={() => void unpaidQuery.refetch()} disabled={unpaidQuery.isFetching} className="underline disabled:opacity-60">
             Retry
@@ -135,7 +135,7 @@ export const BillingOverview: React.FC<BillingOverviewProps> = ({ client }) => {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Account Balance Card */}
         <div className="bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg p-4 space-y-2 shadow-sm">
-          <div className="flex items-center justify-between text-xs text-[#6c757d] dark:text-slate-400">
+          <div className="flex items-center justify-between text-xs text-fg-muted dark:text-slate-400">
             <span>Available Credit</span>
             <DollarSign className="w-4 h-4 text-emerald-500" />
           </div>
@@ -143,33 +143,33 @@ export const BillingOverview: React.FC<BillingOverviewProps> = ({ client }) => {
             {typeof credit === 'number' ? `$${credit.toFixed(2)} AUD` : <span className="text-[#adb5bd]">—</span>}
           </div>
           {creditFailed ? (
-            <div className="text-[11px] text-rose-700 dark:text-rose-300">Couldn't load the account balance.</div>
+            <div className="text-[0.6875rem] text-rose-700 dark:text-rose-300">Couldn't load the account balance.</div>
           ) : (
-            <div className="text-[11px] text-[#6c757d]">Current balance available on account</div>
+            <div className="text-[0.6875rem] text-fg-muted">Current balance available on account</div>
           )}
         </div>
 
         {/* Unbilled Charges Forecast */}
         <div className="bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg p-4 space-y-2 shadow-sm">
-          <div className="flex items-center justify-between text-xs text-[#6c757d] dark:text-slate-400">
+          <div className="flex items-center justify-between text-xs text-fg-muted dark:text-slate-400">
             <span>Pending Charges</span>
-            <ArrowUpRight className="w-4 h-4 text-[#017cb6]" />
+            <ArrowUpRight className="w-4 h-4 text-fg-link" />
           </div>
           <div className="text-2xl font-bold text-[#212529] dark:text-white font-mono">
             {typeof unbilled === 'number' ? `$${unbilled.toFixed(2)} AUD` : <span className="text-[#adb5bd]">—</span>}
           </div>
           {unbilledFailed ? (
-            <div className="text-[11px] text-rose-700 dark:text-rose-300">Couldn't load the pending charges.</div>
+            <div className="text-[0.6875rem] text-rose-700 dark:text-rose-300">Couldn't load the pending charges.</div>
           ) : (
-            <div className="text-[11px] text-[#6c757d]">Current billing cycle accrued usage</div>
+            <div className="text-[0.6875rem] text-fg-muted">Current billing cycle accrued usage</div>
           )}
         </div>
 
         {/* Data transfer, all servers */}
         <div className="bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg p-4 space-y-2 shadow-sm">
-          <div className="flex items-center justify-between text-xs text-[#6c757d] dark:text-slate-400">
+          <div className="flex items-center justify-between text-xs text-fg-muted dark:text-slate-400">
             <span>Data Transfer</span>
-            <Database className="w-4 h-4 text-[#017cb6]" />
+            <Database className="w-4 h-4 text-fg-link" />
           </div>
           <div className="text-2xl font-bold text-[#212529] dark:text-white font-mono">
             {usageKnown ? (
@@ -187,10 +187,10 @@ export const BillingOverview: React.FC<BillingOverviewProps> = ({ client }) => {
             />
           </div>
           {usageFailed && (
-            <div className="text-[11px] text-rose-700 dark:text-rose-300">Couldn't load the data transfer usage.</div>
+            <div className="text-[0.6875rem] text-rose-700 dark:text-rose-300">Couldn't load the data transfer usage.</div>
           )}
           {usageKnown && (
-            <div className="text-[11px] text-[#6c757d]">
+            <div className="text-[0.6875rem] text-fg-muted">
               {dataUsages.length === 0
                 ? "BinaryLane's transfer list has no servers."
                 : `Used / included across ${dataUsages.length} server${dataUsages.length === 1 ? '' : 's'}, each for its own current period`}
@@ -208,13 +208,13 @@ export const BillingOverview: React.FC<BillingOverviewProps> = ({ client }) => {
               onClick={() => setTab(t.id)}
               className={`flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-t transition border-b-2 -mb-px ${
                 tab === t.id
-                  ? 'border-[#017cb6] text-[#017cb6] dark:text-[#4db2e0] bg-white dark:bg-[#2b3035]'
-                  : 'border-transparent text-[#6c757d] dark:text-[#adb5bd] hover:text-[#212529] dark:hover:text-white'
+                  ? 'border-[#017cb6] text-fg-link dark:text-[#4db2e0] bg-white dark:bg-[#2b3035]'
+                  : 'border-transparent text-fg-muted dark:text-[#adb5bd] hover:text-[#212529] dark:hover:text-white'
               }`}
             >
               {t.label}
               {t.badge != null && (
-                <span className="px-1.5 py-0.5 rounded-full bg-[#017cb6]/15 text-[#017cb6] dark:text-[#4db2e0] text-[10px]">
+                <span className="px-1.5 py-0.5 rounded-full bg-[#017cb6]/15 text-fg-link dark:text-[#4db2e0] text-[0.625rem]">
                   {t.badge}
                 </span>
               )}
@@ -281,7 +281,7 @@ const PendingCharges: React.FC<{ charges: any[]; isLoading: boolean; failed: boo
     <div className="overflow-x-auto">
       <table className="w-full text-left text-xs border-collapse">
         <thead>
-          <tr className="bg-[#f8f9fa] dark:bg-[#212529] border-b border-[#ced4da] dark:border-[#373b3e] text-[#6c757d]">
+          <tr className="bg-[#f8f9fa] dark:bg-[#212529] border-b border-[#ced4da] dark:border-[#373b3e] text-fg-muted">
             <th className="py-2.5 px-4">Description</th>
             <th className="py-2.5 px-4">Created</th>
             <th className="py-2.5 px-4">Type</th>
@@ -292,15 +292,15 @@ const PendingCharges: React.FC<{ charges: any[]; isLoading: boolean; failed: boo
           {charges.map((c, i) => (
             <tr key={i} className="hover:bg-[#f8f9fa] dark:hover:bg-[#32383e] transition">
               <td className="py-3 px-4 text-[#212529] dark:text-white">{c.description || '—'}</td>
-              <td className="py-3 px-4 text-[#6c757d] dark:text-slate-300">
+              <td className="py-3 px-4 text-fg-muted dark:text-slate-300">
                 {c.created ? new Date(c.created).toLocaleDateString() : '—'}
               </td>
               <td className="py-3 px-4">
                 <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ${
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[0.625rem] font-semibold ${
                     c.ongoing
-                      ? 'bg-[#017cb6]/10 text-[#017cb6] dark:text-[#4db2e0]'
-                      : 'bg-black/5 dark:bg-white/10 text-[#6c757d] dark:text-[#adb5bd]'
+                      ? 'bg-[#017cb6]/10 text-fg-link dark:text-[#4db2e0]'
+                      : 'bg-black/5 dark:bg-white/10 text-fg-muted dark:text-[#adb5bd]'
                   }`}
                 >
                   {c.ongoing ? <Repeat className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
@@ -318,7 +318,7 @@ const PendingCharges: React.FC<{ charges: any[]; isLoading: boolean; failed: boo
             <td className="py-2.5 px-4 font-semibold text-[#495057] dark:text-[#ced4da]" colSpan={3}>
               Total pending
               {generatedAt && (
-                <span className="font-normal text-[#6c757d] ml-2">
+                <span className="font-normal text-fg-muted ml-2">
                   as at {new Date(generatedAt).toLocaleString()}
                 </span>
               )}
@@ -377,7 +377,7 @@ const Invoices: React.FC<{
     <div className="overflow-x-auto">
       <table className="w-full text-left text-xs border-collapse">
         <thead>
-          <tr className="bg-[#f8f9fa] dark:bg-[#212529] border-b border-[#ced4da] dark:border-[#373b3e] text-[#6c757d]">
+          <tr className="bg-[#f8f9fa] dark:bg-[#212529] border-b border-[#ced4da] dark:border-[#373b3e] text-fg-muted">
             <th className="py-2.5 px-4">Invoice #</th>
             <th className="py-2.5 px-4">Date</th>
             <th className="py-2.5 px-4">Amount</th>
@@ -390,10 +390,10 @@ const Invoices: React.FC<{
             const isPaid = inv.paid ?? true
             return (
               <tr key={inv.invoice_id} className="hover:bg-[#f8f9fa] dark:hover:bg-[#32383e] transition">
-                <td className="py-3 px-4 font-mono font-bold text-[#017cb6]">
+                <td className="py-3 px-4 font-mono font-bold text-fg-link">
                   {inv.invoice_number || `#${inv.invoice_id}`}
                 </td>
-                <td className="py-3 px-4 text-[#6c757d] dark:text-slate-300">
+                <td className="py-3 px-4 text-fg-muted dark:text-slate-300">
                   {inv.created ? new Date(inv.created).toLocaleDateString() : '—'}
                 </td>
                 <td className="py-3 px-4 font-mono font-semibold text-[#212529] dark:text-white">
@@ -401,7 +401,7 @@ const Invoices: React.FC<{
                 </td>
                 <td className="py-3 px-4">
                   <span
-                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ${
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[0.625rem] font-semibold ${
                       isPaid
                         ? 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30'
                         : 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/30'
@@ -414,7 +414,7 @@ const Invoices: React.FC<{
                 <td className="py-3 px-4 text-right">
                   <button
                     onClick={() => onOpen(inv)}
-                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-[#017cb6] hover:bg-[#017cb6]/10 rounded transition"
+                    className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-fg-link hover:bg-[#017cb6]/10 rounded transition"
                     title="Open Tax Invoice in Browser"
                   >
                     <Download className="w-3.5 h-3.5" />
@@ -429,8 +429,8 @@ const Invoices: React.FC<{
     </div>
 
     {/* Pager. per_page defaults to 20 server-side and caps at 200. */}
-    <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529] text-[11px]">
-      <div className="flex items-center gap-2 text-[#6c757d] dark:text-[#adb5bd]">
+    <div className="flex items-center justify-between gap-3 px-4 py-2.5 border-t border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529] text-[0.6875rem]">
+      <div className="flex items-center gap-2 text-fg-muted dark:text-[#adb5bd]">
         <span>
           {total > 0 ? `Showing ${first}–${last} of ${total}` : `Showing ${invoices.length}`}
         </span>
@@ -438,7 +438,7 @@ const Invoices: React.FC<{
       </div>
 
       <div className="flex items-center gap-3">
-        <label className="flex items-center gap-1.5 text-[#6c757d] dark:text-[#adb5bd]">
+        <label className="flex items-center gap-1.5 text-fg-muted dark:text-[#adb5bd]">
           <span>Per page</span>
           <select
             value={perPage}
@@ -457,7 +457,7 @@ const Invoices: React.FC<{
           <PagerButton disabled={page <= 1} onClick={() => onPageChange(page - 1)} label="Previous page">
             <ChevronLeft className="w-3.5 h-3.5" />
           </PagerButton>
-          <span className="px-2 text-[#6c757d] dark:text-[#adb5bd] font-mono">
+          <span className="px-2 text-fg-muted dark:text-[#adb5bd] font-mono">
             {page} / {lastPage}
           </span>
           <PagerButton disabled={page >= lastPage} onClick={() => onPageChange(page + 1)} label="Next page">
@@ -502,13 +502,13 @@ const PaymentDetails: React.FC<{ account: any; isLoading: boolean; failed: boole
     <div className="p-4 space-y-4 text-xs">
       <div className="flex items-start justify-between gap-4">
         <div className="space-y-1">
-          <div className="text-[#6c757d] dark:text-[#adb5bd]">Payment method</div>
+          <div className="text-fg-muted dark:text-[#adb5bd]">Payment method</div>
           {methods.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {methods.map((m) => (
                 <span
                   key={m}
-                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-[#017cb6]/10 text-[#017cb6] dark:text-[#4db2e0] font-semibold"
+                  className="inline-flex items-center gap-1.5 px-2 py-1 rounded bg-[#017cb6]/10 text-fg-link dark:text-[#4db2e0] font-semibold"
                 >
                   <CreditCard className="w-3.5 h-3.5" />
                   {label(m)}
@@ -530,7 +530,7 @@ const PaymentDetails: React.FC<{ account: any; isLoading: boolean; failed: boole
       </div>
 
       {isPaypal && (
-        <div className="flex items-start gap-2 p-3 rounded border border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529] text-[#6c757d] dark:text-[#adb5bd] leading-relaxed">
+        <div className="flex items-start gap-2 p-3 rounded border border-[#ced4da] dark:border-[#373b3e] bg-[#f8f9fa] dark:bg-[#212529] text-fg-muted dark:text-[#adb5bd] leading-relaxed">
           <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0 mt-0.5 text-[#f1ca00]" />
           <span>
             PayPal is not charged automatically — each invoice has to be paid manually from the
@@ -543,5 +543,5 @@ const PaymentDetails: React.FC<{ account: any; isLoading: boolean; failed: boole
 }
 
 const Empty: React.FC<{ children: React.ReactNode }> = ({ children }) => (
-  <div className="p-8 text-center text-xs text-[#6c757d]">{children}</div>
+  <div className="p-8 text-center text-xs text-fg-muted">{children}</div>
 )
