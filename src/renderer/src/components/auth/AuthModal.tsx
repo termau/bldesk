@@ -213,6 +213,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                         </span>
                       )}
                       <button
+                        type="button"
                         onClick={() => {
                           setUpdating({ id: p.id, name: p.name })
                           setTokenInput('')
@@ -220,16 +221,19 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                           setSuccessMsg(null)
                         }}
                         title={`Replace the API key for ${p.name}`}
+                        aria-label={`Replace the API key for ${p.name}`}
                         className="text-fg-muted hover:text-fg-link p-1 rounded"
                       >
-                        <RefreshCw className="w-3.5 h-3.5" />
+                        <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                       <button
+                        type="button"
                         onClick={() => handleDeleteProfile(p.id, p.name)}
                         className="text-fg-muted hover:text-rose-500 p-1 rounded"
-                        title="Delete profile"
+                        title={`Delete profile ${p.name}`}
+                        aria-label={`Delete profile ${p.name}`}
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
                       </button>
                     </div>
                   </div>
@@ -273,6 +277,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <input
               ref={nameRef}
               id={nameId}
+              // Where the dialog opens: the label, or the token while replacing one (the label is disabled then, so the
+              // Modal passes it over).
+              data-autofocus
               type="text"
               placeholder="e.g. Production / Personal"
               value={updating ? updating.name : profileName}
@@ -292,6 +299,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <input
               ref={tokenRef}
               id={tokenId}
+              data-autofocus
               type="password"
               required
               placeholder="Paste API token secret..."

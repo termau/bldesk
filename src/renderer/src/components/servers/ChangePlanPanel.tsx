@@ -895,7 +895,8 @@ export const ChangePlanPanel: React.FC<{
                   </td>
                   <td className={`${cellClass} text-center`}>{p.transfer * 1000} GB</td>
                   <td className={`${cellClass} text-center font-medium`}>
-                    ${planMonthlyPrice(p, effectiveImage, p.memory, defaultDisk(p)).toFixed(2)}
+                    {/* The chosen row prices what its selects show, as the create form does; the others, the plan as it comes. */}
+                    ${planMonthlyPrice(p, effectiveImage, isSel ? memory : p.memory, isSel ? disk : defaultDisk(p)).toFixed(2)}
                   </td>
                 </tr>
               )

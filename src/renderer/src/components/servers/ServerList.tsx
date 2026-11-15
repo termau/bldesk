@@ -27,7 +27,7 @@ import { CreateServerModal } from './CreateServerModal'
 import { logoForDistribution } from '../../lib/distroHelper'
 import { copyDeepLink } from '../../lib/deeplinks'
 import { describeActionType } from '../../lib/actionLabels'
-import { ServerContextMenu, ContextMenuState } from './ServerContextMenu'
+import { ServerContextMenu, ContextMenuState, menuPoint } from './ServerContextMenu'
 import { VpcBadge } from '../vpcs/VpcBadge'
 import { describeStatus, compareServersForList, ARCHIVE_HINT } from '../../lib/serverStatus'
 import { useConfirm } from '../../context/ConfirmContext'
@@ -42,6 +42,7 @@ import { FILTER_CONTROL, FilterShell } from './FilterControl'
 import { usePhoneLayout } from '../../lib/usePhoneLayout'
 import { useTagEditor } from '../tags/TagEditor'
 import { useTagState } from '../tags/useTagState'
+import { isComposing } from '../../lib/ime'
 
 type ServerResponse = components['schemas']['Server']
 
@@ -103,10 +104,10 @@ export const ServerList: React.FC<ServerListProps> = ({
     setTimeout(() => setCopiedLinkId(null), 1500)
   })
 
-  const handleContextMenu = useStableCallback((server: ServerResponse, e: React.MouseEvent) => {
+  const handleContextMenu = useStableCallback((server: ServerResponse, e: React.MouseEvent<HTMLElement>) => {
     e.preventDefault()
     e.stopPropagation()
-    setContextMenu({ server, x: e.clientX, y: e.clientY })
+    setContextMenu({ server, ...menuPoint(e) })
   })
   const selectServer = useStableCallback(onSelectServer)
 
@@ -213,6 +214,19 @@ export const ServerList: React.FC<ServerListProps> = ({
     setSearchTerm(completeTagToken(searchTerm, tag))
     setActiveSuggestion(0)
   }
+  // The list closes on Escape, typed in the box or sent to the document by Android's Back (lib/androidBack.ts), which
+  // closes it before it leaves the page.
+  const suggesting = suggestions.length > 0
+  React.useEffect(() => {
+    if (!suggesting) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      e.preventDefault()
+      setSuggestionsHidden(true)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [suggesting])
 
   const MAX_LIST_TAGS = 3
   /** A server's tags as chips, the first few and a "+N" for the rest; null when it has none. */
@@ -652,7 +666,7 @@ export const ServerList: React.FC<ServerListProps> = ({
                 if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
                   e.preventDefault()
                   setActiveSuggestion((i) => (i + (e.key === 'ArrowDown' ? 1 : suggestions.length - 1)) % suggestions.length)
-                } else if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                } else if (e.key === 'Enter' && !isComposing(e)) {
                   e.preventDefault()
                   completeSuggestion(suggestions[Math.min(activeSuggestion, suggestions.length - 1)].tag)
                 } else if (e.key === 'Escape') {
@@ -667,6 +681,7 @@ export const ServerList: React.FC<ServerListProps> = ({
                 id="server-search-suggestions"
                 role="listbox"
                 aria-label="Tags"
+                data-dismissible="true"
                 className="absolute z-30 left-0 right-0 top-full mt-1 max-h-56 overflow-y-auto rounded border border-[#ced4da] dark:border-[#495057] bg-white dark:bg-[#2b3035] shadow-lg py-1 text-xs"
               >
                 {suggestions.map((t, i) => (
@@ -741,7 +756,8 @@ export const ServerList: React.FC<ServerListProps> = ({
           <ServerIcon className="w-10 h-10 text-fg-muted dark:text-slate-500 mb-3" />
           <h3 className="text-sm font-semibold text-[#212529] dark:text-white">No servers found</h3>
           <p className="text-xs text-fg-muted dark:text-slate-400 max-w-sm mt-1 mb-4">
-            {searchTerm || regionFilter !== 'all' || statusFilter !== 'all' || tagFilter.length > 0
+            {/* The search the list was filtered by, which can be a beat behind the box (deferredSearch). */}
+            {deferredSearch || regionFilter !== 'all' || statusFilter !== 'all' || tagFilter.length > 0
               ? 'Try adjusting your search criteria or filter options.'
               : 'You do not have any virtual servers configured yet in this account.'}
           </p>

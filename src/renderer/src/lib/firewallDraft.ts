@@ -149,6 +149,16 @@ export function shownProblems(problems: RowProblems, typing?: keyof RowProblems)
   return rest
 }
 
+/**
+ * The problem to announce for a field that was left, read when it is said rather than when the field was left: in between,
+ * the rule may have been fixed from its menu, had its ports cleared by a switch to ICMP, been removed, or gone with a reset
+ * draft, and a problem that is no longer there must not be announced.
+ */
+export function problemToSay(rows: readonly DraftRow[], key: number, field: keyof RowProblems): string | undefined {
+  const row = rows.find((r) => r.key === key)
+  return row ? problemsOf(row)[field] : undefined
+}
+
 /** The number of rows that cannot be saved as they are. */
 export function rowsWithProblems(rows: readonly DraftRow[]): number {
   return rows.filter((r) => Object.keys(problemsOf(r)).length > 0).length

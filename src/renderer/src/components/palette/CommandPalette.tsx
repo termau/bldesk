@@ -57,10 +57,9 @@ import {
   type TargetMatch
 } from '../../lib/commands'
 import type { ActiveTab, ServerSubTab } from '../layout/Sidebar'
-import { isModalOpen } from '../ui/Modal'
 import { notifyFailure } from '../../lib/failures'
 import { isComposing } from '../../lib/ime'
-import { holdLayer } from '../../lib/dialogLayer'
+import { holdLayer, isTopLayer, layerCount } from '../../lib/dialogLayer'
 
 type ServerResponse = components['schemas']['Server']
 
@@ -227,8 +226,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         e.preventDefault()
         if (isOpen) onClose()
         // A dialog owns the keyboard while it is open. A palette raised over it sits under its backdrop, and its Enter
-        // would be heard by the dialog as well.
-        else if (!isModalOpen()) onOpen()
+        // would be heard by the dialog as well. The phone's navigation drawer is the same: anything holding the page
+        // inert (lib/dialogLayer.ts) keeps it shut.
+        else if (layerCount() === 0) onOpen()
       }
     }
     window.addEventListener('keydown', handleKeyDown)
@@ -240,6 +240,28 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   // ---------------------------------------------------------------------
 
   const close = () => onClose()
+
+  /*
+   * Escape that the panel does not hear, because it is not typed in the palette: Android's Back sends it to the document
+   * (lib/androidBack.ts), and focus can be on a notification above the palette. It does what Escape does in the panel:
+   * back from the review to the command, and closed otherwise; nothing while a command runs (data-dismissible is then
+   * "false", so Back does nothing either). One the panel has handled is already answered (defaultPrevented).
+   */
+  const onEscape = useRef<() => void>(() => {})
+  onEscape.current = () => {
+    if (stage === 'confirm') setStage('input')
+    else if (stage !== 'running') close()
+  }
+  useEffect(() => {
+    if (!isOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || isComposing(e) || !isTopLayer(overlayRef.current)) return
+      e.preventDefault()
+      onEscape.current()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [isOpen])
 
   /**
    * `backup` sends replacement_strategy `oldest`: with no free temporary slot,
@@ -806,8 +828,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
     // Mid-composition, Enter, Escape and the arrows belong to the input method.
     if (isComposing(e)) return
     if (e.key === 'Enter' && e.target instanceof HTMLButtonElement) return
-    // Tab stays in the palette (it is a completion key in the input when the row has one).
-    if (e.key === 'Tab' && !(stage === 'input' && rows[selectedIndex]?.fill)) {
+    // Tab stays in the palette (it is a completion key in the input when the row has one; Shift+Tab never is).
+    if (e.key === 'Tab' && (e.shiftKey || !(stage === 'input' && rows[selectedIndex]?.fill))) {
       const items = Array.from(e.currentTarget.querySelectorAll<HTMLElement>('input, button:not([disabled])')).filter((el) => el.getClientRects().length > 0)
       const at = items.indexOf(document.activeElement as HTMLElement)
       e.preventDefault()
@@ -896,6 +918,8 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
+        // Escape, and so Android's Back, closes it or steps back from the review, but not while a command runs.
+        data-dismissible={stage === 'running' ? 'false' : 'true'}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
         className="w-full max-w-xl bg-white dark:bg-[#2b3035] border border-[#ced4da] dark:border-[#373b3e] rounded-lg shadow-2xl overflow-hidden flex flex-col"
@@ -940,6 +964,17 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             )}
           </div>
         )}
+
+        {/* The review, the run and its outcome take the results list's place; this says so to a screen reader. */}
+        <div className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {stage === 'confirm' && plan
+            ? `Confirm: ${plan.label} on ${plan.targets.length} ${plan.targets.length === 1 ? 'target' : 'targets'}. Enter runs it, Escape goes back.`
+            : stage === 'running' && plan
+              ? `Submitting: ${plan.label} on ${plan.targets.length} ${plan.targets.length === 1 ? 'target' : 'targets'}`
+              : stage === 'done'
+                ? `${outcomes.filter((o) => o.ok).length} of ${outcomes.length} submitted`
+                : (notice ?? '')}
+        </div>
 
         {notice && (
           <div className="px-4 py-2 text-xs bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-b border-emerald-500/30 truncate">{notice}</div>

@@ -38,10 +38,9 @@ export function isModalOpen(): boolean {
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-// Where a dialog's focus goes first: a text field if it has one (a select or a checkbox first would take typing as a
-// choice), then any field.
-const TEXT_FIELDS = 'input:not([disabled]):not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]), textarea:not([disabled])'
-const FIELDS = 'input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled])'
+// A control that asks for the dialog's first focus. React's autoFocus takes focus itself, before the dialog looks, and
+// leaves no attribute; `data-autofocus` asks the dialog to do it, so a touch screen can still be left without a keyboard.
+const AUTOFOCUS = '[data-autofocus], [autofocus]'
 
 const focusablesIn = (root: HTMLElement) => Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => el.getClientRects().length > 0)
 
@@ -125,14 +124,14 @@ export const Modal: React.FC<ModalProps> = ({
     const panel = panelRef.current
     const releaseLayer = overlayRef.current ? holdLayer(overlayRef.current) : () => {}
 
-    // Take focus into the dialog, unless something in it has already asked for it (a field with autoFocus, the confirm
-    // button). A touch screen gets the panel itself, so opening a form does not raise the on-screen keyboard.
+    // Take focus into the dialog, unless something in it has already taken it (a field with autoFocus). It goes to the
+    // control marked data-autofocus, else the first control in the body, top to bottom: preferring a text field sent a
+    // long form (Add a Cloud Server) to its first one, scrolled far down past the choices above it. A touch screen gets
+    // the panel itself, so opening a form does not raise the on-screen keyboard.
     if (panel && !panel.contains(document.activeElement)) {
       const touch = window.matchMedia?.('(pointer: coarse)').matches
-      const visible = (el: HTMLElement) => el.getClientRects().length > 0
-      const inBody = (selector: string) => Array.from(bodyRef.current?.querySelectorAll<HTMLElement>(selector) ?? []).find(visible)
-      const field = touch ? undefined : (inBody(TEXT_FIELDS) ?? inBody(FIELDS))
-      ;(field ?? (touch ? undefined : bodyRef.current && focusablesIn(bodyRef.current)[0]) ?? panel).focus()
+      const items = touch || !bodyRef.current ? [] : focusablesIn(bodyRef.current)
+      ;(items.find((el) => el.matches(AUTOFOCUS)) ?? items[0] ?? panel).focus()
     }
 
     const onKeyCapture = (e: KeyboardEvent) => {

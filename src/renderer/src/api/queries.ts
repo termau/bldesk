@@ -226,6 +226,7 @@ export function useServerActionMutation(client: BinaryLaneClient | null, options
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['servers'] })
       queryClient.invalidateQueries({ queryKey: ['server', variables.serverId] })
+      queryClient.invalidateQueries({ queryKey: ['serverActions', variables.serverId] })
       // A resize can change what the server is licensed for.
       queryClient.invalidateQueries({ queryKey: ['server-software', variables.serverId] })
     }
@@ -557,6 +558,7 @@ export function useUpdateFirewallRulesMutation(client: BinaryLaneClient | null, 
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['firewallRules', serverId] })
+      queryClient.invalidateQueries({ queryKey: ['serverActions', serverId] })
     }
   })
 }
@@ -1139,7 +1141,8 @@ export function useServerActions(client: BinaryLaneClient | null, serverId: numb
       return data?.actions || []
     },
     enabled: !!client && !!serverId,
-    // Fast only while something on this server is running; a take or restore started here invalidates the query.
+    // Fast only while something on this server is running. Every mutation here that starts an action on a server
+    // invalidates this key, so the fast rate starts at once instead of up to 30 seconds later.
     refetchInterval: (query) => (query.state.data?.some((a) => a.status === 'in-progress') ? 3000 : 30000)
   })
 }
@@ -1217,6 +1220,7 @@ export function useRestoreBackupMutation(client: BinaryLaneClient | null, server
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['servers'] })
+      queryClient.invalidateQueries({ queryKey: ['serverActions', serverId] })
     }
   })
 }
@@ -1238,6 +1242,7 @@ export function useToggleAutomatedBackupsMutation(client: BinaryLaneClient | nul
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['servers'] })
       queryClient.invalidateQueries({ queryKey: ['server', serverId] })
+      queryClient.invalidateQueries({ queryKey: ['serverActions', serverId] })
     }
   })
 }
@@ -1260,6 +1265,7 @@ export function useAttachBackupMutation(client: BinaryLaneClient | null, serverI
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['servers'] })
       queryClient.invalidateQueries({ queryKey: ['server', serverId] })
+      queryClient.invalidateQueries({ queryKey: ['serverActions', serverId] })
     }
   })
 }
@@ -1281,6 +1287,7 @@ export function useDetachBackupMutation(client: BinaryLaneClient | null, serverI
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['servers'] })
       queryClient.invalidateQueries({ queryKey: ['server', serverId] })
+      queryClient.invalidateQueries({ queryKey: ['serverActions', serverId] })
     }
   })
 }
@@ -1650,6 +1657,8 @@ export function useNetworkActionMutation(client: BinaryLaneClient | null, server
         queryClient.invalidateQueries({ queryKey: ['fleet-threshold-alerts'] }),
         queryClient.invalidateQueries({ queryKey: ['server-advanced-features', serverId] })
       ])
+      // Not awaited: the action list does not decide when the lock releases.
+      void queryClient.invalidateQueries({ queryKey: ['serverActions', serverId] })
       await Promise.race([refetch, new Promise((r) => setTimeout(r, ACTION_REQUEST_TIMEOUT_MS))])
     }
   })
@@ -1732,6 +1741,8 @@ export function useServerActionWithHandoff(client: BinaryLaneClient | null, serv
         queryClient.invalidateQueries({ queryKey: ['fleet-threshold-alerts'] }),
         queryClient.invalidateQueries({ queryKey: ['server-advanced-features', serverId] })
       ])
+      // Not awaited: the action list does not decide when the lock releases.
+      void queryClient.invalidateQueries({ queryKey: ['serverActions', serverId] })
       await Promise.race([refetch, new Promise((r) => setTimeout(r, ACTION_REQUEST_TIMEOUT_MS))])
     }
   })
@@ -1757,6 +1768,7 @@ const DIAGNOSTIC_POLL_TIMEOUT_MS = 30_000
  * that asked for it.
  */
 export function useServerDiagnosticMutation(client: BinaryLaneClient | null, serverId: number | null) {
+  const queryClient = useQueryClient()
   return useMutation<ServerAction, Error, ServerActionBody>({
     mutationFn: async (actionPayload) => {
       if (!client || !serverId) throw new Error('No client available')
@@ -1794,6 +1806,10 @@ export function useServerDiagnosticMutation(client: BinaryLaneClient | null, ser
             `"${actionPayload.type}" had not finished after ${DIAGNOSTIC_POLL_TIMEOUT_MS / 1000}s (action #${queued.id}). It may still complete — check the server's action history.`
           )
       }
+    },
+    // Settled rather than success: a diagnostic that timed out or failed was still started on the server.
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ['serverActions', serverId] })
     }
   })
 }

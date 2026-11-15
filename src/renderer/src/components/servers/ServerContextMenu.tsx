@@ -3,6 +3,7 @@ import { ExternalLink, Terminal, Link2, Copy, RotateCw, Power, Play, Radio } fro
 import { components } from '@shared/api/schema'
 import { formatDeepLink } from '@shared/deeplink'
 import { primaryIpv4 } from '../../lib/deeplinks'
+import { isModalOpen } from '../ui/Modal'
 
 type ServerResponse = components['schemas']['Server']
 
@@ -10,6 +11,20 @@ export interface ContextMenuState {
   server: ServerResponse
   x: number
   y: number
+}
+
+/**
+ * Where a context menu opens for the element whose onContextMenu asked for it (the currentTarget). A right-click or a long press
+ * opens it where the pointer is. The keyboard's menu key and Shift+F10 have no pointer: Chromium sends them with button -1 and the
+ * middle of the focused element as the point (the spec's pointerType is ''), so the menu would cover the row's own text. It hangs
+ * from the element's bottom-left corner instead, as it does for a point that is not on the element at all (a made-up event).
+ * Used by the DNS zone menu, and meant for any row that opens a menu.
+ */
+export function menuPoint(e: React.MouseEvent<HTMLElement>): { x: number; y: number } {
+  const box = e.currentTarget.getBoundingClientRect()
+  const keys = e.button === -1 || (e.nativeEvent as Partial<PointerEvent>).pointerType === ''
+  const onIt = e.clientX >= box.left && e.clientX <= box.right && e.clientY >= box.top && e.clientY <= box.bottom
+  return keys || !onIt ? { x: box.left, y: box.bottom } : { x: e.clientX, y: e.clientY }
 }
 
 interface ServerContextMenuProps {
@@ -24,7 +39,8 @@ interface ServerContextMenuProps {
 
 /**
  * Lightweight in-renderer context menu for a server row. Rendered fixed at the
- * click point, nudged back on-screen if it would overflow, closed on outside
+ * point it is given (menuPoint gives the click point, or under the row for the
+ * keyboard), nudged back on-screen if it would overflow, closed on outside
  * click / Escape (and so Android's Back) / Tab / scroll. Focus moves to its
  * first item, the arrow keys, Home and End move between items, and closing it
  * puts focus back where it was.
@@ -77,7 +93,8 @@ export const ServerContextMenu: React.FC<ServerContextMenuProps> = ({
       if (ref.current && !ref.current.contains(e.target as Node)) onClose()
     }
     const key = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      // A dialog opened above the menu (one that needs an answer, say) makes it inert, and then Escape is the dialog's.
+      if (e.key === 'Escape' && !e.defaultPrevented && !isModalOpen() && !ref.current?.closest('[inert]')) {
         e.preventDefault()
         refocus()
         onClose()

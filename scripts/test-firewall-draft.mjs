@@ -17,6 +17,7 @@ import {
   moveRow,
   pendingChanges,
   problemsOf,
+  problemToSay,
   ruleOfRow,
   rulesToWrite,
   rowsWithProblems,
@@ -343,4 +344,20 @@ test('a problem in the field being typed in waits until the field is left, and s
   assert.deepEqual(shownProblems(p), p, 'once the field is left, it is')
   assert.deepEqual(shownProblems(p, 'description'), p, 'typing in a field with no problem hides nothing')
   assert.equal(rowsWithProblems(rows), 1, 'and saving is stopped whether it is shown or not')
+})
+
+test('a problem announced a moment after its field is left is read then, not when the field was left', () => {
+  const rows = draftFromRules([rule('accept', 'tcp', ['22']), rule('accept', 'tcp', ['80'])]).map((r) => ({ ...r, sources: '10.0.', ports: '' }))
+  const key = rows[1].key
+  assert.equal(problemToSay(rows, key, 'sources'), problemsOf(rows[1]).sources, 'still wrong: said')
+  assert.ok(problemToSay(rows, key, 'sources') && problemToSay(rows, key, 'ports'))
+  const fixed = rows.map((r) => (r.key === key ? { ...r, sources: '10.0.0.0/8' } : r))
+  assert.equal(problemToSay(fixed, key, 'sources'), undefined, 'fixed from its menu in the meantime: not said')
+  const icmp = rows.map((r) => (r.key === key ? { ...r, protocol: 'icmp', ports: '' } : r))
+  assert.equal(problemToSay(icmp, key, 'ports'), undefined, 'switched to ICMP, which clears the ports: not said')
+  const removed = rows.map((r) => (r.key === key ? { ...r, removed: true } : r))
+  assert.equal(problemToSay(removed, key, 'sources'), undefined, 'removed: not said')
+  assert.equal(problemToSay(rows.slice(0, 1), key, 'sources'), undefined, 'gone with a reset draft: not said')
+  const reordered = [rows[1], rows[0]]
+  assert.equal(problemToSay(reordered, key, 'sources'), problemsOf(rows[1]).sources, 'found by its key, not its place')
 })

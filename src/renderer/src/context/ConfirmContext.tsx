@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Check, ShieldAlert } from 'lucide-react'
 import { Modal } from '../components/ui/Modal'
 import { HelpLink } from '../components/ui/HelpLink'
@@ -147,6 +147,7 @@ function ConfirmDialog({ req, onSettle }: { req: ConfirmRequest; onSettle: (ok: 
   const [busy, setBusy] = useState(false)
   const [reasonChoice, setReasonChoice] = useState(req.reason?.options[0] ?? '')
   const [reasonDetail, setReasonDetail] = useState('')
+  const reasonId = useId()
   const typedOk = !mustType || typed.trim().toLowerCase() === mustType.toLowerCase()
   const detailNeeded = !!req.reason?.requireDetailFor?.includes(reasonChoice)
   const reasonOk = !req.reason || (!detailNeeded || reasonDetail.trim().length > 0)
@@ -180,6 +181,9 @@ function ConfirmDialog({ req, onSettle }: { req: ConfirmRequest; onSettle: (ok: 
       // Escape is handled by the Modal shell. Enter confirms from anywhere in the dialog except
       // a focused button, which keeps its own Enter: Cancel cancels, the side action runs.
       const dialog = primaryRef.current?.closest('[role="dialog"]')
+      // Only while this is the top layer: a dialog, the palette or the drawer opened above it makes it inert
+      // (lib/dialogLayer.ts), and an Enter there, or one with focus lost to the page, is not an answer to this one.
+      if (!dialog || dialog.closest('[inert]')) return
       const onButton = e.target instanceof Element && !!dialog?.contains(e.target) && !!e.target.closest('button')
       // Only a key that starts in this dialog, or in nothing at all, answers it. One typed into something on top of it,
       // such as the command palette, is not an answer, and neither is a held key repeating.
@@ -326,8 +330,10 @@ function ConfirmDialog({ req, onSettle }: { req: ConfirmRequest; onSettle: (ok: 
 
           {req.reason && (
             <div className="space-y-1.5">
-              <label className="block text-fg-muted dark:text-[#adb5bd]">{req.reason.label}</label>
+              <label htmlFor={reasonId} className="block text-fg-muted dark:text-[#adb5bd]">{req.reason.label}</label>
               <select
+                id={reasonId}
+                data-autofocus
                 value={reasonChoice}
                 onChange={(e) => setReasonChoice(e.target.value)}
                 className="w-full px-2.5 py-1.5 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded outline-none focus:border-[#017cb6] text-[#212529] dark:text-white"
@@ -342,6 +348,8 @@ function ConfirmDialog({ req, onSettle }: { req: ConfirmRequest; onSettle: (ok: 
                 value={reasonDetail}
                 onChange={(e) => setReasonDetail(e.target.value)}
                 maxLength={200}
+                aria-label={detailNeeded ? 'More detail (required)' : 'More detail (optional)'}
+                aria-required={detailNeeded}
                 placeholder={detailNeeded ? 'Tell us more (required)' : (req.reason.detailPlaceholder ?? 'Anything to add? (optional)')}
                 className="w-full px-2.5 py-1.5 bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] rounded outline-none focus:border-[#017cb6] text-[#212529] dark:text-white"
               />

@@ -220,8 +220,12 @@ export const NetworkMap: React.FC<Props> = ({ client, servers, onSelectServer })
   // A native listener, because React's wheel listener is passive: its preventDefault was ignored, so the page
   // scrolled and Ctrl + wheel zoomed the whole app as well as the map.
   const onWheel = (e: WheelEvent) => {
-    // The detail panel scrolls itself.
-    if ((e.target as Element | null)?.closest?.('[data-map-panel]')) return
+    // The detail panel scrolls itself. Ctrl + wheel (and a trackpad pinch, which arrives as one) over it zooms nothing:
+    // left alone it would zoom the whole app, while the same gesture beside the panel zooms the map.
+    if ((e.target as Element | null)?.closest?.('[data-map-panel]')) {
+      if (e.ctrlKey || e.metaKey) e.preventDefault()
+      return
+    }
     e.preventDefault()
     const rect = containerRef.current?.getBoundingClientRect()
     const cx = e.clientX - (rect?.left ?? 0)

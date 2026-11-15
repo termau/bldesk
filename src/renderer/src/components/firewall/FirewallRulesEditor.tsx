@@ -1,6 +1,6 @@
 import React, { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, Trash2, Undo2 } from 'lucide-react'
-import { dropGapAt, dropIndexAt, edgePull, edgeScrollSpeed, isEdited, moveRow, problemsOf, ROW_HOLD_MS, shownProblems, type DraftRow, type RowProblems } from '../../lib/firewallDraft'
+import { dropGapAt, dropIndexAt, edgePull, edgeScrollSpeed, isEdited, moveRow, problemsOf, problemToSay, ROW_HOLD_MS, shownProblems, type DraftRow, type RowProblems } from '../../lib/firewallDraft'
 import { PORT_CHOICES, withChoice, type PickChoice } from '../../lib/firewallPicks'
 import { PickMenu } from './PickMenu'
 import { HOLD_TICK_VIBRATION_MS, holdMovedTooFar } from '../../lib/tags'
@@ -58,6 +58,13 @@ function visibleBand(scroller: HTMLElement): { top: number; bottom: number } {
   return { top, bottom }
 }
 
+/**
+ * What ends a press: the button coming up, a drag it started ending (which sends no mouseup), or the window losing focus, so a
+ * press whose release went elsewhere does not hold a problem back. Listened for on the window, not in the capture phase: there,
+ * `blur` would be every field's, including the one the press is leaving.
+ */
+const PRESS_ENDS = ['mouseup', 'dragend', 'blur'] as const
+
 /** How many lines a cell shows: a line to a value, from one to six. */
 export const lines = (text: string) => Math.min(6, Math.max(1, text.split('\n').length))
 
@@ -86,19 +93,80 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
   const [typing, setTyping] = useState<{ key: number; field: keyof RowProblems } | null>(null)
   const [said, setSaid] = useState('')
   const sayTimer = useRef(0)
-  useEffect(() => () => window.clearTimeout(sayTimer.current), [])
+  // Whether a mouse button is down (a tap sends one too), and what waits for it to come up.
+  const pressing = useRef(false)
+  const afterPress = useRef<(() => void) | null>(null)
+  // A field whose focus went to its own menu, and how to leave it. A click outside closes that menu and takes its list out of the
+  // page while it still has focus, so no blur may come to say the field was left: the click itself says so.
+  const heldIn = useRef<{ el: Element; leave: () => void } | null>(null)
+  useEffect(() => {
+    const down = (e: MouseEvent) => {
+      pressing.current = true
+      const h = heldIn.current
+      if (h && !(e.target instanceof Node && h.el.contains(e.target))) {
+        heldIn.current = null
+        h.leave()
+      }
+    }
+    const up = () => {
+      pressing.current = false
+    }
+    window.addEventListener('mousedown', down, true)
+    for (const type of PRESS_ENDS) window.addEventListener(type, up)
+    return () => {
+      window.removeEventListener('mousedown', down, true)
+      for (const type of PRESS_ENDS) window.removeEventListener(type, up)
+      afterPress.current?.()
+      window.clearTimeout(sayTimer.current)
+    }
+  }, [])
   const typed = (row: DraftRow, field: keyof RowProblems) => {
+    heldIn.current = null
     window.clearTimeout(sayTimer.current)
     setSaid('')
     if (typing?.key !== row.key || typing.field !== field) setTyping({ key: row.key, field })
   }
+  /**
+   * A field was left: its problem is shown, and said a moment later. Left by a press of the mouse or a tap, the problem waits
+   * until the press is over: shown at once, its line pushed what was being pressed out from under the pointer before the
+   * button came up, and the click was lost.
+   */
   const left = (row: DraftRow, field: keyof RowProblems, name: string) => {
+    heldIn.current = null
     if (typing?.key !== row.key || typing.field !== field) return
-    setTyping(null)
-    const problem = problemsOf(row)[field]
-    // A moment later, so it does not talk over the field that focus moved to.
-    if (problem) sayTimer.current = window.setTimeout(() => setSaid(`${name}: ${problem}`), 500)
+    const key = row.key
+    const reveal = () => {
+      // Only if nothing else has been typed in since.
+      setTyping((t) => (t?.key === key && t.field === field ? null : t))
+      window.clearTimeout(sayTimer.current)
+      // A moment later, so it does not talk over the field that focus moved to, and read then, so a problem fixed or removed
+      // in that moment by a pick, a protocol switch or Remove is not said.
+      sayTimer.current = window.setTimeout(() => {
+        const problem = problemToSay(latest.current.rows, key, field)
+        if (problem) setSaid(`${name}: ${problem}`)
+      }, 500)
+    }
+    afterPress.current?.()
+    if (!pressing.current) return reveal()
+    const done = () => {
+      afterPress.current?.()
+      // After the click that follows the button coming up.
+      window.setTimeout(reveal, 0)
+    }
+    for (const type of PRESS_ENDS) window.addEventListener(type, done)
+    afterPress.current = () => {
+      for (const type of PRESS_ENDS) window.removeEventListener(type, done)
+      afterPress.current = null
+    }
   }
+
+  // What a field with a problem to show does when focus leaves it, or moves within it to its own menu.
+  const leaving = (row: DraftRow, field: keyof RowProblems, name: string) => ({
+    onLeave: () => left(row, field, name),
+    onStay: (el: Element) => {
+      if (typing?.key === row.key && typing.field === field) heldIn.current = { el, leave: () => left(row, field, name) }
+    }
+  })
 
   // The middle of every row now in the list, read from the page itself. A list kept in a ref grows with the rows and keeps its length when
   // some go, so after a rule was removed and saved the places that no longer held a row counted as a row at the top of the page.
@@ -366,7 +434,7 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
               </div>
             </div>
 
-            <Field caption="Source" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.sources} problemId={problemId('sources')}>
+            <Field caption="Source" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.sources} problemId={problemId('sources')} {...leaving(row, 'sources', `${label} source addresses`)}>
               <textarea
                 aria-label={`${label} source addresses`}
                 {...invalid('sources')}
@@ -379,13 +447,12 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
                   typed(row, 'sources')
                   patch(i, { sources: e.target.value })
                 }}
-                onBlur={() => left(row, 'sources', `${label} source addresses`)}
                 className={`${cell} ${mono} resize-none`}
               />
               <PickMenu label={`${label.toLowerCase()} source addresses`} choices={addressChoices} disabled={off} onPick={(c) => patch(i, { sources: withChoice(row.sources, c.values) })} />
             </Field>
 
-            <Field caption="Destination" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.destinations} problemId={problemId('destinations')}>
+            <Field caption="Destination" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.destinations} problemId={problemId('destinations')} {...leaving(row, 'destinations', `${label} destination addresses`)}>
               <textarea
                 aria-label={`${label} destination addresses`}
                 {...invalid('destinations')}
@@ -398,13 +465,12 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
                   typed(row, 'destinations')
                   patch(i, { destinations: e.target.value })
                 }}
-                onBlur={() => left(row, 'destinations', `${label} destination addresses`)}
                 className={`${cell} ${mono} resize-none`}
               />
               <PickMenu label={`${label.toLowerCase()} destination addresses`} choices={addressChoices} disabled={off} onPick={(c) => patch(i, { destinations: withChoice(row.destinations, c.values) })} />
             </Field>
 
-            <Field caption="Destination ports" short="Dest. ports" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.ports} problemId={problemId('ports')}>
+            <Field caption="Destination ports" short="Dest. ports" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.ports} problemId={problemId('ports')} {...leaving(row, 'ports', `${label} destination ports`)}>
               <textarea
                 aria-label={`${label} destination ports`}
                 {...invalid('ports')}
@@ -417,7 +483,6 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
                   typed(row, 'ports')
                   patch(i, { ports: e.target.value })
                 }}
-                onBlur={() => left(row, 'ports', `${label} destination ports`)}
                 className={`${cell} ${mono} resize-none`}
               />
               <PickMenu label={`${label.toLowerCase()} destination ports`} choices={PORT_CHOICES} disabled={off || row.protocol === 'icmp'} onPick={(c) => patch(i, { ports: withChoice(row.ports, c.values) })} />
@@ -452,7 +517,7 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
               </select>
             </Field>
 
-            <Field caption="Description" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.description} problemId={problemId('description')}>
+            <Field caption="Description" className="col-span-2 sm:col-span-2 xl:col-span-1" problem={problems.description} problemId={problemId('description')} {...leaving(row, 'description', `${label} description`)}>
               <input
                 type="text"
                 aria-label={`${label} description`}
@@ -464,7 +529,6 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
                   typed(row, 'description')
                   patch(i, { description: e.target.value })
                 }}
-                onBlur={() => left(row, 'description', `${label} description`)}
                 className={cell}
               />
             </Field>
@@ -512,9 +576,28 @@ export const FirewallRulesEditor: React.FC<FirewallRulesEditorProps> = ({ rows, 
 /**
  * A cell with its caption. On a phone the caption sits to the left of the cell, one field to a line; from sm it sits above it; from the
  * xl breakpoint the header row names the column and the caption is not shown.
+ *
+ * `onLeave` is called when focus leaves the field and everything with it. When it moves from the text to the field's own menu
+ * button or list, `onStay` is called instead: picking a value there is still working on the field, and its problem is not shown
+ * in the middle of it.
  */
-const Field: React.FC<{ caption: string; short?: string; className?: string; problem?: string; problemId?: string; children: React.ReactNode }> = ({ caption, short, className, problem, problemId, children }) => (
-  <div className={`min-w-0 max-sm:grid max-sm:grid-cols-[7.25rem_minmax(0,1fr)] max-sm:gap-x-3 ${className ?? ''}`}>
+const Field: React.FC<{
+  caption: string
+  short?: string
+  className?: string
+  problem?: string
+  problemId?: string
+  onLeave?: () => void
+  onStay?: (field: Element) => void
+  children: React.ReactNode
+}> = ({ caption, short, className, problem, problemId, onLeave, onStay, children }) => (
+  <div
+    onBlur={(e) => {
+      if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) onStay?.(e.currentTarget)
+      else onLeave?.()
+    }}
+    className={`min-w-0 max-sm:grid max-sm:grid-cols-[7.25rem_minmax(0,1fr)] max-sm:gap-x-3 ${className ?? ''}`}
+  >
     <span aria-hidden="true" className="xl:hidden block select-none mb-1 max-sm:mb-0 max-sm:pt-2 text-[0.625rem] max-sm:text-[0.6875rem] font-bold uppercase tracking-wider text-fg-muted dark:text-slate-400">
       {short ? (
         <>

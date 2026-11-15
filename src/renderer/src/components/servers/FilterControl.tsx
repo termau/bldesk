@@ -4,9 +4,11 @@ import { ChevronDown } from 'lucide-react'
 /**
  * What the three filters beside the Servers search (Regions, Status, Tags) share, so they read as one set: height,
  * padding, font, border, radius and colours. The right padding leaves room for the chevron of `FilterShell`.
+ * The height is a minimum, not fixed: where the system text size enlarges the text but not the box (Android WebView
+ * before 146), a fixed height cut "All Regions" in half.
  */
 export const FILTER_CONTROL =
-  'h-9 pl-3 pr-[34px] py-2 text-xs cursor-pointer bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] text-[#212529] dark:text-[#f8f9fa] rounded focus:outline-none focus:border-[#017cb6]'
+  'min-h-9 pl-3 pr-[34px] py-1.5 text-xs cursor-pointer bg-[#f8f9fa] dark:bg-[#212529] border border-[#ced4da] dark:border-[#373b3e] text-[#212529] dark:text-[#f8f9fa] rounded focus:outline-none focus:border-[#017cb6]'
 
 /**
  * One control of the filter row with the chevron all three share. The chevron is drawn here, over the right edge

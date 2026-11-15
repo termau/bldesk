@@ -609,7 +609,7 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
               <div ref={osRef}>
                 <TileRow className="mt-3.5" label="Operating system" describedBy={errorField === 'os' ? errorId : undefined}>
                   {distros.map((d) => (
-                    <Tile key={d} selected={distro === d} onClick={() => { setDistro(d); clearError('os') }} className="flex-col gap-2 py-3 px-5 min-w-[104px]">
+                    <Tile key={d} selected={distro === d} onClick={() => { setDistro(d); clearError('os') }} className="flex-col gap-2 py-3 sm:min-w-[104px]">
                       <img
                         src={logoForDistribution(d)}
                         alt=""
@@ -1056,14 +1056,17 @@ const Section: React.FC<{ step: number; title: string; action?: React.ReactNode;
 )
 
 /*
- * Tiles wrap as an even grid on a phone and only fall back to free-flowing wrap
- * once there is room. `flex flex-wrap` alone left ragged, left-bunched rows on a
- * narrow screen because the items keep their intrinsic width.
+ * On a phone, tiles sit three to a line, each a third of it, and only fall back to
+ * free-flowing wrap once there is room. `flex flex-wrap` alone left ragged,
+ * left-bunched rows on a narrow screen because the items keep their intrinsic width.
+ * A third is where a tile starts, not a cap: a fixed three-column grid pushed
+ * "Melbourne" and "AlmaLinux" out of their tiles at Android's largest text sizes,
+ * where a WebView before 146 enlarges the text but not the boxes, so no length unit
+ * follows it. A word wider than a third widens its tile instead, and the line wraps.
  */
-const TileRow: React.FC<{ children: React.ReactNode; className?: string; cols?: string; label?: string; labelledBy?: string; describedBy?: string }> = ({
+const TileRow: React.FC<{ children: React.ReactNode; className?: string; label?: string; labelledBy?: string; describedBy?: string }> = ({
   children,
   className = '',
-  cols = 'grid-cols-3',
   label,
   labelledBy,
   describedBy
@@ -1073,7 +1076,7 @@ const TileRow: React.FC<{ children: React.ReactNode; className?: string; cols?: 
     aria-label={label}
     aria-labelledby={labelledBy}
     aria-describedby={describedBy}
-    className={`grid ${cols} gap-2 sm:flex sm:flex-wrap ${className}`}
+    className={`flex flex-wrap gap-2 max-sm:[&>*]:basis-[calc((100%-1rem)/3)] [&>*]:max-w-full ${className}`}
   >
     {children}
   </div>

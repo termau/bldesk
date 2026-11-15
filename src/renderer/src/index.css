@@ -4,6 +4,9 @@
 
 @layer base {
   :root {
+    /* Height of the mobile bottom bar, inset included. BottomNav replaces this with its measured height,
+       which is taller when a large system text size wraps a label. */
+    --bottom-nav-h: calc(3.5rem + env(safe-area-inset-bottom, 0px));
     --sidebar-bg: #343a40;
     --sidebar-text-color: #f8f9fa;
     --primary: #017cb6;
@@ -137,16 +140,16 @@ textarea:focus-visible {
 }
 
 /*
- * Clearance for the fixed mobile bottom nav.
+ * Breathing room above the fixed mobile bottom nav.
  *
- * BottomNav is `fixed bottom-0` at 3.5rem plus the safe-area inset, so it sits on
- * top of the last stretch of any scrolling page: the content was not clipped, it
- * was underneath the bar, with no way to scroll it clear. Desktop keeps no
- * padding, since the nav is hidden there.
+ * `<main>` already reserves the bar's full height (`--bottom-nav-h`, inset
+ * included), so a scrolling page ends above the bar rather than under it. This
+ * only adds a small gap so the last card does not sit flush against the bar.
+ * Desktop keeps no padding, since the nav is hidden there.
  */
 @media (max-width: 767px) {
   .pb-bottom-nav {
-    padding-bottom: calc(3.5rem + env(safe-area-inset-bottom, 0px) + 0.75rem);
+    padding-bottom: 0.75rem;
   }
 }
 

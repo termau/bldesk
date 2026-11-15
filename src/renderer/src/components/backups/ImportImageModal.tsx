@@ -101,7 +101,9 @@ export function ImportImageModal({ client, server, backups, onClose }: Props) {
 
   return (
     <Modal title="Import Image" icon={Upload} size="sm" as="form" onSubmit={submit} busy={busy} onClose={onClose}
-      headerRight={<HelpLink slug="backups#import-image" />}
+      // Help opens in the main window, behind this dialog and inert while it is open, so the dialog closes first (as a
+      // confirmation's help link does). Not while an import is being sent.
+      headerRight={busy ? undefined : <HelpLink slug="backups#import-image" onOpen={onClose} />}
       footer={<div className="flex justify-end gap-2 p-4 text-xs">
         <button type="button" onClick={onClose} disabled={busy} className="px-3 py-1.5 text-fg-muted disabled:opacity-50">Cancel</button>
         <button type="submit" disabled={busy || !url.trim() || (strategy === 'specified' && !replacementId)}

@@ -14,6 +14,7 @@ import { GROUPS_EVENT, allTags, colorOf, effectiveGroups, loadGroups, loadTagCol
 import { TagChip } from '../tags/TagChip'
 import { useTagEditor } from '../tags/TagEditor'
 import { usePhoneLayout } from '../../lib/usePhoneLayout'
+import { isComposing } from '../../lib/ime'
 import { matchServers } from '../../lib/commands'
 
 type ServerResponse = components['schemas']['Server']
@@ -438,7 +439,7 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
         <table className="text-xs border-collapse min-w-full">
           <thead>
             <tr className="bg-[#f8f9fa] dark:bg-[#212529]">
-              <th className="sticky left-0 top-0 z-30 bg-[#f8f9fa] dark:bg-[#212529] shadow-[inset_0_-1px_0_#ced4da] dark:shadow-[inset_0_-1px_0_#373b3e] text-left px-3 py-2 font-semibold border-b border-r border-[#ced4da] dark:border-[#373b3e] min-w-[220px]">
+              <th className="sticky left-0 top-0 z-30 bg-[#f8f9fa] dark:bg-[#212529] shadow-[inset_0_-1px_0_#ced4da] dark:shadow-[inset_0_-1px_0_#373b3e] text-left px-3 py-2 font-semibold border-b border-r border-[#ced4da] dark:border-[#373b3e] w-[220px] min-w-[220px] max-w-[220px]">
                 Server
               </th>
               <th className="sticky left-[220px] top-0 z-30 bg-[#f8f9fa] dark:bg-[#212529] shadow-[inset_0_-1px_0_#ced4da] dark:shadow-[inset_0_-1px_0_#373b3e] px-3 py-2 font-semibold border-b border-r border-[#ced4da] dark:border-[#373b3e] text-left min-w-[260px] max-w-[340px]">
@@ -466,36 +467,41 @@ export const FirewallMatrix: React.FC<Props> = ({ client, servers, profileId, on
               const level = worstLevel(flags)
               return (
                 <tr key={s.id} className="border-t border-[#ced4da]/60 dark:border-[#373b3e] hover:bg-[#f8f9fa] dark:hover:bg-[#32383e]">
-                  <td className="sticky left-0 z-10 bg-white dark:bg-[#2b3035] px-3 py-1.5 border-r border-[#ced4da] dark:border-[#373b3e]">
-                    <button onClick={() => onSelectServer(s.id)} className="text-left hover:underline">
-                      <span className={`inline-block w-1.5 h-1.5 rounded-full mr-2 ${level === 'red' ? 'bg-rose-500' : level === 'amber' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                      <span className="font-semibold">{s.name}</span>
-                    </button>
-                    <div className="text-[0.625rem] text-fg-muted font-mono pl-3.5">
-                      {primaryIpv4(s) ?? '—'} · {rules === null ? 'unreadable' : rules === undefined ? 'loading' : ruleCount(rules.length)}
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1 pl-3.5 mt-1">
-                      {tagsOf(tags, s.id).map((t) => (
-                        <TagChip
-                          key={t}
-                          tag={t}
-                          color={colorOf(tagColors, t)}
-                          className="max-w-[9rem]"
-                          onEdit={profileId && !phone ? (el) => tagEditor.open(t, el, s.id) : undefined}
-                          onRemove={phone ? undefined : () => setServerTag(s.id, t, false)}
-                        />
-                      ))}
-                      {phone ? null : tagEditId === s.id ? (
-                        <TagInput onAdd={(tag) => setServerTag(s.id, tag, true)} onClose={() => setTagEditId(null)} />
-                      ) : (
-                        <button
-                          onClick={() => setTagEditId(s.id)}
-                          title="Add a tag"
-                          className="text-[0.625rem] px-1.5 py-0.5 rounded border border-dashed border-[#ced4da] dark:border-[#495057] text-fg-muted hover:border-[#017cb6] hover:text-fg-link flex items-center gap-0.5"
-                        >
-                          <Tag className="w-2.5 h-2.5" />+
-                        </button>
-                      )}
+                  {/* Exactly 220px wide, because the Audit column sticks at left-[220px]: a wider Server column (a long name, larger
+                      text) would slide under it on horizontal scroll. The inner width is definite so a long name cannot raise the
+                      column's minimum; the name and address line truncate and the name keeps its full text in the tooltip. */}
+                  <td className="sticky left-0 z-10 bg-white dark:bg-[#2b3035] px-3 py-1.5 border-r border-[#ced4da] dark:border-[#373b3e] w-[220px] min-w-[220px] max-w-[220px]">
+                    <div className="w-[calc(220px-1.5rem)]">
+                      <button onClick={() => onSelectServer(s.id)} title={s.name} className="inline-flex items-center max-w-full text-left hover:underline">
+                        <span className={`inline-block shrink-0 w-1.5 h-1.5 rounded-full mr-2 ${level === 'red' ? 'bg-rose-500' : level === 'amber' ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                        <span className="font-semibold truncate">{s.name}</span>
+                      </button>
+                      <div className="text-[0.625rem] text-fg-muted font-mono pl-3.5 truncate">
+                        {primaryIpv4(s) ?? '—'} · {rules === null ? 'unreadable' : rules === undefined ? 'loading' : ruleCount(rules.length)}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1 pl-3.5 mt-1">
+                        {tagsOf(tags, s.id).map((t) => (
+                          <TagChip
+                            key={t}
+                            tag={t}
+                            color={colorOf(tagColors, t)}
+                            className="max-w-[min(9rem,100%)]"
+                            onEdit={profileId && !phone ? (el) => tagEditor.open(t, el, s.id) : undefined}
+                            onRemove={phone ? undefined : () => setServerTag(s.id, t, false)}
+                          />
+                        ))}
+                        {phone ? null : tagEditId === s.id ? (
+                          <TagInput onAdd={(tag) => setServerTag(s.id, tag, true)} onClose={() => setTagEditId(null)} />
+                        ) : (
+                          <button
+                            onClick={() => setTagEditId(s.id)}
+                            title="Add a tag"
+                            className="text-[0.625rem] px-1.5 py-0.5 rounded border border-dashed border-[#ced4da] dark:border-[#495057] text-fg-muted hover:border-[#017cb6] hover:text-fg-link flex items-center gap-0.5"
+                          >
+                            <Tag className="w-2.5 h-2.5" />+
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </td>
                   <td className="sticky left-[220px] z-10 bg-white dark:bg-[#2b3035] px-3 py-1.5 border-r border-[#ced4da] dark:border-[#373b3e] min-w-[260px] max-w-[340px] align-top">
@@ -594,7 +600,7 @@ const TagInput: React.FC<{ onAdd: (tag: string) => void; onClose: () => void }> 
       onChange={(e) => setTagInput(e.target.value)}
       onKeyDown={(e) => {
         // Enter that confirms an IME composition is not a submit.
-        if (e.nativeEvent.isComposing) return
+        if (isComposing(e)) return
         if (e.key === 'Enter' && tagInput.trim()) {
           onAdd(tagInput)
           setTagInput('')

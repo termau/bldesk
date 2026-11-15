@@ -1,5 +1,6 @@
 import { HelpLink } from '../ui/HelpLink'
-import { Modal } from '../ui/Modal'
+import { Modal, isModalOpen } from '../ui/Modal'
+import { menuPoint } from '../servers/ServerContextMenu'
 import { LoadError } from '../ui/LoadError'
 import React, { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { useIsMutating, useQueryClient } from '@tanstack/react-query'
@@ -127,7 +128,8 @@ const MenuItem: React.FC<{ onClick: () => void; disabled?: boolean; danger?: boo
 /*
  * The domain list's right-click menu, also opened by the keyboard's menu key or Shift+F10. As in PickMenu, focus moves into it and
  * the arrow keys, Home and End move between its items; Escape or Tab closes it and focus returns to the domain. It says it closes on
- * Escape (data-dismissible), so Android's Back closes it too. It is measured once drawn and kept inside the window.
+ * Escape (data-dismissible), so Android's Back closes it too. It is measured once drawn and kept inside the window. Opened from the
+ * keyboard it hangs under the domain (menuPoint), not at the corner of the window.
  */
 const DomainMenu: React.FC<{ x: number; y: number; label: string; onClose: () => void; children: React.ReactNode }> = ({
   x,
@@ -152,7 +154,9 @@ const DomainMenu: React.FC<{ x: number; y: number; label: string; onClose: () =>
   useEffect(() => {
     ref.current?.querySelector<HTMLElement>('[role=menuitem]:not(:disabled)')?.focus()
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
+      // Heard before anything else (capture), so that its Escape does not also reach the page. A dialog opened above it
+      // (one that needs an answer, say) makes it inert, and then Escape is the dialog's.
+      if (e.key !== 'Escape' || isModalOpen() || ref.current?.closest('[inert]')) return
       e.preventDefault()
       e.stopPropagation()
       closeRef.current()
@@ -494,7 +498,7 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
                   onClick={() => handleSelectDomain(domain.name)}
                   onContextMenu={(e) => {
                     e.preventDefault()
-                    setMenu({ x: e.clientX, y: e.clientY, domain, opener: e.currentTarget })
+                    setMenu({ ...menuPoint(e), domain, opener: e.currentTarget })
                   }}
                   className={`w-full text-left p-3 text-xs transition flex items-center justify-between gap-2 ${
                     isSelected
@@ -703,6 +707,8 @@ export const DnsManager: React.FC<DnsManagerProps> = ({ client, profileId }) => 
                 </label>
                 <input
                   id={`${uid}-host`}
+                  // The dialog opens on the name, as it did before the Modal took focus top to bottom, not on the Type select.
+                  data-autofocus
                   type="text"
                   required
                   placeholder="@ or www"

@@ -133,16 +133,16 @@ export function ActionInteractionPrompt({ client, profileId, servers = [] }: Act
       icon={isDanger ? AlertTriangle : HelpCircle}
       headTone={isDanger ? 'text-red-500' : undefined}
       footer={
-        <div className="flex items-center gap-2 p-4">
+        // Wraps rather than overflowing the panel when a large system text size makes the three buttons too wide for one line.
+        <div className="flex flex-wrap items-center justify-end gap-2 p-4">
           <button
             type="button"
             disabled={proceedMutation.isPending}
             onClick={() => setSuppressed((prev) => [...prev, current.id])}
-            className="px-2 py-1.5 text-xs text-[#495057] dark:text-[#adb5bd] hover:text-[#212529] dark:hover:text-white underline underline-offset-2 disabled:opacity-50 transition"
+            className="mr-auto px-2 py-1.5 text-xs text-[#495057] dark:text-[#adb5bd] hover:text-[#212529] dark:hover:text-white underline underline-offset-2 disabled:opacity-50 transition"
           >
             Decide later
           </button>
-          <div className="flex-1" />
           <button
             type="button"
             disabled={proceedMutation.isPending}

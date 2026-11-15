@@ -209,23 +209,34 @@ export const ReachabilityChip: React.FC<{
             */}
           {explanation && (
             <WhyToggletip key={r.seq}>
-              <span className="block">{explanation}</span>
-              <span className="flex items-center gap-3">
-                {onOpenFirewall && r.verdict.kind === 'blocked' && (
-                  <button type="button" onClick={onOpenFirewall} className="text-fg-link hover:underline">
-                    Open firewall rules
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => void r.runTrace()}
-                  disabled={r.tracing}
-                  className="inline-flex items-center gap-1 text-fg-link hover:underline disabled:opacity-50"
-                >
-                  {r.tracing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Route className="w-3 h-3" />}
-                  <span>{r.tracing ? 'Tracing…' : 'Trace route'}</span>
-                </button>
-              </span>
+              {(close) => (
+                <>
+                  <span className="block">{explanation}</span>
+                  <span className="flex items-center gap-3">
+                    {onOpenFirewall && r.verdict.kind === 'blocked' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          close()
+                          onOpenFirewall()
+                        }}
+                        className="text-fg-link hover:underline"
+                      >
+                        Open firewall rules
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void r.runTrace()}
+                      disabled={r.tracing}
+                      className="inline-flex items-center gap-1 text-fg-link hover:underline disabled:opacity-50"
+                    >
+                      {r.tracing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Route className="w-3 h-3" />}
+                      <span>{r.tracing ? 'Tracing…' : 'Trace route'}</span>
+                    </button>
+                  </span>
+                </>
+              )}
             </WhyToggletip>
           )}
 
@@ -247,15 +258,18 @@ export const ReachabilityChip: React.FC<{
 }
 
 /**
- * The "?" in a failed pill, a toggletip: hovering shows the card, and a click, Enter or Space keeps it open, so it can be
+ * The "?" in a failed pill, a disclosure: hovering shows the card, and a click, Enter or Space keeps it open, so it can be
  * reached by keyboard, touch and screen reader (the card holds the only route to the firewall link and the traceroute
- * action). Escape, a click elsewhere or focus leaving it closes it, and Escape also hides a card shown by hovering.
- * Centred under the "?" unless that would run off the window, when it is nudged in or shown above.
+ * action). The card is a non-modal dialog, not a tooltip, because it has buttons in it: the "?" says whether it is
+ * expanded, focus is not moved into it or held there, and Tab goes on from the "?" into its buttons. Escape (and so
+ * Android's Back, as it says it closes on Escape), a click elsewhere or focus leaving it closes it, and Escape also hides a
+ * card shown by hovering. Opening the firewall rules closes it too. Centred under the "?" unless that would run off the
+ * window, when it is nudged in or shown above.
  *
  * The "?" sits inside the bubble it explains, and blinks once when a failure lands so it is noticed without a looping
  * animation in the header. Keyed by probe sequence, so a fresh failure blinks again and an unchanged one does not.
  */
-const WhyToggletip: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const WhyToggletip: React.FC<{ children: (close: () => void) => React.ReactNode }> = ({ children }) => {
   const [open, setOpen] = useState(false)
   const [hover, setHover] = useState(false)
   const [place, setPlace] = useState({ dx: 0, up: false })
@@ -268,6 +282,11 @@ const WhyToggletip: React.FC<{ children: React.ReactNode }> = ({ children }) => 
   const hide = () => {
     setOpen(false)
     setHover(false)
+  }
+  // Closed by a button in the card: focus goes back to the "?" rather than being lost with the card.
+  const closeFromCard = () => {
+    if (wrap.current?.contains(document.activeElement)) button.current?.focus()
+    hide()
   }
 
   useLayoutEffect(() => {
@@ -286,6 +305,7 @@ const WhyToggletip: React.FC<{ children: React.ReactNode }> = ({ children }) => 
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented || isModalOpen()) return
       e.preventDefault()
+      e.stopPropagation()
       if (wrap.current?.contains(document.activeElement)) button.current?.focus()
       hide()
     }
@@ -330,12 +350,14 @@ const WhyToggletip: React.FC<{ children: React.ReactNode }> = ({ children }) => 
         <span
           ref={card}
           id={id}
-          role="tooltip"
+          role="dialog"
+          aria-label="Why is this unreachable?"
+          data-dismissible="true"
           style={{ transform: `translateX(calc(-50% + ${place.dx}px))` }}
           className={`absolute left-1/2 ${place.up ? 'bottom-full pb-2' : 'top-full pt-2'} z-30 w-80 max-w-[calc(100vw-16px)]`}
         >
           <span className="block p-2.5 rounded border border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035] shadow-lg text-[0.6875rem] font-normal text-[#495057] dark:text-slate-300 space-y-1.5">
-            {children}
+            {children(closeFromCard)}
           </span>
         </span>
       )}

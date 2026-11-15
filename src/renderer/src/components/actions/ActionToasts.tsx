@@ -60,7 +60,7 @@ export function ActionToasts() {
      * `3.5rem + env(safe-area-inset-bottom)` tall, so a toast at `bottom-4`
      * sat underneath it and, on a phone with gesture navigation, ran off the
      * bottom of the screen as well - the close button with it. The offset
-     * matches the bar's own height expression so the two cannot drift apart,
+     * is the bar's measured height (`--bottom-nav-h`), so the two cannot drift apart,
      * and it applies only where the bar exists.
      *
      * Below the dialogs (`Modal` is 70, and 80 when nested), so the column never
@@ -68,11 +68,19 @@ export function ActionToasts() {
      * inside that dialog (`DialogFailures`), not here. The column sits at the
      * bottom right, where it covers the page's own controls least: the header
      * actions at the top right are what people reach for next.
+     *
+     * It is exempt from the inert that a dialog, the command palette or the
+     * phone's navigation drawer puts on the page (`data-layer-exempt`,
+     * lib/dialogLayer.ts). It is drawn above the palette and the drawer (both
+     * 50), so its buttons must still take a click while one is open, rather
+     * than the click passing through to the backdrop and closing it; and its
+     * live regions are still announced while any of them is open.
      */
     <div
       role="region"
       aria-label="Notifications"
-      className="fixed bottom-[calc(3.5rem+env(safe-area-inset-bottom,0px)+0.75rem)] md:bottom-4 right-4 z-[55] flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)] pointer-events-none"
+      data-layer-exempt=""
+      className="fixed bottom-[calc(var(--bottom-nav-h)+0.75rem)] md:bottom-4 right-4 z-[55] flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)] pointer-events-none"
     >
       {/* A failure is its own alert (FailureToasts). */}
       <FailureToastItems />
@@ -112,6 +120,9 @@ export function ActionToasts() {
               )}
             </div>
             <button
+              // As a failure's close button: a click leaves focus where it was (the palette's search box, which closes it on
+              // Escape; on a phone, a field whose keyboard would drop).
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => dismiss(action.actionId)}
               aria-label={`Dismiss ${action.label} notification`}
               className="p-0.5 text-fg-muted hover:text-[#212529] dark:hover:text-white rounded flex-shrink-0"

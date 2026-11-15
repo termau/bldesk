@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDownToLine, CheckCircle2, CloudOff, Loader2, RefreshCw, AlertTriangle, RotateCw, ChevronDown } from 'lucide-react'
 import { UpdateChannel, UpdaterState } from '@shared/ipc-types'
 import { renderHelpMarkdown } from '../../lib/helpMarkdown'
@@ -44,21 +44,23 @@ function noteNodes(nodes: NodeListOf<ChildNode> | ChildNode[], key = 'n'): React
 
 /*
  * Under the build's Trusted Types policy, DOMParser takes only TrustedHTML. This policy passes the notes through as
- * they are: the parsed document is never inserted, only read by noteNodes above. It is created once and kept on
- * window, because a second createPolicy with the same name is refused (a hot reload runs this module again). Where
- * Trusted Types does not exist (an older Android WebView) the string is passed as it is.
+ * they are: the parsed document is never inserted, only read by noteNodes above. It is created once, on first use, and
+ * kept in this module, because a second createPolicy with the same name is refused. A hot reload in development runs
+ * this module again, so the policy is carried over in Vite's hot data rather than created a second time. Where Trusted
+ * Types does not exist (an older Android WebView) the string is passed as it is.
  */
 type NotesPolicy = { createHTML: (raw: string) => unknown }
 const POLICY_NAME = 'bldesk-release-notes'
-const POLICY_KEY = '__bldeskReleaseNotesPolicy'
+let cachedPolicy: NotesPolicy | null | undefined = import.meta.hot?.data.notesPolicy
 
 function notesPolicy(): NotesPolicy | null {
-  const w = window as unknown as Record<string, unknown> & {
+  if (cachedPolicy !== undefined) return cachedPolicy
+  const tt = (window as unknown as {
     trustedTypes?: { createPolicy: (name: string, rules: { createHTML: (s: string) => string }) => NotesPolicy }
-  }
-  if (!w.trustedTypes) return null
-  if (!w[POLICY_KEY]) w[POLICY_KEY] = w.trustedTypes.createPolicy(POLICY_NAME, { createHTML: (s) => s })
-  return w[POLICY_KEY] as NotesPolicy
+  }).trustedTypes
+  cachedPolicy = tt ? tt.createPolicy(POLICY_NAME, { createHTML: (s) => s }) : null
+  if (import.meta.hot) import.meta.hot.data.notesPolicy = cachedPolicy
+  return cachedPolicy
 }
 
 export function renderReleaseNotes(raw: string): React.ReactNode[] {
@@ -124,6 +126,8 @@ export const UpdateMenu: React.FC = () => {
   const state = useUpdaterState()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  // Whichever button stands in the title bar: the version button, or Restart / Update once an update is ready. The
+  // status can change while the popover is open, and focus goes back to the one that is there when it closes.
   const trigger = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const panelId = useId()
@@ -140,7 +144,7 @@ export const UpdateMenu: React.FC = () => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
-      // Escape (and so Android's Back) closes it and gives focus back to the version button; a dialog on top has its own.
+      // Escape (and so Android's Back) closes it and gives focus back to the button in the title bar; a dialog on top has its own.
       if (e.key !== 'Escape' || e.defaultPrevented || isModalOpen()) return
       e.preventDefault()
       setOpen(false)
@@ -155,6 +159,19 @@ export const UpdateMenu: React.FC = () => {
     }
   }, [open])
 
+  // On a phone the popover is fixed to the window (see below), so its top is set from where the button is, before it is
+  // painted: the title bar wraps to two rows on a narrow screen, and the safe-area inset moves it down.
+  useLayoutEffect(() => {
+    if (!open) return
+    const place = () => {
+      const bottom = ref.current?.getBoundingClientRect().bottom
+      if (bottom !== undefined) panel.current?.style.setProperty('--update-top', `${bottom}px`)
+    }
+    place()
+    window.addEventListener('resize', place)
+    return () => window.removeEventListener('resize', place)
+  }, [open])
+
   const busy = state.status === 'checking' || state.status === 'downloading' || state.status === 'available' || state.status === 'installing'
   const ready = state.status === 'ready'
 
@@ -163,10 +180,19 @@ export const UpdateMenu: React.FC = () => {
   const setChannel = (c: UpdateChannel) => window.bldeskApi?.setUpdateChannel?.(c)
 
   return (
-    <div ref={ref} className="relative">
+    <div
+      ref={ref}
+      className="relative"
+      // Tabbing (or a screen reader moving focus) out of the popover closes it, as a click elsewhere does. Focus that goes
+      // nowhere (the window losing focus, a button in it being disabled) leaves it open.
+      onBlur={(e) => {
+        if (open && e.relatedTarget instanceof Node && !e.currentTarget.contains(e.relatedTarget)) setOpen(false)
+      }}
+    >
       {/* Trigger */}
       {ready ? (
         <button
+          ref={trigger}
           onClick={install}
           title={`Restart to install BLDesk ${state.availableVersion}`}
           className="flex items-center gap-1.5 px-2.5 py-1 text-[0.6875rem] font-semibold text-slate-900 bg-[#f1ca00] hover:bg-[#ffd633] rounded-md transition shadow"
@@ -176,6 +202,7 @@ export const UpdateMenu: React.FC = () => {
         </button>
       ) : state.apkUrl && state.status === 'available' ? (
         <button
+          ref={trigger}
           onClick={install}
           title={`Download and install BLDesk v${state.availableVersion}`}
           className="flex items-center gap-1.5 px-2.5 py-1 text-[0.6875rem] font-semibold text-slate-900 bg-[#f1ca00] hover:bg-[#ffd633] rounded-md transition shadow"
@@ -213,8 +240,9 @@ export const UpdateMenu: React.FC = () => {
       )}
 
       {/* Popover. Below the sm breakpoint (a phone) the version button is too far in from the right edge for a 320px
-          popup hung from it, which ran off the left of the screen. There the popup is fixed to the viewport, still
-          just under the button, 8px (or the safe-area inset) clear of both edges and as wide as fits, up to 320px. */}
+          popup hung from it, which ran off the left of the screen. There the popup is fixed to the viewport, its top at
+          the button's bottom (--update-top, measured when it opens and on resize) plus the same 6px gap, 8px (or the
+          safe-area inset) clear of both edges and as wide as fits, up to 320px. */}
       {open && (
         <div
           ref={panel}
@@ -223,7 +251,7 @@ export const UpdateMenu: React.FC = () => {
           aria-label="BLDesk updates"
           tabIndex={-1}
           data-dismissible="true"
-          className="outline-none absolute right-0 top-full mt-1.5 w-80 max-sm:fixed max-sm:top-auto max-sm:left-[max(0.5rem,env(safe-area-inset-left,0px))] max-sm:right-[max(0.5rem,env(safe-area-inset-right,0px))] max-sm:ml-auto max-sm:w-auto max-sm:max-w-80 bg-white dark:bg-[#2b3035] text-[#212529] dark:text-[#f8f9fa] border border-[#ced4da] dark:border-[#373b3e] rounded-lg shadow-xl z-50 p-3 text-xs space-y-3 select-text">
+          className="outline-none absolute right-0 top-full mt-1.5 w-80 max-sm:fixed max-sm:top-[var(--update-top,2.75rem)] max-sm:left-[max(0.5rem,env(safe-area-inset-left,0px))] max-sm:right-[max(0.5rem,env(safe-area-inset-right,0px))] max-sm:ml-auto max-sm:w-auto max-sm:max-w-80 bg-white dark:bg-[#2b3035] text-[#212529] dark:text-[#f8f9fa] border border-[#ced4da] dark:border-[#373b3e] rounded-lg shadow-xl z-50 p-3 text-xs space-y-3 select-text">
           <div className="flex items-center justify-between">
             <div>
               <div className="font-bold">BLDesk</div>

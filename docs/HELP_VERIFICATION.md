@@ -1,5 +1,94 @@
 # Help verification
 
+## Update popover, context menus, reachability card and confirm labels (15 November 2026, UI review follow-up)
+
+Sources: `components/layout/UpdateMenu.tsx` (the wrapper's `onBlur`, the Escape
+listener, `trigger` on all three title-bar buttons, the `--update-top` layout
+effect, `notesPolicy`), `components/servers/ServerContextMenu.tsx` (`menuPoint`,
+the Escape listener), `components/dns/DnsManager.tsx` (`DomainMenu`'s capture
+Escape listener, the zone row's `onContextMenu`), `components/servers/ReachabilityBadge.tsx`
+(`WhyToggletip`), `components/backups/ImportImageModal.tsx` (`headerRight`),
+`context/ConfirmContext.tsx` (`ConfirmDialog`'s Enter listener and reason fields),
+`components/auth/AuthModal.tsx` (the profile row buttons) and `docs/help/shortcuts.md`.
+
+- “Tabbing out of the update popover closes it too”: the popover's wrapper closes
+  it on a blur whose `relatedTarget` is outside the wrapper. Focus that goes
+  nowhere (the window losing focus, Check now being disabled during a check) has no
+  `relatedTarget` and leaves it open. Checked in headless Chromium with the real
+  `TitleBar` and a stub updater: three Tabs from the panel moved focus to the
+  profile select and the popover closed; focus on Check now with the status set to
+  `checking` left it open. “Each puts focus back where it was” still holds for
+  Escape after the status changes while it is open: `trigger` is on whichever
+  button is in the title bar, and with the status set to `ready` Escape focused
+  “Restart to update”.
+- Not described in help, checked in code: on a phone the popover's top is the
+  version button's bottom (measured when it opens and on resize) plus `mt-1.5`. At
+  390, 360 and 300 CSS pixels wide its top was 38.5 px with the button's bottom at
+  32.5 px, the same as the desktop popover hung from the button.
+- Not described in help: the menu key and Shift+F10 on a zone in DNS open the menu
+  under the zone (`menuPoint`). In Chromium 146 a keyboard `contextmenu` arrives
+  with `button` -1 at the middle of the focused element; with nothing focused it
+  goes to the document at (1, 1), where no row's handler hears it. The review's
+  (8, 8) was not reproduced with real keys.
+- The “?” card in a failed reachability pill is now a non-modal dialog
+  (`role="dialog"`, `data-dismissible`, no focus trap), labelled “Why is this
+  unreachable?” like its button; Open firewall rules closes it and focuses the “?”.
+- Accessible names added, each naming what the app shows: the profile buttons
+  “Replace the API key for” and “Delete profile” followed by the profile's name, and
+  the reason detail field “More detail (required)” or “More detail (optional)”,
+  as `requireDetailFor` decides.
+
+## Android Back, dialog first focus and the palette's keys (15 November 2026, UI review follow-up)
+
+Sources: `App.tsx` (`backRef`), `lib/androidBack.ts` (`DISMISSIBLE_SELECTOR`,
+`backStep`), `lib/dialogLayer.ts` (`holdLayer`, `layerCount`, `topLayer`,
+`data-layer-exempt`), `components/ui/Modal.tsx` (the focus effect, `AUTOFOCUS`),
+`components/palette/CommandPalette.tsx` (the Cmd/Ctrl+K listener, `handleKeyDown`,
+the document Escape listener, `data-dismissible`), `components/actions/ActionToasts.tsx`,
+`components/servers/ServerList.tsx` and `components/help/HelpView.tsx` (the
+suggestion lists and their Escape listeners), `components/actions/ActionInteractionPrompt.tsx`
+(no `onClose`), `components/auth/AuthModal.tsx` (`onClose` passed always), and
+`docs/help/shortcuts.md`.
+
+- “Back does what Escape does to whatever is open on top”: `backStep` looks only
+  in the newest held layer (or the page, with none), and `backRef` sends Escape to
+  the document for `popup` and `layer`. The Servers search's tag list and Help's
+  suggestions are `role="listbox"` with `data-dismissible="true"`, which
+  `DISMISSIBLE_SELECTOR` now lists, and each closes on a document Escape.
+- “in the palette it goes from a review back to the command”: the palette's
+  document Escape listener calls `setStage('input')` in `confirm` and closes it in
+  `input` and `done`, as its panel's own Escape does.
+- “A dialog that asks for an answer, and the palette while a command runs, are left
+  as they are”: `ActionInteractionPrompt` has no `onClose`, so `Modal` sets
+  `data-dismissible="false"`; the palette sets it to `"false"` in `running`.
+  `backStep` returns `hold` and `backRef` returns true without sending anything,
+  so neither the screen behind nor `App.minimizeApp` is reached.
+- “With nothing open, Back steps back a screen, and on Servers it puts the app in
+  the background”: the rest of `backRef`, unchanged (sub-tab, server, tab, then
+  `false`, which `installAndroidBackButton` turns into `minimizeApp`).
+- The vault with no profile: `backRef` returns false only for `layer`, with
+  `isAuthOpen`, no profiles and one held layer, so a confirmation or popup over
+  the vault still closes first. Its X and backdrop still close it
+  (`AuthModal.tsx` passes `onClose` always); that was left alone.
+- “It does not open while a dialog or the navigation drawer is open”: Cmd/Ctrl+K
+  opens the palette only when `layerCount()` is 0; `Modal` and `MobileDrawer`
+  (`Sidebar.tsx`) each hold a layer while open.
+- “Shift+Tab does not”: the Tab branch of `handleKeyDown` takes Shift+Tab as
+  focus movement before the completion check.
+- “a dialog opens with focus on its first control, top to bottom, unless it starts
+  on a particular field, such as the name to type in a red review”: the focus
+  effect in `Modal` takes the first visible control in the body marked
+  `data-autofocus`, else the first one; a field with React's `autoFocus` (the
+  `typeToConfirm` input in `ConfirmContext.tsx`) already has focus and is left
+  there. A coarse pointer still gets the panel, as before.
+
+Not in the help, as behaviour rather than text: the notification column carries
+`data-layer-exempt`, so the palette and the drawer no longer make it inert, and
+its dismiss button keeps focus where it was on mousedown, as a failure's does;
+the palette announces its review, run and outcome in a `role="status"` region;
+the help suggestions hang from the search row (`top-full`). `scripts/test-dialog-layer.mjs`
+covers `holdLayer` with the exempt column and `backStep` for each case above.
+
 ## Confirm focus, context menu and update popover keys (15 November 2026, UI review against modern web guidance)
 
 Sources: `context/ConfirmContext.tsx` (`ConfirmDialog`: `cancelFirst`, the focus
@@ -32,19 +121,50 @@ explicit “Light” or “Dark”, so the help says it stops following the syst
 
 ## Firewall cell problems and the DNS zone menu (15 November 2026, UI review against modern web guidance)
 
-Sources: `components/firewall/FirewallRulesEditor.tsx` (`typed`, `left`, the
-`shownProblems` call), `lib/firewallDraft.ts` (`shownProblems`,
-`rowsWithProblems`), `components/firewall/FirewallManager.tsx` (`badRows`,
+Sources: `components/firewall/FirewallRulesEditor.tsx` (`typed`, `left`,
+`leaving`, `PRESS_ENDS`, `Field`'s `onBlur`, the `shownProblems` call),
+`components/firewall/PickMenu.tsx` (its list is rendered inside the field, and a
+pick calls `close(true)`, which focuses the magnifier again),
+`lib/firewallDraft.ts` (`shownProblems`, `problemToSay`, `rowsWithProblems`), `components/firewall/FirewallManager.tsx` (`badRows`,
 `canSave`), `components/dns/DnsManager.tsx` (`DomainMenu`, `MenuItem`,
 `closeMenu`), and `docs/help/firewall.md` and `docs/help/shortcuts.md`.
 
-A firewall cell's problem is hidden from its first keystroke until the cell
-loses focus (`typed` sets it, `left` clears it on blur), then shown and said once
-through the list's polite live region. Save changes is still gated on
+A firewall cell's problem is hidden from its first keystroke until focus leaves
+the cell's `Field` (`typed` sets it, `left` clears it), then shown and said once
+through the list's polite live region. Focus that moves to an element inside the
+same `Field` (the magnifier, or an item of its list) calls `onStay` instead, so
+“Going from the cell to its own magnifier, and choosing from its list, is not
+leaving it” is the `Field` `onBlur` test on `relatedTarget`; a click outside
+while the list is open closes and unmounts it, which may send no blur, so the
+window `mousedown` listener leaves the field held in `heldIn`. When a mouse
+button (or a tap's mouse events) is down as the field is left, `left` waits for
+`mouseup`, `dragend` or the window's `blur` and then a `setTimeout(0)`, after the
+click: “appears once the click is over”. Before this, the problem's `<p>` was
+mounted during `mousedown` and moved the next control before `mouseup`, so the
+click was lost (checked in Electron: pressing Remove on the same rule after
+typing “10.0.” in its source did nothing before and removes it now). The
+announcement is read when its 500 ms timer fires, with `problemToSay` on the
+newest rows, so a problem fixed from the magnifier, cleared by switching to ICMP
+or gone with Remove in the meantime is not said. Save changes is still gated on
 `rowsWithProblems`, which counts every problem whether shown or not. The DNS
 zone list's right-click menu moves between enabled items with ArrowUp,
 ArrowDown, Home and End, and Escape (a document listener) or Tab closes it and
 focuses the zone it was opened on, as choosing an item does.
+
+## Network map: Cmd/Ctrl and scroll over the details panel (15 November 2026, UI review follow-up)
+
+Sources: `components/map/NetworkMap.tsx` (`onWheel`, the native `wheel`
+listener added with `passive: false`, and the `data-map-panel` detail panel
+rendered while `selectedNode` is set), `src/main/zoom.ts` (`zoom-changed`), and
+`docs/help/map.md`.
+
+A wheel event whose target is inside `[data-map-panel]` returns before the map
+handles it, so the panel scrolls natively. With `ctrlKey` or `metaKey` set (a
+trackpad pinch arrives as a wheel event with `ctrlKey`) it now calls
+`preventDefault` first, so Chromium does not raise `zoom-changed` and the app's
+zoom does not change; the map's view is not touched either. The panel exists for
+any selected node (server, load balancer or the Internet), so the help says
+“when you select something”.
 
 ## History: every caller follows a shared action (3 November 2026, #362, after 1.0.63-beta.4)
 

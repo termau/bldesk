@@ -84,6 +84,19 @@ export function HelpView({ location, contextHint }: { location: HelpLocation; co
     return () => { clearTimeout(timer); requestId.current++ }
   }, [question, submitted, submission])
 
+  // The suggestions close on Escape, typed in the box or sent to the document by Android's Back (lib/androidBack.ts), which
+  // closes them before it leaves Help.
+  const suggesting = focused && suggestions.length > 0
+  useEffect(() => {
+    if (!suggesting) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      e.preventDefault(); setFocused(false); setSuggestionIndex(-1)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [suggesting])
+
   const edit = (value: string) => { requestId.current++; setShowAll(false); setQuery(value); setSubmitted(null); setAnswer(null); setStatus('idle') }
   const submit = () => {
     if (!question) return
@@ -113,20 +126,21 @@ export function HelpView({ location, contextHint }: { location: HelpLocation; co
       <aside aria-label="Help index" className="sm:w-48 md:w-64 xl:w-72 shrink-0 flex flex-col min-h-0 border-b sm:border-b-0 sm:border-r border-[#ced4da] dark:border-[#373b3e] bg-white dark:bg-[#2b3035]">
         <form onSubmit={e => { e.preventDefault(); submit() }} className="shrink-0 p-3 space-y-2 relative border-b border-[#ced4da] dark:border-[#373b3e]">
           <label htmlFor="help-search" className="block text-xs font-semibold">Search help</label>
-          <div className="flex gap-1">
+          <div className="flex gap-1 relative">
             <input id="help-search" maxLength={1000} value={query} placeholder="e.g. port 22 unreachable" autoComplete="off"
-              role="combobox" aria-autocomplete="list" aria-expanded={focused && suggestions.length > 0} aria-controls="help-suggestions" aria-activedescendant={suggestionIndex >= 0 ? `help-suggestion-${suggestionIndex}` : undefined}
+              role="combobox" aria-autocomplete="list" aria-expanded={suggesting} aria-controls="help-suggestions" aria-activedescendant={suggestionIndex >= 0 ? `help-suggestion-${suggestionIndex}` : undefined}
               onFocus={() => setFocused(true)} onBlur={() => setFocused(false)} onChange={e => { edit(e.target.value); setFocused(true) }}
               onKeyDown={e => {
-                if (e.key === 'Escape') { setFocused(false); setSuggestionIndex(-1) }
+                if (e.key === 'Escape') { if (suggesting) e.preventDefault(); setFocused(false); setSuggestionIndex(-1) }
                 if (focused && suggestions.length && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) { e.preventDefault(); setSuggestionIndex(i => (i + (e.key === 'ArrowDown' ? 1 : -1) + suggestions.length) % suggestions.length) }
                 if (e.key === 'Enter' && focused && suggestionIndex >= 0) { e.preventDefault(); edit(suggestions[suggestionIndex]); setFocused(false) }
               }} className="w-full min-w-0 rounded border border-[#ced4da] dark:border-[#495057] bg-[#f8f9fa] dark:bg-[#212529] px-2 py-2 text-xs focus:outline-[#017cb6]" />
             <button type="submit" aria-label="Search help" className="shrink-0 rounded bg-[#017cb6] text-white px-2"><Search className="w-4 h-4" /></button>
-          </div>
-          {focused && suggestions.length > 0 && <ul id="help-suggestions" role="listbox" aria-label="Suggested questions" className="absolute z-40 left-3 right-3 top-[74px] max-h-40 overflow-y-auto bg-white dark:bg-[#343a40] border border-[#ced4da] dark:border-[#495057] rounded shadow-lg">
+            {/* Hangs from the search row, so it stays under the box at any text size. */}
+            {suggesting && <ul id="help-suggestions" role="listbox" aria-label="Suggested questions" data-dismissible="true" className="absolute z-40 left-0 right-0 top-full mt-1 max-h-40 overflow-y-auto bg-white dark:bg-[#343a40] border border-[#ced4da] dark:border-[#495057] rounded shadow-lg">
             {suggestions.map((s, i) => <li key={s} id={`help-suggestion-${i}`} role="option" aria-selected={i === suggestionIndex} onMouseDown={e => e.preventDefault()} onClick={() => { edit(s); setFocused(false) }} className={`p-2 text-xs cursor-pointer hover:bg-sky-50 dark:hover:bg-slate-600 ${i === suggestionIndex ? 'bg-sky-100 dark:bg-slate-600' : ''}`}>{s}</li>)}
-          </ul>}
+            </ul>}
+          </div>
           {contextHint && <button type="button" onClick={() => edit(`${query.trim()} ${contextHint}`.trim())} className="max-w-full text-left text-[0.6875rem] rounded border border-[#ced4da] dark:border-[#495057] px-2 py-1 text-fg-link dark:text-sky-400">add: {contextHint}</button>}
           <p className="text-[0.625rem] leading-relaxed text-fg-muted dark:text-slate-400">Search text goes to BinaryLane help. Leave out names, addresses, IDs, tokens and ticket text.</p>
         </form>

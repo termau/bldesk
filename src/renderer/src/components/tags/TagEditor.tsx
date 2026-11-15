@@ -343,8 +343,8 @@ export const TagEditorSheet: React.FC<SheetProps> = ({ profileId, tag, serverId,
         top: `calc(${vv.top}px + max(0.5rem, env(safe-area-inset-top, 0px)) + 0.25rem)`,
         left: 8,
         right: 8,
-        // what is left of the visible screen after the top inset, the bottom bar (3.5rem plus its own inset) and the gaps
-        maxHeight: `max(10rem, calc(${vv.height}px - max(0.5rem, env(safe-area-inset-top, 0px)) - 0.25rem - 3.5rem - env(safe-area-inset-bottom, 0px) - 0.5rem))`
+        // what is left of the visible screen after the top inset, the bottom bar (its measured height, inset included) and the gaps
+        maxHeight: `max(10rem, calc(${vv.height}px - max(0.5rem, env(safe-area-inset-top, 0px)) - 0.25rem - var(--bottom-nav-h) - 0.5rem))`
       }}
       className="!m-0 z-50 flex flex-col rounded-lg border border-[#ced4da] dark:border-[#495057] bg-white dark:bg-[#2b3035] text-[#212529] dark:text-[#f8f9fa] shadow-xl text-xs"
     >

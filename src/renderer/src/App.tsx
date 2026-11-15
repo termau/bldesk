@@ -1,5 +1,6 @@
 import React, { Suspense, lazy, useState, useEffect } from 'react'
-import { DISMISSIBLE_SELECTOR, installAndroidBackButton } from './lib/androidBack'
+import { DISMISSIBLE_SELECTOR, backStep, installAndroidBackButton } from './lib/androidBack'
+import { layerCount } from './lib/dialogLayer'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TitleBar } from './components/layout/TitleBar'
 import { SettingsView } from './components/settings/SettingsView'
@@ -136,21 +137,24 @@ function MainDashboard() {
 
   /*
    * Android back: undo the most recent step in the app's own navigation, in
-   * this order - an open dialog or menu (closed the way Escape closes it), the command
-   * palette, the navigation drawer, the vault (once an account exists), a
-   * server's sub-tab, the server itself, then any tab back to Servers. Only
-   * with nothing left does the app go to the background. See androidBack.ts.
+   * this order - whatever is open on top (a menu or list, then the dialog, the
+   * command palette or the navigation drawer, each closed the way Escape closes
+   * it; one that has to be answered keeps Back from doing anything), a server's
+   * sub-tab, the server itself, then any tab back to Servers. Only with nothing
+   * left does the app go to the background. The vault with no account yet is
+   * the exception: with nothing behind it to go back to, Back sends the app to
+   * the background instead of closing it. See androidBack.ts.
    */
   const backRef = React.useRef<() => boolean>(() => false)
   backRef.current = () => {
-    if (isPaletteOpen) { setIsPaletteOpen(false); return true }
-    // Not a dialog that has to be answered (no Escape closes it), and not the vault while there is no account to go back to.
-    if (document.querySelector(DISMISSIBLE_SELECTOR) && !(isAuthOpen && profiles.length === 0)) {
+    const step = backStep(DISMISSIBLE_SELECTOR)
+    if (step === 'hold') return true
+    if (step) {
+      // The vault on its own, with no account: not a popup in it, and not something opened over it.
+      if (step === 'layer' && isAuthOpen && profiles.length === 0 && layerCount() === 1) return false
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
       return true
     }
-    if (isMobileDrawerOpen) { setIsMobileDrawerOpen(false); return true }
-    if (isAuthOpen && profiles.length > 0) { setIsAuthOpen(false); return true }
     if (selectedServer) {
       if (activeServerSubTab !== 'overview') setActiveServerSubTab('overview')
       else setSelectedServer(null)
@@ -329,18 +333,19 @@ function MainDashboard() {
 
   if (isInitializing) {
     return (
-      <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#212529] text-[#f8f9fa] space-y-4 select-none">
+      // The theme's own page colours, as the window and theme-init.js already start in: a light theme sees no dark flash.
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#f8f9fa] dark:bg-[#212529] text-[#212529] dark:text-[#f8f9fa] space-y-4 select-none">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-[#017cb6]/20 flex items-center justify-center">
             <Server className="w-6 h-6 text-fg-link" />
           </div>
           <div className="text-2xl font-bold tracking-tight">
             <span className="text-fg-link">binary</span>
-            <span className="text-[#f1ca00]">lane</span>
-            <span className="text-xs font-normal text-fg-muted ml-2">BLDesk</span>
+            <span className="text-[#8a6d00] dark:text-[#f1ca00]">lane</span>
+            <span className="text-xs font-normal text-[#495057] dark:text-[#adb5bd] ml-2">BLDesk</span>
           </div>
         </div>
-        <div className="flex items-center gap-2.5 text-xs text-[#adb5bd]">
+        <div className="flex items-center gap-2.5 text-xs text-[#495057] dark:text-[#adb5bd]">
           <Loader2 className="w-4 h-4 text-fg-link animate-spin" />
           <span>Connecting to BinaryLane Cloud...</span>
         </div>
@@ -408,7 +413,7 @@ function MainDashboard() {
           />
 
           {/* Dynamic Center Viewport */}
-          <main className="flex-1 overflow-hidden bg-[#f8f9fa] dark:bg-[#212529] relative pb-14 md:pb-0 select-text">
+          <main className="flex-1 overflow-hidden bg-[#f8f9fa] dark:bg-[#212529] relative pb-[var(--bottom-nav-h)] md:pb-0 select-text">
             {activeTab === 'servers' && (
               selectedServer ? (
                 <ServerDetails
