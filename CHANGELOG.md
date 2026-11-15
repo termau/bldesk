@@ -5,6 +5,25 @@ All notable changes to the **BLDesk** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [1.0.63-beta.6] - 2026-11-15
+
+**Light mode that follows your system, and better keyboard, screen reader and large-text support**
+
+### Added
+- **Settings → Appearance chooses System, Light or Dark** (the title bar toggle still switches between light and dark). System is the default and follows the operating system's setting as it changes. The window opens in the right theme with no dark flash in light mode, and built-in controls (checkboxes, scrollbars, date pickers) match the theme.
+
+### Changed
+- **Dialogs, menus and the command palette work fully from the keyboard and with screen readers.** A dialog opens on its first control without scrolling past earlier steps, the page behind it can't be reached until it closes, and focus goes back to where it was. A confirmation for a destructive action starts on Cancel. Right-click menus, the DNS zone menu and Shift+F10 open under the row and move with the arrow keys. The palette is announced as a search with a list of results, Escape on its review step goes back to the list, and Ctrl+K doesn't open over a dialog or the drawer.
+- **Forms point at the problem.** Plans in Add Server and Change Plan are a real radio group the arrow keys move through, and each is read out with its CPUs, memory, storage, transfer and price. When Add Server or Change Plan can't be submitted, focus moves to the first field that needs attention and the reason is read out. Firewall rule problems appear once you leave a cell, not while you type or pick from its own menu, and a fixed problem is not read out.
+- **Large system text sizes on Android.** Changing the font size no longer restarts the app or loses what is open, and the new size applies at once. The filters, the bottom bar, the Add Server choices and the action prompt grow or wrap instead of clipping, and pages end above the bottom bar.
+- **Android Back follows what is on screen.** It closes the top menu, suggestion list or dialog first, leaves a question that must be answered on screen, and steps the palette back like Escape.
+- **Lists and maps stay responsive.** The Fleet Heatmap and firewall matrix keep their headers in view while scrolling, the server list filters without lag on large fleets, Ctrl+scroll on the Network Map zooms the map rather than the app, and less-used screens load when first opened.
+
+### Fixed
+- **The backups banner shows a restore, attach, detach or auto-backup change straight away.** The server's action list is re-read as soon as any action starts.
+- **Change Plan prices the selected plan with the memory and storage you chose**, not the plan's defaults.
+- **Notifications stay readable and can be dismissed while the palette or the drawer is open.**
+
 ## [1.0.63-beta.5] - 2026-11-04
 
 **Threshold alerts on the heatmap and the server page, and a warning before network changes restart a server**
