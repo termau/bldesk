@@ -61,7 +61,8 @@ export const PickMenu: React.FC<{
       if (!panel.current?.contains(t) && !button.current?.contains(t)) close(false)
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      // Not while a dialog, the palette or the drawer sits above it (it is inert then): that layer's Escape comes first.
+      if (e.key === 'Escape' && !panel.current?.closest('[inert]')) {
         e.stopPropagation()
         close(true)
       }

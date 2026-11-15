@@ -303,7 +303,7 @@ const WhyToggletip: React.FC<{ children: (close: () => void) => React.ReactNode 
   useEffect(() => {
     if (!shown) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented || isModalOpen()) return
+      if (e.key !== 'Escape' || e.defaultPrevented || isModalOpen() || wrap.current?.closest('[inert]')) return
       e.preventDefault()
       e.stopPropagation()
       if (wrap.current?.contains(document.activeElement)) button.current?.focus()

@@ -21,6 +21,7 @@ import { setKeyAssociation } from '../../lib/sshKeyAssociations'
 import { cloudInitToSend, createdDetail, createdName, createdTarget, hostnameFields } from '../../lib/createServerHostname'
 import { GenerateKeyPairDialog, canGenerateKeyPair } from '../keys/GenerateKeyPairDialog'
 import { BlockedMark, PlanBlockNotes } from './PlanBlocks'
+import { planRadioName } from '../../lib/planRadioName'
 import { listServerTemplates, imageSupportsUserData, TEMPLATES_EVENT, TEMPLATE_KIND, type ServerTemplate, type CreateServerPrefill } from '../../lib/serverTemplates'
 import {
   planMonthlyPrice,
@@ -676,7 +677,6 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                       return (
                         <tr
                           key={p.slug}
-                          id={`${uid}-plan-${p.slug}`}
                           onClick={choose}
                           title={blocked?.message || undefined}
                           className={`${
@@ -688,7 +688,7 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                           <td className="py-1.5 px-1 sm:py-2 sm:px-3 text-center">
                             <span className="flex items-center gap-1 sm:gap-2">
                               {blocked && <BlockedMark />}
-                              {/* A real radio, so the plans are a group the keyboard moves through; it is named by its row. */}
+                              {/* A real radio, so the plans are a group the keyboard moves through; it is named by what its row shows. */}
                               <input
                                 type="radio"
                                 name={`${uid}-plan`}
@@ -696,7 +696,7 @@ export const CreateServerModal: React.FC<CreateServerModalProps> = ({ isOpen, on
                                 disabled={!!blocked}
                                 onChange={choose}
                                 onClick={(e) => e.stopPropagation()}
-                                aria-labelledby={`${uid}-plan-${p.slug}`}
+                                aria-label={planRadioName(p, isSel ? memory : p.memory, isSel ? disk : defaultDisk(p), planMonthlyPrice(p, image, isSel ? memory : p.memory, isSel ? disk : defaultDisk(p)))}
                                 title={blocked?.message || undefined}
                                 aria-invalid={errorField === 'plan'}
                                 aria-describedby={errorField === 'plan' ? errorId : undefined}

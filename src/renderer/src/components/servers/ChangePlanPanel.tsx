@@ -12,6 +12,7 @@ import {
   useServerBackups
 } from '../../api/queries'
 import { LinkOut, TOS_URL, REFUND_URL } from '../ui/LinkOut'
+import { planRadioName } from '../../lib/planRadioName'
 import {
   freeBackupSlots,
   replaceableBackups,
@@ -804,11 +805,11 @@ export const ChangePlanPanel: React.FC<{
                     value
                   )
                 return (
-                  <tr key={p.slug} id={`${uid}-plan-${p.slug}`} className={`opacity-45 cursor-not-allowed ${isSel ? 'bg-[#017cb6]/10' : ''}`}>
+                  <tr key={p.slug} className={`opacity-45 cursor-not-allowed ${isSel ? 'bg-[#017cb6]/10' : ''}`}>
                     <td className={cellClass}>
                       <span className="flex items-center gap-1 sm:gap-2">
                         {isSel ? <CurrentMark /> : <BlockedMark />}
-                        <input type="radio" name={`${uid}-plan`} disabled checked={isSel} readOnly aria-labelledby={`${uid}-plan-${p.slug}`} className="sr-only" />
+                        <input type="radio" name={`${uid}-plan`} disabled checked={isSel} readOnly aria-label={planRadioName(p, mem, dsk)} className="sr-only" />
                         <span className="text-[#212529] dark:text-white">
                           {p.vcpus} {p.vcpu_units || 'VCPU'}
                           {p.vcpus === 1 ? '' : 's'}
@@ -827,7 +828,7 @@ export const ChangePlanPanel: React.FC<{
               return (
                 <tr
                   key={p.slug}
-                  id={`${uid}-plan-${p.slug}`}
+                 
                   onClick={() => !blocked && pick(p.slug)}
                   title={blocked?.message || undefined}
                   className={`${blocked ? 'opacity-45 cursor-not-allowed' : 'cursor-pointer'} ${
@@ -837,7 +838,7 @@ export const ChangePlanPanel: React.FC<{
                   <td className={cellClass}>
                     <span className="flex items-center gap-1 sm:gap-2">
                       {blocked && <BlockedMark />}
-                      {/* A real radio, so the plans are a group the keyboard moves through; it is named by its row. */}
+                      {/* A real radio, so the plans are a group the keyboard moves through; it is named by what its row shows. */}
                       <input
                         type="radio"
                         name={`${uid}-plan`}
@@ -845,7 +846,7 @@ export const ChangePlanPanel: React.FC<{
                         disabled={!!blocked}
                         onChange={() => pick(p.slug)}
                         onClick={(e) => e.stopPropagation()}
-                        aria-labelledby={`${uid}-plan-${p.slug}`}
+                        aria-label={planRadioName(p, isSel ? memory : p.memory, isSel ? disk : defaultDisk(p), planMonthlyPrice(p, effectiveImage, isSel ? memory : p.memory, isSel ? disk : defaultDisk(p)))}
                         title={blocked?.message || undefined}
                         className={blocked ? 'sr-only' : 'w-3 h-3 sm:w-3.5 sm:h-3.5 m-0 shrink-0 cursor-pointer'}
                       />

@@ -263,7 +263,8 @@ const TagEditorPopover: React.FC<PopoverProps> = ({ profileId, tag, serverId, an
       if (panelRef.current && !panelRef.current.contains(e.target as Node) && !anchor.contains(e.target as Node)) onClose(false)
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      // Not while a dialog, the palette or the drawer sits above it (it is inert then): that layer's Escape comes first.
+      if (e.key === 'Escape' && !panelRef.current?.closest('[inert]')) {
         e.stopPropagation()
         onClose(true)
       }
@@ -320,10 +321,12 @@ interface SheetProps {
  */
 export const TagEditorSheet: React.FC<SheetProps> = ({ profileId, tag, serverId, liveIds, onClose }) => {
   const vv = useVisualViewport()
+  const sheetRef = useRef<HTMLDivElement>(null)
   // Escape closes it wherever focus is (a keyboard on a tablet, or after a control inside it has gone).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      // Not while a dialog, the palette or the drawer sits above it (it is inert then): that layer's Escape comes first.
+      if (e.key === 'Escape' && !sheetRef.current?.closest('[inert]')) {
         e.stopPropagation()
         onClose(true)
       }
@@ -333,6 +336,7 @@ export const TagEditorSheet: React.FC<SheetProps> = ({ profileId, tag, serverId,
   }, [onClose])
   return (
     <div
+      ref={sheetRef}
       role="dialog"
       data-dismissible="true"
       aria-label={`Edit tag @${tag}`}

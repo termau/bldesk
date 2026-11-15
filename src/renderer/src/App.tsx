@@ -152,7 +152,7 @@ function MainDashboard() {
     if (step) {
       // The vault on its own, with no account: not a popup in it, and not something opened over it.
       if (step === 'layer' && isAuthOpen && profiles.length === 0 && layerCount() === 1) return false
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
       return true
     }
     if (selectedServer) {

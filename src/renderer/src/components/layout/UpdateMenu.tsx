@@ -145,7 +145,7 @@ export const UpdateMenu: React.FC = () => {
     }
     const onKey = (e: KeyboardEvent) => {
       // Escape (and so Android's Back) closes it and gives focus back to the button in the title bar; a dialog on top has its own.
-      if (e.key !== 'Escape' || e.defaultPrevented || isModalOpen()) return
+      if (e.key !== 'Escape' || e.defaultPrevented || isModalOpen() || ref.current?.closest('[inert]')) return
       e.preventDefault()
       setOpen(false)
       trigger.current?.focus()

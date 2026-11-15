@@ -114,7 +114,8 @@ const AlertPopup: React.FC<{
       if (panelRef.current && !panelRef.current.contains(target) && !anchor.contains(target)) onClose(false)
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      // Not while a dialog, the palette or the drawer sits above it (it is inert then): that layer's Escape comes first.
+      if (e.key === 'Escape' && !panelRef.current?.closest('[inert]')) {
         e.stopPropagation()
         onClose(true)
       }
