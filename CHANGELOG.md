@@ -5,6 +5,13 @@ All notable changes to the **BLDesk** project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
  
+## [1.0.63-beta.7] - 2026-11-17
+
+**Security updates to the build tools**
+
+### Fixed
+- **Two moderate security advisories in the tools used to build BLDesk are patched** (minimatch GHSA-g3hv-75wg-m249 and glob GHSA-3g3m-2fjr-6pw4). Neither tool is part of the installed app, which is otherwise unchanged from 1.0.63-beta.6.
+
 ## [1.0.63-beta.6] - 2026-11-15
 
 **Light mode that follows your system, and better keyboard, screen reader and large-text support**
